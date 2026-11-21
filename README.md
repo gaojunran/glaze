@@ -10,8 +10,8 @@ The first target is **Solid 2**. Svelte 5 is planned on the same compiler.
 
 ## Status
 
-Working spike: a Solid counter and a 1000-row benchmark run in the minidev
-simulator. The 1000-row first render is within ~1–2% of hand-written WXML in the
+Working spike: a Solid counter, a child component with reactive props, and a
+1000-row benchmark run in the minidev simulator. The 1000-row first render is within ~1–2% of hand-written WXML in the
 same harness, and a scalar update is the same.
 
 ## Packages

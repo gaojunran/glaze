@@ -51,6 +51,38 @@ test('rejects an unsupported nested component', () => {
           return <view><Counter /></view>
         }
       `),
-    /Component <Counter> is not supported/,
+    /Component <Counter> must be imported/,
+  )
+})
+
+test('compiles props and an imported component', () => {
+  const result = compileComponent(`
+    import TodoItem from './TodoItem'
+
+    export default function List(props) {
+      return (
+        <view>
+          <TodoItem title={props.title} done={true} />
+        </view>
+      )
+    }
+  `)
+
+  assert.deepEqual(result.props, ['title'])
+  assert.deepEqual(result.components, [{ name: 'TodoItem', source: './TodoItem' }])
+  assert.match(result.wxml, /<todo-item title="\{\{b0\}\}" done="\{\{b1\}\}" \/>/)
+  assert.match(result.js, /properties: \["title"\]/)
+  assert.match(result.js, /setup\(ctx, props\)/)
+})
+
+test('rejects destructured props', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Bad({ title }) {
+          return <text>{title}</text>
+        }
+      `),
+    /Destructuring props is not reactive/,
   )
 })

@@ -37,16 +37,17 @@ The earlier external-component design is archived as a negative result in
 Acceptance met: e2e green; 1000-row first render within ~1–2% of native in the
 same harness; scalar update equal.
 
-### M2 — props and composition (next)
+### M2 — props and composition (done)
 
 - Component props: scalar and object.
 - Compile a Solid component used by another into a mini-program component.
 - Prop updates map to `setData` on the child component.
 - Reject dynamic components with a clear error.
 
-Acceptance: a two-level component tree with props runs in the simulator.
+Acceptance met: `Counter` renders three `TodoItem` children; toggling the first
+todo changes the child's `done` property and its class. E2E passes.
 
-### M3 — lists and events inside loops
+### M3 — lists and events inside loops (next)
 
 - `For` item events with index/key payload.
 - Per-item binding paths instead of whole-array `setData` for item updates.

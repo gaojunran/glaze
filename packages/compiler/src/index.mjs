@@ -55,13 +55,30 @@ const getExpression = (attr) => {
 
 const codeOf = (node) => generate(node).code
 
+const kebabCase = (name) =>
+  name
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .toLowerCase()
+
+const walkAst = (node, visit) => {
+  if (!node || typeof node.type !== 'string') return
+  visit(node)
+  for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+    const child = node[key]
+    if (Array.isArray(child)) child.forEach((item) => walkAst(item, visit))
+    else walkAst(child, visit)
+  }
+}
+
 /**
  * Compile one Solid component source into a mini-program component pair.
  *
  * Supported in the first wave:
- * - a default-exported function with no parameters;
+ * - a default-exported function with zero or one props parameter;
  * - static JSX structure, dynamic text and attributes;
  * - <Show when={...}> and <For each={...} key="...">;
+ * - imported Solid components with scalar props;
  * - native elements and DOM-like event props (onClick, onInput, ...).
  *
  * Everything else is a compile error on purpose. Silent fallback would hide
@@ -75,9 +92,14 @@ export function compileComponent(source) {
 
   const fn = findComponentFunction(ast)
   if (!fn) throw new Error('No default-exported component function found')
-  if (fn.params.length > 0) {
-    throw new Error('Component props are not supported in the first compiler wave')
+  if (fn.params.length > 1) {
+    throw new Error('Component accepts at most one props parameter')
   }
+  const propsParam = fn.params[0] ?? null
+  if (propsParam && !t.isIdentifier(propsParam)) {
+    throw new Error('Destructuring props is not reactive; use props.name instead')
+  }
+  const props = propsParam ? collectProps(propsParam.name, fn.body) : []
 
   const statements = functionStatements(fn)
   const returnIndex = statements.findIndex((node) => t.isReturnStatement(node))
@@ -94,6 +116,8 @@ export function compileComponent(source) {
   const ctx = {
     bindings: [],
     events: [],
+    components: [],
+    imports: collectImports(ast),
     addBinding(expression) {
       const index = this.bindings.length
       this.bindings.push(codeOf(expression))
@@ -104,14 +128,24 @@ export function compileComponent(source) {
       this.events.push(codeOf(expression))
       return index
     },
+    addComponent(name, source) {
+      if (!this.components.some((item) => item.name === name)) {
+        this.components.push({ name, source })
+      }
+    },
   }
 
   const wxml = compileNode(jsx, ctx, null)
-  const js = emitModule(ast, statements.slice(0, returnIndex), ctx)
+  const js = emitModule(ast, statements.slice(0, returnIndex), ctx, {
+    propsParam: propsParam?.name ?? null,
+    props,
+  })
 
   return {
     wxml,
     js,
+    props,
+    components: ctx.components,
     bindingCount: ctx.bindings.length,
     handlerCount: ctx.events.length,
   }
@@ -140,9 +174,41 @@ function functionStatements(fn) {
   return [t.returnStatement(fn.body)]
 }
 
-function emitModule(ast, setupStatements, ctx) {
+function collectImports(ast) {
+  const imports = new Map()
+  for (const node of ast.program.body) {
+    if (!t.isImportDeclaration(node)) continue
+    for (const specifier of node.specifiers) {
+      if (t.isImportDefaultSpecifier(specifier) || t.isImportSpecifier(specifier)) {
+        imports.set(specifier.local.name, node.source.value)
+      }
+    }
+  }
+  return imports
+}
+
+function collectProps(paramName, body) {
+  const props = new Set()
+  walkAst(body, (node) => {
+    if (!t.isMemberExpression(node) && !t.isOptionalMemberExpression(node)) return
+    if (!t.isIdentifier(node.object, { name: paramName })) return
+    if (!t.isIdentifier(node.property)) {
+      throw new Error(`Computed prop access is not supported; use props.name instead`)
+    }
+    props.add(node.property.name)
+  })
+  return [...props].sort()
+}
+
+function emitModule(ast, setupStatements, ctx, options) {
+  const componentNames = new Set(ctx.components.map((item) => item.name))
   const imports = ast.program.body
     .filter((node) => t.isImportDeclaration(node))
+    .filter((node) => {
+      const locals = node.specifiers.map((specifier) => specifier.local.name)
+      const onlyComponents = locals.length > 0 && locals.every((name) => componentNames.has(name))
+      return !(node.source.value.startsWith('.') && onlyComponents)
+    })
     .map((node) => codeOf(node))
     .join('\n')
 
@@ -166,6 +232,11 @@ function emitModule(ast, setupStatements, ctx) {
   const data = JSON.stringify(
     Object.fromEntries(ctx.bindings.map((_, index) => [`b${index}`, null])),
   )
+  const properties =
+    options.props.length > 0
+      ? `  properties: ${JSON.stringify(options.props)},\n`
+      : ''
+  const setupParams = options.propsParam ? `, ${options.propsParam}` : ''
 
   return `${imports}
 import { defineGlazeComponent } from "@glaze/runtime/mini";
@@ -173,9 +244,9 @@ import { defineGlazeComponent } from "@glaze/runtime/mini";
 ${moduleStatements}
 
 export default defineGlazeComponent({
-  data: ${data},
+${properties}  data: ${data},
   handlerCount: ${ctx.events.length},
-  setup(ctx) {
+  setup(ctx${setupParams}) {
 ${setup}
 ${bindings}
 ${events}
@@ -203,7 +274,7 @@ function compileElement(node, ctx, scope, extraAttrs = []) {
   if (name === 'Show') return compileShow(node, ctx, scope)
   if (name === 'For') return compileFor(node, ctx, scope)
   if (/^[A-Z]/.test(name)) {
-    throw new Error(`Component <${name}> is not supported in the first compiler wave`)
+    return compileComponentElement(node, ctx, scope, extraAttrs)
   }
 
   const attrs = []
@@ -228,24 +299,24 @@ function compileElement(node, ctx, scope, extraAttrs = []) {
       continue
     }
 
-    const name = attrName === 'className' ? 'class' : attrName
+    const propName = attrName === 'className' ? 'class' : attrName
     if (t.isStringLiteral(expression) || t.isNumericLiteral(expression)) {
-      attrs.push(`${name}="${escapeAttr(String(expression.value))}"`)
+      attrs.push(`${propName}="${escapeAttr(String(expression.value))}"`)
       continue
     }
-    if (name === 'style' && t.isObjectExpression(expression)) {
-      attrs.push(`${name}="${escapeAttr(staticStyle(expression))}"`)
+    if (propName === 'style' && t.isObjectExpression(expression)) {
+      attrs.push(`${propName}="${escapeAttr(staticStyle(expression))}"`)
       continue
     }
-    if (name === 'class' && t.isObjectExpression(expression)) {
+    if (propName === 'class' && t.isObjectExpression(expression)) {
       throw new Error('class objects are not supported; use a string or a ternary')
     }
 
     if (scope) {
-      attrs.push(`${name}="{{${inlineExpression(expression, scope)}}}"`)
+      attrs.push(`${propName}="{{${inlineExpression(expression, scope)}}}"`)
     } else {
       const index = ctx.addBinding(expression)
-      attrs.push(`${name}="{{b${index}}}"`)
+      attrs.push(`${propName}="{{b${index}}}"`)
     }
   }
 
@@ -254,6 +325,58 @@ function compileElement(node, ctx, scope, extraAttrs = []) {
   const children = compileChildren(node.children, ctx, scope)
   if (children === '') return `<${name}${attrText} />`
   return `<${name}${attrText}>${children}</${name}>`
+}
+
+function compileComponentElement(node, ctx, scope, extraAttrs = []) {
+  const name = tagName(node.openingElement.name)
+  const source = ctx.imports.get(name)
+  if (!source) {
+    throw new Error(`Component <${name}> must be imported from a relative file`)
+  }
+  if (!source.startsWith('.')) {
+    throw new Error(`Component <${name}> must come from a relative file, got "${source}"`)
+  }
+  if (node.children.some((child) => !isWhitespaceText(child))) {
+    throw new Error(`Component <${name}> does not support children or slots yet`)
+  }
+
+  ctx.addComponent(name, source)
+
+  const attrs = []
+  for (const attr of node.openingElement.attributes) {
+    if (!t.isJSXAttribute(attr)) {
+      throw new Error('JSX spread attributes are not supported')
+    }
+    const attrName = t.isJSXIdentifier(attr.name) ? attr.name.name : null
+    if (!attrName) throw new Error('Unsupported JSX attribute name')
+    if (attrName === 'key') continue
+    if (attrName === 'ref') {
+      throw new Error('ref is not supported in the first compiler wave')
+    }
+    if (/^on[A-Z]/.test(attrName)) {
+      throw new Error(`Component events are not supported yet (<${name} ${attrName}>)`)
+    }
+    if (!/^[a-z][a-z0-9]*$/.test(attrName)) {
+      throw new Error(`Component prop "${attrName}" must be lowercase`)
+    }
+
+    const expression = getExpression(attr)
+    if (expression == null) continue
+    if (t.isStringLiteral(expression) || t.isNumericLiteral(expression)) {
+      attrs.push(`${attrName}="${escapeAttr(String(expression.value))}"`)
+      continue
+    }
+    if (scope) {
+      attrs.push(`${attrName}="{{${inlineExpression(expression, scope)}}}"`)
+    } else {
+      const index = ctx.addBinding(expression)
+      attrs.push(`${attrName}="{{b${index}}}"`)
+    }
+  }
+
+  const allAttrs = [...attrs, ...extraAttrs]
+  const attrText = allAttrs.length > 0 ? ` ${allAttrs.join(' ')}` : ''
+  return `<${kebabCase(name)}${attrText} />`
 }
 
 function compileChildren(children, ctx, scope) {

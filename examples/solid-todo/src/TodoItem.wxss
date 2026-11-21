@@ -1,0 +1,14 @@
+.item {
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid #e5e7eb;
+}
+
+.item-title {
+  font-size: 32rpx;
+  color: #374151;
+}
+
+.item-title.done {
+  color: #9ca3af;
+  text-decoration: line-through;
+}

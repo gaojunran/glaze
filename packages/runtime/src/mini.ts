@@ -1,7 +1,8 @@
-import { createEffect, createRoot, getOwner, runWithOwner } from 'solid-js'
+import { createEffect, createRoot, createSignal, getOwner, runWithOwner } from 'solid-js'
 
 export type GlazeBinding = () => unknown
 export type GlazeEventHandler = () => void
+export type GlazeProps = Record<string, unknown>
 
 export type GlazeContext = {
   bind(index: number, fn: GlazeBinding): void
@@ -10,13 +11,16 @@ export type GlazeContext = {
 
 export type GlazeComponentConfig = {
   data?: Record<string, unknown>
+  properties?: string[]
   handlerCount?: number
-  setup(ctx: GlazeContext): void
+  setup(ctx: GlazeContext, props: GlazeProps): void
 }
 
 type InstanceState = {
   bindings: GlazeBinding[]
   events: GlazeEventHandler[]
+  initial: unknown[]
+  props: Record<string, [() => unknown, (value: unknown) => void]>
   owner: ReturnType<typeof getOwner>
   dispose: (() => void) | null
 }
@@ -32,6 +36,7 @@ declare const Component: (config: Record<string, unknown>) => unknown
  * forwards later binding changes through `setData` paths.
  */
 export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
+  const propertyNames = config.properties ?? []
   const methods: Record<string, unknown> = {}
   const handlerCount = config.handlerCount ?? 0
   for (let i = 0; i < handlerCount; i += 1) {
@@ -41,32 +46,62 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     }
   }
 
+  const properties = Object.fromEntries(
+    propertyNames.map((name) => [name, { type: null, value: null }]),
+  )
+  const observers = Object.fromEntries(
+    propertyNames.map((name) => [
+      name,
+      function observeProperty(this: { __glaze?: InstanceState | null }, value: unknown) {
+        this.__glaze?.props[name]?.[1](value)
+      },
+    ]),
+  )
+
   return Component({
     data: config.data ?? {},
+    properties,
+    observers,
     lifetimes: {
       created(this: any) {
         const state: InstanceState = {
           bindings: [],
           events: [],
+          initial: [],
+          props: {},
           owner: null,
           dispose: null,
         }
         this.__glaze = state
 
+        for (const name of propertyNames) {
+          state.props[name] = createSignal(this.properties?.[name] ?? null)
+        }
+        const props = new Proxy(
+          {},
+          {
+            get: (_, key: string) => state.props[key]?.[0](),
+          },
+        )
+
         state.dispose = createRoot((dispose) => {
-          config.setup({
-            bind(index, fn) {
-              state.bindings[index] = fn
+          config.setup(
+            {
+              bind(index, fn) {
+                state.bindings[index] = fn
+              },
+              event(index, fn) {
+                state.events[index] = fn
+              },
             },
-            event(index, fn) {
-              state.events[index] = fn
-            },
-          })
+            props,
+          )
           state.owner = getOwner()
 
           const initial: Record<string, unknown> = {}
           state.bindings.forEach((fn, index) => {
-            initial[`b${index}`] = fn()
+            state.initial[index] = fn()
+            initial[`b${index}`] = state.initial[index]
           })
           this.setData(initial)
           return dispose
@@ -83,7 +118,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
             createEffect(fn, (value) => {
               if (first) {
                 first = false
-                return
+                if (Object.is(value, state.initial[index])) return
               }
               this.setData({ [`b${index}`]: value })
             })

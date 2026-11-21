@@ -1,4 +1,5 @@
 import { createSignal, For, Show } from 'solid-js'
+import TodoItem from './TodoItem'
 
 type Todo = {
   id: number
@@ -8,7 +9,7 @@ type Todo = {
 
 export default function Counter() {
   const [count, setCount] = createSignal(0)
-  const [todos] = createSignal<Todo[]>([
+  const [todos, setTodos] = createSignal<Todo[]>([
     { id: 1, title: 'Compile Solid to WXML', done: true },
     { id: 2, title: 'Run in minidev', done: false },
     { id: 3, title: 'Measure against native', done: false },
@@ -28,13 +29,22 @@ export default function Counter() {
         <text class="hint">count is greater than 3</text>
       </Show>
 
+      <button
+        class="toggle"
+        onClick={() =>
+          setTodos((items) =>
+            items.map((todo, index) =>
+              index === 0 ? { ...todo, done: !todo.done } : todo,
+            ),
+          )
+        }
+      >
+        toggle first
+      </button>
+
       <view class="list">
         <For each={todos()} key="id">
-          {(todo) => (
-            <view class="item">
-              <text class={todo.done ? 'item-title done' : 'item-title'}>{todo.title}</text>
-            </view>
-          )}
+          {(todo) => <TodoItem title={todo.title} done={todo.done} />}
         </For>
       </view>
 

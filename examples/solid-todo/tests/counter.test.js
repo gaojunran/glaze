@@ -17,5 +17,15 @@ test('counter renders and updates through the compiled bindings', async (miniPro
   for (let i = 0; i < 3; i += 1) await buttons[1].tap()
   await expect(app).toMatchText('.count', '4')
   await expect(app).toMatchText('.hint', 'count is greater than 3')
-  await expect(app).toMatchText('.item', 'Compile Solid to WXML')
+
+  let xml = await app.outerWxml()
+  await expect(xml).toContain('done="true" title="Compile Solid to WXML"')
+  await expect(xml).toContain('item-title done')
+
+  const toggle = await app.$('.toggle')
+  await toggle.tap()
+  await page.waitFor(500)
+  xml = await app.outerWxml()
+  await expect(xml).toContain('done="false" title="Compile Solid to WXML"')
+  await expect(xml).toContain('<text class="item-title">Compile Solid to WXML</text>')
 })

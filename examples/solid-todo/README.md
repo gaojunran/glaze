@@ -1,7 +1,7 @@
 # solid-todo example
 
-A Solid counter, a todo list, and a 1000-row benchmark compiled to mini-program
-WXML by `@glaze/compiler`.
+A Solid counter, a todo list with a `TodoItem` child component, and a 1000-row
+benchmark compiled to mini-program WXML by `@glaze/compiler`.
 
 ## Build
 
@@ -24,7 +24,7 @@ target/debug/minidev test --project ~/Projects/glaze/examples/solid-todo --brows
 
 Pages:
 
-- `pages/index/index` — counter, `Show`, keyed `For`;
+- `pages/index/index` — counter, `Show`, keyed `For`, `TodoItem` props;
 - `pages/bench/index` — 1000 rows compiled from Solid;
 - `pages/native/index` — the same 1000 rows in hand-written WXML.
 

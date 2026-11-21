@@ -52,17 +52,51 @@ First-wave support:
 | `<Show fallback={...}>` | `wx:if` + `wx:else` |
 | `<For each={...} key="id">` | `wx:for` + `wx:key` |
 | item/index expressions inside `For` | inline `{{item.x}}` |
+| imported component `<TodoItem title={...} />` | `<todo-item title="{{...}}" />` + `usingComponents` |
+| `props.name` in the child | a mini-program property + a child signal |
 
 Anything outside this subset is a compile error. Silent fallback would hide the
 cases where the mini-program path diverges from Solid.
+
+### Props and components
+
+A component function may take one `props` parameter:
+
+```tsx
+type TodoItemProps = { title: string; done: boolean }
+
+export default function TodoItem(props: TodoItemProps) {
+  return <text class={props.done ? 'done' : ''}>{props.title}</text>
+}
+```
+
+The compiler collects `props.title` / `props.done` as the child's property
+list. The parent is compiled to a tag and the build script writes
+`usingComponents`:
+
+```xml
+<todo-item title="{{todo.title}}" done="{{todo.done}}" />
+```
+
+At runtime the child declares those names as mini-program `properties`, creates
+one Solid signal per prop, and exposes a getter-only `props` object. Property
+observers update the signals; the normal binding effects then update the child's
+own WXML. Prop names must be lowercase; children/slots and component events are
+not supported yet.
+
+The build script compiles every `.tsx` under `src/`, resolves relative component
+imports, and emits each component plus its `usingComponents` map. Local
+component imports are removed from the generated parent module because the
+child is rendered by WXML, not by the parent's JS.
 
 ### Generated runtime
 
 ```
 defineGlazeComponent({
+  properties: ["done", "title"],
   data: { b0: null, b1: null, b2: null },
   handlerCount: 2,
-  setup(ctx) {
+  setup(ctx, props) {
     // original setup statements
     ctx.bind(0, () => count())
     ctx.bind(1, () => count() > 3)
@@ -74,11 +108,13 @@ defineGlazeComponent({
 `defineGlazeComponent`:
 
 1. creates one Solid root per mini-program component instance in `created`;
-2. runs `setup`, then evaluates every binding once and `setData`s the initial
+2. creates one signal per declared property and a getter-only `props` object;
+3. runs `setup`, then evaluates every binding once and `setData`s the initial
    values before the first paint;
-3. in `attached`, creates one `createEffect(compute, apply)` per binding and
-   sends later values to `setData({ bN: value })`;
-4. disposes the root in `detached`.
+4. in `attached`, creates one `createEffect(compute, apply)` per binding and
+   sends later values to `setData({ bN: value })`; if a prop changed between
+   `created` and `attached`, the first effect run sends the corrected value;
+5. disposes the root in `detached`.
 
 ## Solid 2 note: burst events
 
@@ -126,7 +162,8 @@ target/debug/minidev test \
   --browser ~/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell
 ```
 
-Result: `counter.test.js` passes (title, count, tap updates, `Show`, `For`).
+Result: `counter.test.js` passes (title, count, tap updates, `Show`, `For`,
+and a `TodoItem` child receiving and updating props).
 
 ## Benchmark
 
@@ -153,14 +190,15 @@ does not build a virtual tree.
 
 ## Known gaps
 
-1. **Props and component composition** are not implemented. The compiler only
-   handles the page root component.
-2. **List item updates** currently send the whole array when the `For` source
+1. **Component children and slots** are rejected. A component must be
+   self-closing in this wave.
+2. **Component events** are rejected. Only native DOM-like events are wired.
+3. **List item updates** currently send the whole array when the `For` source
    changes. Native WXML can send `items[0].title`; Glaze needs per-item paths.
-3. **Events inside `For`** cannot yet receive the item or index. A handler that
+4. **Events inside `For`** cannot yet receive the item or index. A handler that
    references the loop item is rejected.
-4. **Unsupported JSX** (`.map`, dynamic components, render props, `Portal`,
+5. **Unsupported JSX** (`.map`, dynamic components, render props, `Portal`,
    `Transition`) is a compile error.
-5. **Build integration** is a standalone script; a Vite plugin and per-component
+6. **Build integration** is a standalone script; a Vite plugin and per-component
    discovery are next.
-6. **Svelte** has no compiler yet.
+7. **Svelte** has no compiler yet.
