@@ -52,7 +52,8 @@ First-wave support:
 | `<Show fallback={...}>` | `wx:if` + `wx:else` |
 | `<Switch>` + `<Match when={...}>` | `wx:if` / `wx:elif` / `wx:else` |
 | `<Switch fallback={...}>` | final `wx:else` |
-| `<For each={...} key="id">` | `wx:for` + `wx:key` |
+| `<For each={...} key="id" fallback={...}>` | `wx:if` + `wx:for` + `wx:else` |
+| `<Repeat count={...} from={...} fallback={...}>` | generated index array + `wx:for` |
 | item/index expressions inside `For` | inline `{{item.x}}` |
 | `class` object / array | `className(...)` binding, or inline WXML segments inside `For` |
 | `style` object | `styleName(...)` binding, or inline WXML segments inside `For` |
@@ -319,6 +320,10 @@ ctx.event(3, (event) => {
 
 Nested loops use one marker per level; the handler walks the whole scope chain.
 
+`<For fallback>` checks `(each || []).length > 0`. `<Repeat>` builds
+`Array.from({ length: count }, (_, index) => index + from)` in a binding; it is
+not supported inside another `For` yet.
+
 Binding writes are merged in a microtask: several signals updated in one event
 produce one `setData` call. The initial values still go through one synchronous
 `setData` before the first paint.
@@ -400,10 +405,10 @@ target/debug/minidev test \
 ```
 
 Result: `counter.test.js` passes. It covers title/count updates, `Show`,
-`Switch`/`Match`, keyed `For`, class objects, `TodoItem` props, inline default
-slot, boundary default slot, named slot, custom component event, context value,
-ref measurement, nested `For` event, append/insert/delete updates, and row
-removal.
+`Switch`/`Match`, keyed `For`, `For` fallback, `Repeat`, class objects,
+`TodoItem` props, inline default slot, boundary default slot, named slot, custom
+component event, context value, ref measurement, nested `For` event,
+append/insert/delete updates, and row removal.
 
 ## Benchmark
 

@@ -1,4 +1,4 @@
-import { createContext, createSignal, For, Match, Show, Switch } from 'solid-js'
+import { createContext, createSignal, For, Match, Repeat, Show, Switch } from 'solid-js'
 import Card from './Card'
 import Header from './Header'
 import Panel from './Panel'
@@ -65,6 +65,14 @@ export default function Counter() {
           <text class="switch-busy">busy</text>
         </Match>
       </Switch>
+
+      <Repeat count={3}>
+        {(index) => <text class="dot">{index}</text>}
+      </Repeat>
+
+      <For each={[]} key="*this" fallback={<text class="empty-list">empty</text>}>
+        {(item) => <text>{item}</text>}
+      </For>
 
       <SlotCard>
         <text slot="header" class="slot-header">Slot header</text>

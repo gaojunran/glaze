@@ -178,3 +178,17 @@
   margin-top: 12rpx;
   font-size: 26rpx;
 }
+
+.dot {
+  display: inline-block;
+  margin-right: 8rpx;
+  color: #6b7280;
+  font-size: 26rpx;
+}
+
+.empty-list {
+  display: block;
+  margin-top: 8rpx;
+  color: #9ca3af;
+  font-size: 26rpx;
+}

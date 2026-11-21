@@ -455,6 +455,34 @@ test('inlines class arrays and style objects inside For', () => {
   assert.match(result.wxml, /style="color:\{\{item \? 'red' : 'blue'\}\}"/)
 })
 
+test('compiles For fallback and Repeat', () => {
+  const forResult = compileComponent(`
+    export default function Page(props) {
+      return (
+        <For each={props.items} key="id" fallback={<text>empty</text>}>
+          {(item) => <text>{item.title}</text>}
+        </For>
+      )
+    }
+  `)
+  assert.match(forResult.wxml, /<block wx:if="\{\{b1\}\}">/)
+  assert.match(forResult.wxml, /<text wx:else>empty<\/text>/)
+  assert.match(forResult.js, /ctx.bind\(1, \(\) => \(\(props\.items \|\| \[\]\)\.length > 0\)\)/)
+
+  const repeatResult = compileComponent(`
+    export default function Page(props) {
+      return (
+        <Repeat count={props.count} from={1} fallback={<text>none</text>}>
+          {(index) => <text>{index}</text>}
+        </Repeat>
+      )
+    }
+  `)
+  assert.match(repeatResult.wxml, /wx:for-item="index"/)
+  assert.match(repeatResult.wxml, /<text wx:else>none<\/text>/)
+  assert.match(repeatResult.js, /Array\.from\(\{ length: \(props\.count\) \}/)
+})
+
 test('rejects destructured props', () => {
   assert.throws(
     () =>

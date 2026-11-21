@@ -20,6 +20,8 @@ test('counter renders and updates through the compiled bindings', async (miniPro
   await expect(app).toMatchText('.card-title', 'Todos')
   await expect(app).toMatchText('.slot-header', 'Slot header')
   await expect(app).toMatchText('.slot-body', 'Slot body')
+  await expect(app).toMatchText('.dot', '0')
+  await expect(app).toMatchText('.empty-list', 'empty')
   await expect(app).toMatchText('.switch-idle', 'idle')
   const statusToggle = await app.$('.status-toggle')
   await statusToggle.tap()

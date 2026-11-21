@@ -447,6 +447,7 @@ function compileElement(node, ctx, scope, extraAttrs = []) {
   if (name === 'Show') return compileShow(node, ctx, scope)
   if (name === 'For') return compileFor(node, ctx, scope)
   if (name === 'Switch') return compileSwitch(node, ctx, scope)
+  if (name === 'Repeat') return compileRepeat(node, ctx, scope)
   if (name === 'Match') {
     throw new Error('<Match> must be a direct child of <Switch>')
   }
@@ -908,7 +909,83 @@ function compileFor(node, ctx, scope) {
     level: scope ? scope.level + 1 : 0,
   }
   const children = compileNode(body, ctx, itemScope)
-  return `<block wx:for="{{${eachExpr}}}" wx:for-item="${itemName}" wx:for-index="${indexName}" wx:key="${key}">${children}</block>`
+  const loop = `<block wx:for="{{${eachExpr}}}" wx:for-item="${itemName}" wx:for-index="${indexName}" wx:key="${key}">${children}</block>`
+
+  const fallback = getAttribute(node, 'fallback')
+  if (!fallback) return loop
+  const fallbackExpression = getExpression(fallback)
+  if (
+    !fallbackExpression ||
+    (!t.isJSXElement(fallbackExpression) && !t.isJSXFragment(fallbackExpression))
+  ) {
+    throw new Error('<For> fallback must be JSX')
+  }
+  const condition = scope
+    ? `(${eachCode} || []).length > 0`
+    : `b${ctx.addBindingCode(`(${eachCode} || []).length > 0`)}`
+  return `<block wx:if="{{${condition}}}">${loop}</block>${compileNode(
+    fallbackExpression,
+    ctx,
+    scope,
+    ['wx:else'],
+  )}`
+}
+
+function compileRepeat(node, ctx, scope) {
+  if (scope) throw new Error('<Repeat> is not supported inside <For> yet')
+  const count = getExpression(getAttribute(node, 'count'))
+  if (!count) throw new Error('<Repeat> requires a count expression')
+  const from = getExpression(getAttribute(node, 'from'))
+  const fromCode = from ? codeOf(from) : '0'
+
+  const child = node.children.find((item) => !isWhitespaceText(item))
+  if (!child || !t.isJSXExpressionContainer(child)) {
+    throw new Error('<Repeat> requires a single arrow-function child')
+  }
+  const fn = child.expression
+  if (!t.isArrowFunctionExpression(fn) && !t.isFunctionExpression(fn)) {
+    throw new Error('<Repeat> child must be an arrow function')
+  }
+  const itemName = t.isIdentifier(fn.params[0]) ? fn.params[0].name : 'index'
+  const body = t.isBlockStatement(fn.body)
+    ? (() => {
+        const ret = fn.body.body.find((item) => t.isReturnStatement(item))
+        if (!ret) throw new Error('<Repeat> callback must return JSX')
+        return ret.argument
+      })()
+    : fn.body
+  if (!t.isJSXElement(body) && !t.isJSXFragment(body)) {
+    throw new Error('<Repeat> callback must return JSX')
+  }
+
+  const binding = ctx.addBindingCode(
+    `Array.from({ length: (${codeOf(count)}) }, (_, index) => index + (${fromCode}))`,
+  )
+  const itemScope = {
+    item: itemName,
+    index: '__glazeIndex',
+    source: `b${binding}`,
+    parent: null,
+    level: 0,
+  }
+  const children = compileNode(body, ctx, itemScope)
+  const loop = `<block wx:for="{{b${binding}}}" wx:for-item="${itemName}" wx:for-index="__glazeIndex" wx:key="*this">${children}</block>`
+
+  const fallback = getAttribute(node, 'fallback')
+  if (!fallback) return loop
+  const fallbackExpression = getExpression(fallback)
+  if (
+    !fallbackExpression ||
+    (!t.isJSXElement(fallbackExpression) && !t.isJSXFragment(fallbackExpression))
+  ) {
+    throw new Error('<Repeat> fallback must be JSX')
+  }
+  return `<block wx:if="{{b${binding}.length > 0}}">${loop}</block>${compileNode(
+    fallbackExpression,
+    ctx,
+    scope,
+    ['wx:else'],
+  )}`
 }
 
 function conditionExpression(expression, ctx, scope) {
