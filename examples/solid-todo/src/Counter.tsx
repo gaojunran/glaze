@@ -1,4 +1,4 @@
-import { createContext, createSignal, For, Show } from 'solid-js'
+import { createContext, createSignal, For, Match, Show, Switch } from 'solid-js'
 import Card from './Card'
 import Header from './Header'
 import Panel from './Panel'
@@ -21,6 +21,7 @@ export default function Counter() {
   ])
 
   const Theme = createContext('light')
+  const [status, setStatus] = createSignal('idle')
   const [refWidth, setRefWidth] = createSignal(0)
 
   const [grid, setGrid] = createSignal([
@@ -46,6 +47,24 @@ export default function Counter() {
       <Show when={count() > 3}>
         <text class="hint">count is greater than 3</text>
       </Show>
+
+      <button
+        class="status-toggle"
+        onClick={() =>
+          setStatus((value) => (value === 'idle' ? 'busy' : value === 'busy' ? 'other' : 'idle'))
+        }
+      >
+        cycle status
+      </button>
+
+      <Switch fallback={<text class="switch-other">other</text>}>
+        <Match when={status() === 'idle'}>
+          <text class="switch-idle">idle</text>
+        </Match>
+        <Match when={status() === 'busy'}>
+          <text class="switch-busy">busy</text>
+        </Match>
+      </Switch>
 
       <SlotCard>
         <text slot="header" class="slot-header">Slot header</text>

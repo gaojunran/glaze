@@ -91,6 +91,7 @@ counter e2e passes against the generated output.
 - Structural list patches: insert/delete/reorder use glass-easel
   `spliceArrayDataOnPath` via `groupUpdates`; field patches remain for stable
   key order.
+- JSX surface: `Switch`/`Match`, class objects/arrays, dynamic style objects.
 
 Acceptance met: unit tests cover every compile path; the counter e2e exercises
 inline default slot, boundary default slot, named slot, component event,

@@ -97,6 +97,7 @@ export function compileComponent(source, options = {}) {
     bindings: [],
     events: [],
     refs: [],
+    helpers: new Set(),
     components: [],
     inlineComponents: [],
     imports: collectImports(ast),
@@ -134,6 +135,14 @@ export function compileComponent(source, options = {}) {
       const index = this.events.length
       this.events.push({ code: codeOf(expression), scope, custom, block: this.currentBlock })
       return index
+    },
+    addBindingCode(code, listKey = null) {
+      const index = this.bindings.length
+      this.bindings.push({ code, listKey, block: this.currentBlock })
+      return index
+    },
+    addHelper(name) {
+      this.helpers.add(name)
     },
     addRef(expression) {
       const index = this.refs.length
@@ -389,8 +398,14 @@ ${lines}
     .join('\n')
 
   const hasProvider = ctx.blocks.some((block) => block.providerContext)
+  const helpers = [...ctx.helpers]
+  const runtimeImports = [
+    'defineGlazeComponent',
+    ...(hasProvider ? ['withProvider'] : []),
+    ...helpers,
+  ].join(', ')
   return `${imports}
-import { defineGlazeComponent${hasProvider ? ', withProvider' : ''} } from "@glaze/runtime/mini";
+import { ${runtimeImports} } from "@glaze/runtime/mini";
 
 ${moduleStatements}
 
@@ -431,6 +446,10 @@ function compileElement(node, ctx, scope, extraAttrs = []) {
   const name = tagName(tag)
   if (name === 'Show') return compileShow(node, ctx, scope)
   if (name === 'For') return compileFor(node, ctx, scope)
+  if (name === 'Switch') return compileSwitch(node, ctx, scope)
+  if (name === 'Match') {
+    throw new Error('<Match> must be a direct child of <Switch>')
+  }
   if (name === 'slot') {
     const slotName = getAttribute(node, 'name')
     const value = slotName && slotName.value && t.isStringLiteral(slotName.value)
@@ -489,12 +508,13 @@ function compileElement(node, ctx, scope, extraAttrs = []) {
       attrs.push(`${propName}="${escapeAttr(String(expression.value))}"`)
       continue
     }
-    if (propName === 'style' && t.isObjectExpression(expression)) {
-      attrs.push(`${propName}="${escapeAttr(staticStyle(expression))}"`)
+    if (propName === 'class' && (t.isObjectExpression(expression) || t.isArrayExpression(expression))) {
+      attrs.push(classAttr(expression, ctx, scope))
       continue
     }
-    if (propName === 'class' && t.isObjectExpression(expression)) {
-      throw new Error('class objects are not supported; use a string or a ternary')
+    if (propName === 'style' && t.isObjectExpression(expression)) {
+      attrs.push(styleAttr(expression, ctx, scope))
+      continue
     }
 
     if (scope) {
@@ -798,6 +818,44 @@ function compileShow(node, ctx, scope) {
   return `${thenNode}${elseNode}`
 }
 
+function compileSwitch(node, ctx, scope) {
+  const children = node.children.filter((child) => !isWhitespaceText(child))
+  const matches = children.filter(
+    (child) => t.isJSXElement(child) && t.isJSXIdentifier(child.openingElement.name, { name: 'Match' }),
+  )
+  if (matches.length === 0) throw new Error('<Switch> requires at least one <Match>')
+  if (matches.length !== children.length) {
+    throw new Error('<Switch> accepts only <Match> children and a fallback prop')
+  }
+
+  let output = ''
+  matches.forEach((match, index) => {
+    const when = getExpression(getAttribute(match, 'when'))
+    if (!when) throw new Error('<Match> requires a when expression')
+    const condition = conditionExpression(when, ctx, scope)
+    const directive = index === 0 ? `wx:if="{{${condition}}}"` : `wx:elif="{{${condition}}}"`
+    const body = match.children.filter((child) => !isWhitespaceText(child))
+    if (body.length === 0) throw new Error('<Match> requires a child')
+
+    if (body.length === 1) {
+      output += compileNode(body[0], ctx, scope, [directive])
+    } else {
+      output += `<block ${directive}>${compileChildren(body, ctx, scope)}</block>`
+    }
+  })
+
+  const fallback = getAttribute(node, 'fallback')
+  if (fallback) {
+    const expression = getExpression(fallback)
+    if (!expression || (!t.isJSXElement(expression) && !t.isJSXFragment(expression))) {
+      throw new Error('<Switch> fallback must be JSX')
+    }
+    output += compileNode(expression, ctx, scope, ['wx:else'])
+  }
+
+  return output
+}
+
 function compileFor(node, ctx, scope) {
   const each = getExpression(getAttribute(node, 'each'))
   if (!each) throw new Error('<For> requires an each expression')
@@ -856,6 +914,116 @@ function compileFor(node, ctx, scope) {
 function conditionExpression(expression, ctx, scope) {
   if (scope) return inlineExpression(expression, scope)
   return `b${ctx.addBinding(expression)}`
+}
+
+function classAttr(expression, ctx, scope) {
+  if (!scope) {
+    ctx.addHelper('className')
+    const index = ctx.addBindingCode(`className(${codeOf(expression)})`)
+    return `class="{{b${index}}}"`
+  }
+  return `class="${classInline(expression, scope)}"`
+}
+
+function styleAttr(expression, ctx, scope) {
+  if (!scope) {
+    if (isStaticStyle(expression)) {
+      return `style="${escapeAttr(staticStyle(expression))}"`
+    }
+    ctx.addHelper('styleName')
+    const index = ctx.addBindingCode(`styleName(${codeOf(expression)})`)
+    return `style="{{b${index}}}"`
+  }
+  return `style="${styleInline(expression, scope)}"`
+}
+
+function classInline(expression, scope) {
+  if (t.isStringLiteral(expression) || t.isNumericLiteral(expression)) {
+    return escapeAttr(String(expression.value))
+  }
+  if (t.isArrayExpression(expression)) {
+    return expression.elements
+      .map((item) => classInlineItem(item, scope))
+      .filter(Boolean)
+      .join(' ')
+  }
+  if (t.isObjectExpression(expression)) {
+    return expression.properties
+      .map((property) => {
+        if (!t.isObjectProperty(property)) return ''
+        const key = t.isIdentifier(property.key)
+          ? property.key.name
+          : t.isStringLiteral(property.key)
+            ? property.key.value
+            : null
+        if (!key) throw new Error('Dynamic class keys are not supported')
+        const value = property.value
+        if (t.isBooleanLiteral(value)) return value.value ? key : ''
+        if (t.isNullLiteral(value)) return ''
+        return `{{${inlineExpression(value, scope)} ? '${escapeAttr(key)}' : ''}}`
+      })
+      .filter(Boolean)
+      .join(' ')
+  }
+  return `{{${inlineExpression(expression, scope)} || ''}}`
+}
+
+function classInlineItem(expression, scope) {
+  if (!expression) return ''
+  if (t.isStringLiteral(expression) || t.isNumericLiteral(expression)) {
+    return escapeAttr(String(expression.value))
+  }
+  if (t.isArrayExpression(expression)) return classInline(expression, scope)
+  if (t.isObjectExpression(expression)) return classInline(expression, scope)
+  if (t.isLogicalExpression(expression) && expression.operator === '&&') {
+    if (t.isStringLiteral(expression.right)) {
+      return `{{${inlineExpression(expression.left, scope)} ? '${escapeAttr(expression.right.value)}' : ''}}`
+    }
+  }
+  if (t.isConditionalExpression(expression)) {
+    const consequent = t.isStringLiteral(expression.consequent)
+      ? `'${escapeAttr(expression.consequent.value)}'`
+      : `(${inlineExpression(expression.consequent, scope)})`
+    const alternate = t.isStringLiteral(expression.alternate)
+      ? `'${escapeAttr(expression.alternate.value)}'`
+      : `(${inlineExpression(expression.alternate, scope)})`
+    return `{{${inlineExpression(expression.test, scope)} ? ${consequent} : ${alternate}}}`
+  }
+  return `{{${inlineExpression(expression, scope)} || ''}}`
+}
+
+function styleInline(expression, scope) {
+  return expression.properties
+    .map((property) => {
+      if (!t.isObjectProperty(property)) {
+        throw new Error('Style spread is not supported')
+      }
+      const key = t.isIdentifier(property.key)
+        ? property.key.name
+        : t.isStringLiteral(property.key)
+          ? property.key.value
+          : null
+      if (!key) throw new Error('Dynamic style keys are not supported')
+      const name = key.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`)
+      const value = property.value
+      if (t.isStringLiteral(value) || t.isNumericLiteral(value)) {
+        return `${name}:${value.value}`
+      }
+      if (t.isBooleanLiteral(value) || t.isNullLiteral(value)) {
+        return value.value ? `${name}:true` : ''
+      }
+      return `${name}:{{${inlineExpression(value, scope)}}}`
+    })
+    .filter(Boolean)
+    .join(';')
+}
+
+function isStaticStyle(node) {
+  return node.properties.every(
+    (property) =>
+      t.isObjectProperty(property) &&
+      (t.isStringLiteral(property.value) || t.isNumericLiteral(property.value)),
+  )
 }
 
 function staticStyle(node) {

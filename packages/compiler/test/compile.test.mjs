@@ -386,6 +386,75 @@ test('separates event props from properties', () => {
   assert.match(result.js, /props\.onToggle\?\.\(\)/)
 })
 
+test('compiles Switch and Match to if/elif/else', () => {
+  const result = compileComponent(`
+    export default function Page() {
+      const state = 'idle'
+      return (
+        <Switch fallback={<text class="other">other</text>}>
+          <Match when={state === 'idle'}><text class="idle">idle</text></Match>
+          <Match when={state === 'busy'}><text class="busy">busy</text></Match>
+        </Switch>
+      )
+    }
+  `)
+  assert.match(result.wxml, /<text class="idle" wx:if="\{\{b0\}\}">idle<\/text>/)
+  assert.match(result.wxml, /<text class="busy" wx:elif="\{\{b1\}\}">busy<\/text>/)
+  assert.match(result.wxml, /<text class="other" wx:else>other<\/text>/)
+})
+
+test('rejects Match outside Switch', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Page() {
+          return <Match when={true}>x</Match>
+        }
+      `),
+    /must be a direct child of <Switch>/,
+  )
+})
+
+test('compiles class objects and dynamic styles', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return (
+        <view
+          class={{ base: true, active: props.active, hidden: false }}
+          style={{ color: props.color, fontSize: '12px' }}
+        >
+          x
+        </view>
+      )
+    }
+  `)
+  assert.match(result.wxml, /class="\{\{b0\}\}" style="\{\{b1\}\}"/)
+  assert.match(result.js, /import \{ defineGlazeComponent, className, styleName \}/)
+  assert.match(result.js, /className\(\{/)
+  assert.match(result.js, /styleName\(\{/)
+})
+
+test('inlines class arrays and style objects inside For', () => {
+  const result = compileComponent(`
+    export default function Page() {
+      return (
+        <For each={[1]} key="*this">
+          {(item) => (
+            <view
+              class={['btn', item > 0 && 'on', item ? 'yes' : 'no']}
+              style={{ color: item ? 'red' : 'blue' }}
+            >
+              x
+            </view>
+          )}
+        </For>
+      )
+    }
+  `)
+  assert.match(result.wxml, /class="btn \{\{item > 0 \? 'on' : ''\}\} \{\{item \? 'yes' : 'no'\}\}"/)
+  assert.match(result.wxml, /style="color:\{\{item \? 'red' : 'blue'\}\}"/)
+})
+
 test('rejects destructured props', () => {
   assert.throws(
     () =>

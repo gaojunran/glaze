@@ -154,3 +154,27 @@
 .prepend::after {
   border: none;
 }
+
+.status-toggle {
+  height: 64rpx;
+  line-height: 64rpx;
+  padding: 0 24rpx;
+  margin-top: 16rpx;
+  font-size: 28rpx;
+  border: none;
+  border-radius: 32rpx;
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-toggle::after {
+  border: none;
+}
+
+.switch-idle,
+.switch-busy,
+.switch-other {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 26rpx;
+}

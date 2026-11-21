@@ -8,7 +8,7 @@ export default function TodoItem(props: TodoItemProps) {
   return (
     <view class="item">
       <text
-        class={props.done ? 'item-title done' : 'item-title'}
+        class={{ 'item-title': true, done: props.done }}
         onClick={() => props.onToggle?.()}
       >
         {props.title}

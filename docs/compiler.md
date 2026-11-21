@@ -50,14 +50,24 @@ First-wave support:
 | `onClick` / `onTap` / `onInput` / ... | `bindtap` / `bindinput` + `eN` |
 | `<Show when={...}>` | `wx:if` |
 | `<Show fallback={...}>` | `wx:if` + `wx:else` |
+| `<Switch>` + `<Match when={...}>` | `wx:if` / `wx:elif` / `wx:else` |
+| `<Switch fallback={...}>` | final `wx:else` |
 | `<For each={...} key="id">` | `wx:for` + `wx:key` |
 | item/index expressions inside `For` | inline `{{item.x}}` |
+| `class` object / array | `className(...)` binding, or inline WXML segments inside `For` |
+| `style` object | `styleName(...)` binding, or inline WXML segments inside `For` |
 | imported component `<TodoItem title={...} />` | `<todo-item title="{{...}}" />` + `usingComponents` |
 | stateless component outside `For` | inlined into the parent's WXML and setup |
 | `props.name` in the child | a mini-program property + a child signal |
 
 Anything outside this subset is a compile error. Silent fallback would hide the
 cases where the mini-program path diverges from Solid.
+
+`class` arrays/objects outside a `For` go through `className(...)` from
+`@glaze/runtime/mini`; `style` objects go through `styleName(...)`. Inside a
+`For`, the compiler emits equivalent WXML segments (`{{item ? 'active' : ''}}`)
+so the view layer can evaluate them without a per-row binding. Dynamic class or
+style keys are rejected.
 
 ### Props and components
 
@@ -389,10 +399,11 @@ target/debug/minidev test \
   --browser ~/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell
 ```
 
-Result: `counter.test.js` passes. It covers title/count updates, `Show`, keyed
-`For`, `TodoItem` props, inline default slot, boundary default slot, named slot,
-custom component event, context value, ref measurement, nested `For` event,
-append patch, and row removal.
+Result: `counter.test.js` passes. It covers title/count updates, `Show`,
+`Switch`/`Match`, keyed `For`, class objects, `TodoItem` props, inline default
+slot, boundary default slot, named slot, custom component event, context value,
+ref measurement, nested `For` event, append/insert/delete updates, and row
+removal.
 
 ## Benchmark
 
