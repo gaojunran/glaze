@@ -262,16 +262,33 @@ fields:
 setData({ "b2[0].done": false })
 ```
 
-Appending rows while keeping the existing items by reference sends only the new
-indices:
+When the key structure changes, the runtime does not send the whole array. It
+uses glass-easel's component primitive:
 
 ```js
-setData({ "b2[3]": nextItem })
+this.groupUpdates(() => {
+  this.spliceArrayDataOnPath(["b2"], index, deleteCount, inserts)
+})
 ```
 
-Other structural changes (insert in the middle, remove, reorder, changed key,
-added/removed field) fall back to `setData({ b2: nextArray })`. Reorder is
-therefore native `wx:for` work, not a per-item patch.
+`spliceArrayDataOnPath` is a `glass-easel` `Component` method (not the standard
+mini-program `setData` API). It records a splice `DataChange`; `groupUpdates`
+applies it once. The compiler's binding array is therefore still the source of
+truth, but the data bridge receives an insert/delete operation instead of a new
+array.
+
+The runtime picks the smallest prefix/suffix change:
+
+- append: insert at the end;
+- insert in the middle: one insert splice;
+- remove a contiguous range: one delete splice;
+- reorder or replace a middle range: one splice that deletes the old middle and
+  inserts the new middle.
+
+Same-length updates with unchanged key order still use field paths, e.g.
+`setData({ "b2[0].done": false })`. If `spliceArrayDataOnPath` is unavailable
+(e.g. a non-glass-easel runtime), the runtime falls back to
+`setData({ b2: nextArray })`.
 
 Events inside a loop get an index marker:
 
@@ -414,9 +431,10 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
    mount rather than re-evaluated as a reactive expression.
 4. **Refs** expose a measurement object, not a DOM node. `focus`,
    `scrollIntoView`, and child traversal are not available.
-5. **List patches** are fine-grained only when key order and length are
-   unchanged, or when rows are appended. Insert/remove/reorder send the whole
-   array.
+5. **List structure** uses `spliceArrayDataOnPath` for insert, delete, and
+   middle replacement. A pure move is expressed as delete+insert over the
+   changed middle; there is no LIS move scheduler yet, so a full reverse still
+   sends one large middle chunk.
 6. **Component event payloads** pass `event.detail` as one argument; multiple
    arguments arrive as an array.
 7. **Unsupported JSX** (`.map`, dynamic components, render props, `Portal`,

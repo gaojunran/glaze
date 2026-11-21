@@ -74,6 +74,18 @@ export default function Counter() {
           append
         </button>
 
+        <button
+          class="prepend"
+          onClick={() =>
+            setTodos((items) => [
+              { id: Date.now(), title: 'Prepended', done: false },
+              ...items,
+            ])
+          }
+        >
+          prepend
+        </button>
+
         <view class="list">
           <For each={todos()} key="id">
             {(todo) => (

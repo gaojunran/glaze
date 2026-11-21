@@ -54,4 +54,10 @@ test('counter renders and updates through the compiled bindings', async (miniPro
   xml = await app.outerWxml()
   await expect(xml.includes('Compile Solid to WXML')).toBe(false)
   await expect(xml).toContain('Run in minidev')
+
+  const prepend = await app.$('.prepend')
+  await prepend.tap()
+  await page.waitFor(500)
+  xml = await app.outerWxml()
+  await expect(xml).toContain('Prepended')
 })

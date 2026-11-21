@@ -138,3 +138,19 @@
 .cell::after {
   border: none;
 }
+
+.prepend {
+  height: 64rpx;
+  line-height: 64rpx;
+  padding: 0 24rpx;
+  margin-top: 16rpx;
+  font-size: 28rpx;
+  border: none;
+  border-radius: 32rpx;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.prepend::after {
+  border: none;
+}

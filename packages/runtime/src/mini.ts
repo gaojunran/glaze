@@ -61,21 +61,55 @@ type InstanceState = {
   dispose: (() => void) | null
 }
 
-function listPatch(previous: unknown, next: unknown, key: string, binding: string) {
+type ListOp = { index: number; del: number; inserts: unknown[] }
+
+const keyOf = (item: unknown, key: string) =>
+  (item as Record<string, unknown> | null | undefined)?.[key]
+
+function listOps(previous: unknown, next: unknown, key: string): ListOp[] | null {
   if (!Array.isArray(previous) || !Array.isArray(next)) return null
   if (key === '*this') return null
 
-  if (
-    next.length > previous.length &&
-    previous.every((item, index) => Object.is(item, next[index]))
+  let prefix = 0
+  while (
+    prefix < previous.length &&
+    prefix < next.length &&
+    Object.is(keyOf(previous[prefix], key), keyOf(next[prefix], key))
   ) {
-    const patch: Record<string, unknown> = {}
-    for (let index = previous.length; index < next.length; index += 1) {
-      patch[`${binding}[${index}]`] = next[index]
-    }
-    return patch
+    prefix += 1
   }
 
+  let suffix = 0
+  while (
+    suffix < previous.length - prefix &&
+    suffix < next.length - prefix &&
+    Object.is(
+      keyOf(previous[previous.length - 1 - suffix], key),
+      keyOf(next[next.length - 1 - suffix], key),
+    )
+  ) {
+    suffix += 1
+  }
+
+  if (prefix === previous.length && prefix === next.length) return null
+  if (prefix === previous.length) {
+    return [{ index: prefix, del: 0, inserts: next.slice(prefix) }]
+  }
+  if (prefix === next.length) {
+    return [{ index: prefix, del: previous.length - prefix, inserts: [] }]
+  }
+  return [
+    {
+      index: prefix,
+      del: previous.length - prefix - suffix,
+      inserts: next.slice(prefix, next.length - suffix),
+    },
+  ]
+}
+
+function listPatch(previous: unknown, next: unknown, key: string, binding: string) {
+  if (!Array.isArray(previous) || !Array.isArray(next)) return null
+  if (key === '*this') return null
   if (previous.length !== next.length) return null
 
   const previousIndex = new Map(previous.map((item, index) => [item?.[key], index]))
@@ -223,11 +257,25 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
 
         const applyBinding = (index: number, value: unknown) => {
           const key = config.listBindings?.[index]
-          const patch = key ? listPatch(state.previous[index], value, key, `b${index}`) : null
+          const binding = `b${index}`
+          const patch = key ? listPatch(state.previous[index], value, key, binding) : null
           if (patch) {
             if (Object.keys(patch).length > 0) schedule(patch)
           } else {
-            schedule({ [`b${index}`]: value })
+            const ops = key ? listOps(state.previous[index], value, key) : null
+            if (
+              ops &&
+              typeof this.spliceArrayDataOnPath === 'function' &&
+              typeof this.groupUpdates === 'function'
+            ) {
+              this.groupUpdates(() => {
+                for (const op of ops) {
+                  this.spliceArrayDataOnPath([binding], op.index, op.del, op.inserts)
+                }
+              })
+            } else {
+              schedule({ [binding]: value })
+            }
           }
           state.previous[index] = value
         }
