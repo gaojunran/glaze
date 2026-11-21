@@ -169,6 +169,7 @@ export function compileComponent(source, options = {}) {
     ],
     currentBlock: 0,
     currentFile: options.sourceFile ?? null,
+    inlineStack: options.sourceFile ? [options.sourceFile] : [],
     inline: options.inline ?? false,
     resolveComponent: options.resolveComponent ?? null,
     addBinding(expression, listKey = null) {
@@ -210,6 +211,11 @@ export function compileComponent(source, options = {}) {
       .map((name) => [name, eventNameFor(name)]),
   )
   const plainProps = props.filter((name) => !eventProps[name])
+  const propertyNames = plainProps.map((name) => name.toLowerCase())
+  if (new Set(propertyNames).size !== propertyNames.length) {
+    throw new Error('Component props collide after lowercasing to mini-program property names')
+  }
+  const propMap = Object.fromEntries(plainProps.map((name, index) => [name, propertyNames[index]]))
 
   const bodyWxml = compileNode(jsx, ctx, null)
   const wxml = ctx.usesWxs
@@ -218,6 +224,8 @@ export function compileComponent(source, options = {}) {
   const js = emitModule(ast, statements.slice(0, returnIndex), ctx, {
     propsParam: propsParam?.name ?? null,
     props: plainProps,
+    propertyNames,
+    propMap,
     eventProps,
     usesSlot: ctx.usesSlot,
     namedSlots: [...ctx.namedSlots],
@@ -227,6 +235,8 @@ export function compileComponent(source, options = {}) {
     wxml,
     js,
     props: plainProps,
+    propertyNames,
+    propMap,
     eventProps,
     usesSlot: ctx.usesSlot,
     namedSlots: [...ctx.namedSlots],
@@ -354,8 +364,13 @@ function emitModule(ast, setupStatements, ctx, options) {
       .filter(([, key]) => key),
   )
   const properties =
-    options.props.length > 0
-      ? `  properties: ${JSON.stringify(options.props)},\n`
+    options.propertyNames.length > 0
+      ? `  properties: ${JSON.stringify(options.propertyNames)},\n`
+      : ''
+  const propMap =
+    Object.keys(options.propMap).length > 0 &&
+    options.propertyNames.some((name, index) => name !== options.props[index])
+      ? `  propMap: ${JSON.stringify(options.propMap)},\n`
       : ''
   const eventProps =
     Object.keys(options.eventProps ?? {}).length > 0
@@ -470,7 +485,7 @@ import { ${runtimeImports} } from "@glaze/runtime/mini";
 ${moduleStatements}
 
 export default defineGlazeComponent({
-${properties}${eventProps}  data: ${data},
+${properties}${propMap}${eventProps}  data: ${data},
   listBindings: ${JSON.stringify(listBindings)},
   handlerCount: ${ctx.events.length},
   refCount: ${ctx.refs.length},
@@ -579,7 +594,7 @@ function compileElement(node, ctx, scope, extraAttrs = []) {
     }
 
     if (scope) {
-      attrs.push(`${propName}="{{${inlineExpression(expression, scope)}}}"`)
+      attrs.push(`${propName}="{{${inlineExpression(expression, scope, ctx)}}}"`)
     } else {
       const index = ctx.addBinding(expression)
       attrs.push(`${propName}="{{b${index}}}"`)
@@ -625,21 +640,22 @@ function compileComponentElement(node, ctx, scope, extraAttrs = []) {
       attrs.push(`bind:${eventNameFor(attrName)}="e${index}"`)
       continue
     }
-    if (!/^[a-z][a-z0-9]*$/.test(attrName)) {
-      throw new Error(`Component prop "${attrName}" must be lowercase`)
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(attrName)) {
+      throw new Error(`Component prop "${attrName}" must be a valid identifier`)
     }
 
+    const propName = attrName.toLowerCase()
     const expression = getExpression(attr)
     if (expression == null) continue
     if (t.isStringLiteral(expression) || t.isNumericLiteral(expression)) {
-      attrs.push(`${attrName}="${escapeAttr(String(expression.value))}"`)
+      attrs.push(`${propName}="${escapeAttr(String(expression.value))}"`)
       continue
     }
     if (scope) {
-      attrs.push(`${attrName}="{{${inlineExpression(expression, scope)}}}"`)
+      attrs.push(`${propName}="{{${inlineExpression(expression, scope, ctx)}}}"`)
     } else {
       const index = ctx.addBinding(expression)
-      attrs.push(`${attrName}="{{b${index}}}"`)
+      attrs.push(`${propName}="{{b${index}}}"`)
     }
   }
 
@@ -670,7 +686,10 @@ function inlineComponent(node, ctx, scope, name, source) {
   const childSource = typeof resolved === 'string' ? resolved : resolved?.source
   if (!childSource) return null
   const childFile = typeof resolved === 'object' ? resolved.file ?? ctx.currentFile : ctx.currentFile
-
+  const identity = childFile ?? `${ctx.currentFile ?? ''}:${source}`
+  if (ctx.inlineStack.includes(identity)) return null
+  ctx.inlineStack.push(identity)
+  try {
   const child = parseComponent(childSource)
   if (usesSlotElement(child.jsx)) return null
   const body = child.ast.program.body
@@ -726,8 +745,7 @@ function inlineComponent(node, ctx, scope, name, source) {
     if (!attrName) return null
     if (attrName === 'key') continue
     if (attrName === 'ref') return null
-    if (!/^[a-z][a-z0-9]*$/i.test(attrName)) return null
-    if (!/^on[A-Z]/.test(attrName) && !/^[a-z][a-z0-9]*$/.test(attrName)) return null
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(attrName)) return null
 
     const expression = getExpression(attr)
     if (expression == null) continue
@@ -781,6 +799,9 @@ function inlineComponent(node, ctx, scope, name, source) {
 
   ctx.inlineComponents.push({ name, source, ...(childFile ? { file: childFile } : {}) })
   return wxml
+  } finally {
+    ctx.inlineStack.pop()
+  }
 }
 
 function compileChildren(children, ctx, scope) {
@@ -864,7 +885,7 @@ function compileExpressionChild(expression, ctx, scope) {
       return compileConditional(expression.test, consequent, alternate, ctx, scope)
     }
   }
-  if (scope) return `{{${inlineExpression(expression, scope)}}}`
+  if (scope) return `{{${inlineExpression(expression, scope, ctx)}}}`
   const index = ctx.addBinding(expression)
   return `{{b${index}}}`
 }
@@ -877,30 +898,28 @@ function compileConditional(test, consequent, alternate, ctx, scope) {
   return `${thenNode}${elseNode}`
 }
 
-function compileShowCallback(node, ctx, scope, when, keyed, fn, fallback) {
+function compileCallbackBranch(fn, label, when, keyed, ctx, scope, directive) {
   const firstParam = fn.params[0]
   const destructured = t.isObjectPattern(firstParam) || t.isArrayPattern(firstParam)
   if (destructured && !keyed) {
-    throw new Error('Destructuring a <Show> value requires keyed')
+    throw new Error(`Destructuring a ${label} value requires keyed`)
   }
   const param = destructured
     ? '__glazeValue'
     : t.isIdentifier(firstParam)
       ? firstParam.name
       : 'value'
-  const aliases = destructured ? patternAliases(firstParam, [param]) : null
-  const body = t.isBlockStatement(fn.body)
-    ? (() => {
-        const ret = fn.body.body.find((item) => t.isReturnStatement(item))
-        if (!ret) throw new Error('<Show> callback must return JSX')
-        return ret.argument
-      })()
-    : fn.body
+  const callback = callbackBody(fn, label, [param])
+  const aliases = mergeAliases(
+    destructured ? patternAliases(firstParam, [param]) : null,
+    callback.aliases,
+  )
+  const body = callback.jsx
   if (!t.isJSXElement(body) && !t.isJSXFragment(body)) {
-    throw new Error('<Show> callback must return JSX')
+    throw new Error(`${label} callback must return JSX`)
   }
 
-  const whenCode = scope ? inlineExpression(when, scope) : codeOf(when)
+  const whenCode = scope ? inlineExpression(when, scope, ctx) : codeOf(when)
   const indexName = scope ? `__glazeIndex${scope.level + 1}` : '__glazeIndex'
   const itemName = destructured
     ? scope
@@ -915,7 +934,7 @@ function compileShowCallback(node, ctx, scope, when, keyed, fn, fallback) {
     level: scope ? scope.level + 1 : 0,
     itemAccessor: !keyed,
     indexAccessor: false,
-    aliases: destructured ? patternAliases(firstParam, [itemName]) : null,
+    aliases,
     isIndexRepeat: false,
   }
   const content = compileNode(body, ctx, itemScope)
@@ -931,7 +950,11 @@ function compileShowCallback(node, ctx, scope, when, keyed, fn, fallback) {
     valuesExpr = `b${values}`
   }
   const loop = `<block wx:for="{{${valuesExpr}}}" wx:for-item="${itemName}" wx:for-index="${indexName}" wx:key="*this">${content}</block>`
-  const thenNode = `<block wx:if="{{${condition}}}">${loop}</block>`
+  return `<block ${directive}="{{${condition}}}">${loop}</block>`
+}
+
+function compileShowCallback(node, ctx, scope, when, keyed, fn, fallback) {
+  const thenNode = compileCallbackBranch(fn, '<Show>', when, keyed, ctx, scope, 'wx:if')
   if (!fallback) return thenNode
   const elseNode = compileNode(fallback, ctx, scope, ['wx:else'])
   return `${thenNode}${elseNode}`
@@ -987,11 +1010,36 @@ function compileSwitch(node, ctx, scope) {
   matches.forEach((match, index) => {
     const when = getExpression(getAttribute(match, 'when'))
     if (!when) throw new Error('<Match> requires a when expression')
-    const condition = conditionExpression(when, ctx, scope)
-    const directive = index === 0 ? `wx:if="{{${condition}}}"` : `wx:elif="{{${condition}}}"`
+    const keyedAttr = getAttribute(match, 'keyed')
+    let keyed = false
+    if (keyedAttr) {
+      const keyedExpression = getExpression(keyedAttr)
+      if (!t.isBooleanLiteral(keyedExpression)) {
+        throw new Error('<Match> keyed must be a boolean')
+      }
+      keyed = keyedExpression.value
+    }
     const body = match.children.filter((child) => !isWhitespaceText(child))
     if (body.length === 0) throw new Error('<Match> requires a child')
 
+    const callback =
+      body.length === 1 &&
+      t.isJSXExpressionContainer(body[0]) &&
+      (t.isArrowFunctionExpression(body[0].expression) ||
+        t.isFunctionExpression(body[0].expression))
+        ? body[0].expression
+        : null
+    if (keyed && !callback) {
+      throw new Error('<Match> keyed requires a function child')
+    }
+    if (callback) {
+      const directive = index === 0 ? 'wx:if' : 'wx:elif'
+      output += compileCallbackBranch(callback, '<Match>', when, keyed, ctx, scope, directive)
+      return
+    }
+
+    const condition = conditionExpression(when, ctx, scope)
+    const directive = index === 0 ? `wx:if="{{${condition}}}"` : `wx:elif="{{${condition}}}"`
     if (body.length === 1) {
       output += compileNode(body[0], ctx, scope, [directive])
     } else {
@@ -1052,9 +1100,9 @@ function assignAlias(node, path, aliases) {
   throw new Error('Unsupported destructuring pattern')
 }
 
-function aliasPath(name, scope) {
+function aliasValue(name, scope) {
   for (let cursor = scope; cursor; cursor = cursor.parent) {
-    if (cursor.aliases?.[name]) return cursor.aliases[name]
+    if (cursor.aliases?.[name] !== undefined) return cursor.aliases[name]
   }
   return null
 }
@@ -1069,6 +1117,49 @@ function buildMember(path) {
       ),
     t.identifier(path[0]),
   )
+}
+
+function callbackBody(fn, label, reserved = []) {
+  const aliases = {}
+  if (!t.isBlockStatement(fn.body)) return { jsx: fn.body, aliases }
+
+  let returned = false
+  let jsx = null
+  for (const statement of fn.body.body) {
+    if (t.isVariableDeclaration(statement)) {
+      if (statement.kind !== 'const') {
+        throw new Error(`${label} callback local variables must use const`)
+      }
+      if (returned) {
+        throw new Error(`${label} callback statements after return are not supported`)
+      }
+      for (const declarator of statement.declarations) {
+        if (!t.isIdentifier(declarator.id) || !declarator.init) {
+          throw new Error(`${label} callback local declarations must be simple identifiers with a value`)
+        }
+        if (reserved.includes(declarator.id.name)) {
+          throw new Error(`${label} callback local name "${declarator.id.name}" conflicts with the loop variable`)
+        }
+        aliases[declarator.id.name] = declarator.init
+      }
+      continue
+    }
+    if (t.isReturnStatement(statement)) {
+      if (returned) throw new Error(`${label} callback must return exactly one JSX value`)
+      returned = true
+      jsx = statement.argument
+      continue
+    }
+    throw new Error(`${label} callback statements are not supported yet`)
+  }
+
+  if (!jsx) throw new Error(`${label} callback must return JSX`)
+  return { jsx, aliases }
+}
+
+function mergeAliases(patternAliasesValue, locals) {
+  const aliases = { ...(patternAliasesValue ?? {}), ...(locals ?? {}) }
+  return Object.keys(aliases).length > 0 ? aliases : null
 }
 
 function inferKeyedField(fn) {
@@ -1124,7 +1215,7 @@ function compileFor(node, ctx, scope) {
     key = keyedField
   }
 
-  const eachCode = scope ? inlineExpression(each, scope) : codeOf(each)
+  const eachCode = scope ? inlineExpression(each, scope, ctx) : codeOf(each)
   const eachExpr = scope ? eachCode : `b${ctx.addBinding(each, key)}`
 
   const child = node.children.find((item) => !isWhitespaceText(item))
@@ -1149,14 +1240,12 @@ function compileFor(node, ctx, scope) {
       ? firstParam.name
       : 'item'
   const indexName = t.isIdentifier(fn.params[1]) ? fn.params[1].name : 'index'
-  const aliases = destructured ? patternAliases(firstParam, [itemName]) : null
-  const body = t.isBlockStatement(fn.body)
-    ? (() => {
-        const ret = fn.body.body.find((item) => t.isReturnStatement(item))
-        if (!ret) throw new Error('<For> callback must return JSX')
-        return ret.argument
-      })()
-    : fn.body
+  const callback = callbackBody(fn, '<For>', [itemName, indexName])
+  const aliases = mergeAliases(
+    destructured ? patternAliases(firstParam, [itemName]) : null,
+    callback.aliases,
+  )
+  const body = callback.jsx
 
   if (!t.isJSXElement(body) && !t.isJSXFragment(body)) {
     throw new Error('<For> callback must return JSX')
@@ -1208,8 +1297,8 @@ function compileRepeatInScope(node, ctx, scope) {
   const count = getExpression(getAttribute(node, 'count'))
   if (!count) throw new Error('<Repeat> requires a count expression')
   const from = getExpression(getAttribute(node, 'from'))
-  const countCode = inlineExpression(count, scope)
-  const fromCode = from ? inlineExpression(from, scope) : '0'
+  const countCode = inlineExpression(count, scope, ctx)
+  const fromCode = from ? inlineExpression(from, scope, ctx) : '0'
   const child = node.children.find((item) => !isWhitespaceText(item))
   if (!child || !t.isJSXExpressionContainer(child)) {
     throw new Error('<Repeat> requires a single arrow-function child')
@@ -1322,7 +1411,7 @@ function compileRepeat(node, ctx, scope) {
 }
 
 function conditionExpression(expression, ctx, scope) {
-  if (scope) return inlineExpression(expression, scope)
+  if (scope) return inlineExpression(expression, scope, ctx)
   return `b${ctx.addBinding(expression)}`
 }
 
@@ -1332,7 +1421,7 @@ function classAttr(expression, ctx, scope) {
     const index = ctx.addBindingCode(`className(${codeOf(expression)})`)
     return `class="{{b${index}}}"`
   }
-  return `class="${classInline(expression, scope)}"`
+  return `class="${classInline(expression, scope, ctx)}"`
 }
 
 function styleAttr(expression, ctx, scope) {
@@ -1344,16 +1433,16 @@ function styleAttr(expression, ctx, scope) {
     const index = ctx.addBindingCode(`styleName(${codeOf(expression)})`)
     return `style="{{b${index}}}"`
   }
-  return `style="${styleInline(expression, scope)}"`
+  return `style="${styleInline(expression, scope, ctx)}"`
 }
 
-function classInline(expression, scope) {
+function classInline(expression, scope, ctx) {
   if (t.isStringLiteral(expression) || t.isNumericLiteral(expression)) {
     return escapeAttr(String(expression.value))
   }
   if (t.isArrayExpression(expression)) {
     return expression.elements
-      .map((item) => classInlineItem(item, scope))
+      .map((item) => classInlineItem(item, scope, ctx))
       .filter(Boolean)
       .join(' ')
   }
@@ -1370,39 +1459,39 @@ function classInline(expression, scope) {
         const value = property.value
         if (t.isBooleanLiteral(value)) return value.value ? key : ''
         if (t.isNullLiteral(value)) return ''
-        return `{{${inlineExpression(value, scope)} ? '${escapeAttr(key)}' : ''}}`
+        return `{{${inlineExpression(value, scope, ctx)} ? '${escapeAttr(key)}' : ''}}`
       })
       .filter(Boolean)
       .join(' ')
   }
-  return `{{${inlineExpression(expression, scope)} || ''}}`
+  return `{{${inlineExpression(expression, scope, ctx)} || ''}}`
 }
 
-function classInlineItem(expression, scope) {
+function classInlineItem(expression, scope, ctx) {
   if (!expression) return ''
   if (t.isStringLiteral(expression) || t.isNumericLiteral(expression)) {
     return escapeAttr(String(expression.value))
   }
-  if (t.isArrayExpression(expression)) return classInline(expression, scope)
-  if (t.isObjectExpression(expression)) return classInline(expression, scope)
+  if (t.isArrayExpression(expression)) return classInline(expression, scope, ctx)
+  if (t.isObjectExpression(expression)) return classInline(expression, scope, ctx)
   if (t.isLogicalExpression(expression) && expression.operator === '&&') {
     if (t.isStringLiteral(expression.right)) {
-      return `{{${inlineExpression(expression.left, scope)} ? '${escapeAttr(expression.right.value)}' : ''}}`
+      return `{{${inlineExpression(expression.left, scope, ctx)} ? '${escapeAttr(expression.right.value)}' : ''}}`
     }
   }
   if (t.isConditionalExpression(expression)) {
     const consequent = t.isStringLiteral(expression.consequent)
       ? `'${escapeAttr(expression.consequent.value)}'`
-      : `(${inlineExpression(expression.consequent, scope)})`
+      : `(${inlineExpression(expression.consequent, scope, ctx)})`
     const alternate = t.isStringLiteral(expression.alternate)
       ? `'${escapeAttr(expression.alternate.value)}'`
-      : `(${inlineExpression(expression.alternate, scope)})`
-    return `{{${inlineExpression(expression.test, scope)} ? ${consequent} : ${alternate}}}`
+      : `(${inlineExpression(expression.alternate, scope, ctx)})`
+    return `{{${inlineExpression(expression.test, scope, ctx)} ? ${consequent} : ${alternate}}}`
   }
-  return `{{${inlineExpression(expression, scope)} || ''}}`
+  return `{{${inlineExpression(expression, scope, ctx)} || ''}}`
 }
 
-function styleInline(expression, scope) {
+function styleInline(expression, scope, ctx) {
   return expression.properties
     .map((property) => {
       if (!t.isObjectProperty(property)) {
@@ -1422,7 +1511,7 @@ function styleInline(expression, scope) {
       if (t.isBooleanLiteral(value) || t.isNullLiteral(value)) {
         return value.value ? `${name}:true` : ''
       }
-      return `${name}:{{${inlineExpression(value, scope)}}}`
+      return `${name}:{{${inlineExpression(value, scope, ctx)}}}`
     })
     .filter(Boolean)
     .join(';')
@@ -1455,10 +1544,99 @@ function staticStyle(node) {
     .join('; ')
 }
 
-function inlineExpression(expression, scope) {
+function inlineExpression(expression, scope, ctx) {
+  if (
+    t.isStringLiteral(expression) ||
+    t.isNumericLiteral(expression) ||
+    t.isBooleanLiteral(expression) ||
+    t.isNullLiteral(expression)
+  ) {
+    return codeOf(expression)
+  }
   const rewritten = rewriteAccessorCalls(expression, scope)
-  validateInline(rewritten, scope)
-  return codeOf(rewritten)
+  if (!dependsOnLoop(rewritten, scope)) {
+    return `b${ctx.addBinding(rewritten)}`
+  }
+  const hoisted = hoistLoopExpression(rewritten, scope, ctx)
+  validateInline(hoisted, scope)
+  return codeOf(hoisted)
+}
+
+function isLoopName(name, scope) {
+  for (let cursor = scope; cursor; cursor = cursor.parent) {
+    if (cursor.item === name || cursor.index === name) return true
+    if (cursor.aliases && Object.prototype.hasOwnProperty.call(cursor.aliases, name)) return true
+  }
+  return false
+}
+
+function dependsOnLoop(expression, scope) {
+  let found = false
+  const visit = (node, parent) => {
+    if (found || !node || typeof node !== 'object') return
+    if (t.isIdentifier(node) && !isStaticPropertyKey(node, parent)) {
+      if (isLoopName(node.name, scope)) found = true
+      return
+    }
+    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+      const value = node[key]
+      if (Array.isArray(value)) {
+        for (const child of value) visit(child, node)
+      } else {
+        visit(value, node)
+      }
+      if (found) return
+    }
+  }
+  visit(expression, null)
+  return found
+}
+
+function isHoistable(node) {
+  if (!node || typeof node !== 'object') return false
+  if (t.isStringLiteral(node) || t.isNumericLiteral(node) || t.isBooleanLiteral(node)) return false
+  if (t.isNullLiteral(node) || t.isBigIntLiteral(node) || t.isRegExpLiteral(node)) return false
+  return !(
+    t.isArrowFunctionExpression(node) ||
+    t.isFunctionExpression(node) ||
+    t.isClassExpression(node) ||
+    t.isJSXElement(node) ||
+    t.isJSXFragment(node) ||
+    t.isThisExpression(node) ||
+    t.isSuper(node)
+  )
+}
+
+function skipChildKey(node, key) {
+  if (t.isMemberExpression(node) && key === 'property' && !node.computed) return true
+  if (t.isObjectProperty(node) && key === 'key' && !node.computed) return true
+  return false
+}
+
+function hoistLoopExpression(expression, scope, ctx) {
+  const visit = (node, isRoot) => {
+    if (!node || typeof node !== 'object') return node
+    if (!isRoot && isHoistable(node) && !dependsOnLoop(node, scope)) {
+      return t.identifier(`b${ctx.addBinding(node)}`)
+    }
+    if ((t.isCallExpression(node) || t.isOptionalCallExpression(node)) && dependsOnLoop(node, scope)) {
+      throw new Error(
+        'Function calls inside <For> or <Show> must not depend on loop values; compute the value before the loop or move the call out of the template',
+      )
+    }
+    if (t.isIdentifier(node)) return node
+    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+      if (skipChildKey(node, key)) continue
+      const value = node[key]
+      if (Array.isArray(value)) {
+        node[key] = value.map((child) => visit(child, false))
+      } else if (value && typeof value === 'object') {
+        node[key] = visit(value, false)
+      }
+    }
+    return node
+  }
+  return visit(expression, true)
 }
 
 function accessorKind(name, scope) {
@@ -1486,8 +1664,9 @@ function rewriteAccessorCalls(expression, scope) {
       (parent ? t.isReferenced(node, parent) : true) &&
       !isStaticPropertyKey(node, parent)
     ) {
-      const path = aliasPath(node.name, scope)
-      if (path) return buildMember(path)
+      const alias = aliasValue(node.name, scope)
+      if (Array.isArray(alias)) return buildMember(alias)
+      if (alias && t.isExpression(alias)) return visit(t.cloneNode(alias, true), null)
     }
     if (
       t.isCallExpression(node) &&
@@ -1521,7 +1700,7 @@ function validateInline(expression, scope) {
   const visit = (node) => {
     if (node == null) return
     if (t.isIdentifier(node)) {
-      if (allowedIdentifiers.has(node.name)) return
+      if (allowedIdentifiers.has(node.name) || /^b\d+$/.test(node.name)) return
       throw new Error(
         `Cannot use "${node.name}" inside <For>; only item/index fields are supported in the first compiler wave`,
       )

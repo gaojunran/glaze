@@ -1,4 +1,5 @@
 import { createContext, createSignal, For, Match, Repeat, Show, Switch } from 'solid-js'
+import CamelLabel from './CamelLabel'
 import Card from './Card'
 import Header from './Header'
 import Nested from './Nested'
@@ -23,6 +24,9 @@ export default function Counter() {
 
   const Theme = createContext('light')
   const [status, setStatus] = createSignal('idle')
+  const [prefix] = createSignal('row-')
+  const [picked] = createSignal({ name: 'picked' })
+  const upper = (value: string) => value.toUpperCase()
   const [refWidth, setRefWidth] = createSignal(0)
 
   const [grid, setGrid] = createSignal([
@@ -39,6 +43,7 @@ export default function Counter() {
     <view class="page">
       <Header title="Glaze + Solid" />
       <Nested title="Nested inline" />
+      <CamelLabel userName={count() > 0 ? "positive" : "zero"} />
 
       <view class="counter">
         <button class="btn" onClick={() => setCount((value) => value - 1)}>-</button>
@@ -75,6 +80,18 @@ export default function Counter() {
       <For each={['a', 'b']} keyed={false}>
         {(item) => <text class="unkeyed">{item()}</text>}
       </For>
+
+      <For each={[{ id: 'a' }]} keyed={(item) => item.id}>
+        {(item) => (
+          <text class="outer-in-for">{upper(prefix())}{item().id}</text>
+        )}
+      </For>
+
+      <Switch>
+        <Match when={picked()} keyed>
+          {(value) => <text class="match-keyed">{value.name}</text>}
+        </Match>
+      </Switch>
 
       <For each={[{ id: 1 }]}>
         {({ id }) => <text class="destructured">{id}</text>}
@@ -129,29 +146,32 @@ export default function Counter() {
 
         <view class="list">
           <For each={todos()} keyed={(todo) => todo.id}>
-            {(todo) => (
-              <Panel>
-                <TodoItem
-                  title={todo().title}
-                  done={todo().done}
-                  onToggle={() => toggleTodo(todo().id)}
-                />
-                <Repeat count={2} from={1}>
-                  {(index) => <text class="nested-repeat">{index}</text>}
-                </Repeat>
-                <Show when={todo().title} keyed>
-                  {(value) => <text class="nested-show">{value}</text>}
-                </Show>
-                <button
-                  class="remove"
-                  onClick={() =>
-                    setTodos((items) => items.filter((item) => item.id !== todo().id))
-                  }
-                >
-                  x
-                </button>
-              </Panel>
-            )}
+            {(todo) => {
+              const title = todo().title
+              return (
+                <Panel>
+                  <TodoItem
+                    title={title}
+                    done={todo().done}
+                    onToggle={() => toggleTodo(todo().id)}
+                  />
+                  <Repeat count={2} from={1}>
+                    {(index) => <text class="nested-repeat">{index}</text>}
+                  </Repeat>
+                  <Show when={todo().title} keyed>
+                    {(value) => <text class="nested-show">{value}</text>}
+                  </Show>
+                  <button
+                    class="remove"
+                    onClick={() =>
+                      setTodos((items) => items.filter((item) => item.id !== todo().id))
+                    }
+                  >
+                    x
+                  </button>
+                </Panel>
+              )
+            }}
           </For>
         </view>
       </Card>

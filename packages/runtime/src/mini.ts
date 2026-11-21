@@ -64,6 +64,7 @@ export type GlazeContext = {
 export type GlazeComponentConfig = {
   data?: Record<string, unknown>
   properties?: string[]
+  propMap?: Record<string, string>
   eventProps?: Record<string, string>
   listBindings?: Record<string, string>
   handlerCount?: number
@@ -218,6 +219,9 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           state.props[name] = createSignal(this.properties?.[name] ?? null)
         }
         const eventProps = config.eventProps ?? {}
+        const propMap = config.propMap ?? {}
+        const sourceNames =
+          Object.keys(propMap).length > 0 ? Object.keys(propMap) : propertyNames
         const props = new Proxy(
           {},
           {
@@ -227,12 +231,12 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
                 return (...args: unknown[]) =>
                   this.triggerEvent(eventName, args.length <= 1 ? args[0] : args)
               }
-              return state.props[key]?.[0]()
+              return state.props[propMap[key] ?? key]?.[0]()
             },
-            has: (_, key: string) => key in eventProps || key in state.props,
-            ownKeys: () => [...propertyNames, ...Object.keys(eventProps)],
+            has: (_, key: string) => key in eventProps || key in propMap || key in state.props,
+            ownKeys: () => [...sourceNames, ...Object.keys(eventProps)],
             getOwnPropertyDescriptor: (_, key: string) =>
-              key in eventProps || key in state.props
+              key in eventProps || key in propMap || key in state.props
                 ? { enumerable: true, configurable: true }
                 : undefined,
           },

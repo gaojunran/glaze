@@ -96,14 +96,22 @@ counter e2e passes against the generated output.
   `For` fallback, `Repeat`, `For keyed` modes, `Show` function children, static
   object spread, and destructured callback parameters. Component `props`
   supports `omit`/`merge` enumeration.
-- Nested control flow: `Show` callbacks and `Repeat` inside `For` use the inline
-  `glazeRange` WXS module for per-row arrays.
-- Static inlining follows relative component imports recursively; helper-module
-  imports and module-level runtime state still block it.
+- Nested control flow: `Show` callbacks, keyed/non-keyed `Match` callbacks,
+  and `Repeat` inside `For` use the inline `glazeRange` WXS module for per-row
+  arrays.
+- Loop expression freedom: outer `props` / signal expressions are hoisted into
+  `bN` bindings; `const` locals before a callback's single `return` are inlined
+  at each use; calls depending on loop values are a compile error.
+- camelCase component props are lowered to WXML property names and resolved
+  through a runtime `propMap`.
+- Static inlining follows relative component imports recursively with a
+  recursion guard; helper-module imports and module-level runtime state still
+  block it.
 
 Acceptance met: unit tests cover every compile path; the counter e2e exercises
 inline default slot, boundary default slot, named slot, component event,
-context value, ref measurement, nested loop event, and list append.
+context value, ref measurement, nested loop event, outer expressions inside a
+loop, callback locals, keyed `Match`, camelCase props, and list append.
 
 Known limits are listed in [compiler.md](compiler.md#known-gaps).
 

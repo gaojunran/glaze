@@ -9,6 +9,9 @@ test('counter renders and updates through the compiled bindings', async (miniPro
 
   await expect(app).toMatchText('.title', 'Glaze + Solid')
   await expect(app).toMatchText('.count', '0')
+  const camelInitial = await app.outerWxml()
+  await expect(camelInitial).toContain('camel-label')
+  await expect(camelInitial).toContain('zero')
 
   const buttons = await app.$$('.btn')
   await buttons[1].tap()
@@ -22,8 +25,13 @@ test('counter renders and updates through the compiled bindings', async (miniPro
   await expect(app).toMatchText('.slot-body', 'Slot body')
   await expect(app).toMatchText('.show-keyed', 'idle')
   await expect(app).toMatchText('.unkeyed', 'a')
+  await expect(app).toMatchText('.outer-in-for', 'ROW-a')
+  await expect(app).toMatchText('.match-keyed', 'picked')
   await expect(app).toMatchText('.destructured', '1')
   await expect(app).toMatchText('.nested-title', 'Nested inline')
+  const camelXml = await app.outerWxml()
+  await expect(camelXml).toContain('camel-label')
+  await expect(camelXml).toContain('positive')
   await expect(app).toMatchText('.badge', 'badge from relative import')
   await expect(app).toMatchText('.nested-repeat', '1')
   await expect(app).toMatchText('.nested-show', 'Compile Solid to WXML')

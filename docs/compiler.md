@@ -53,12 +53,16 @@ First-wave support:
 | `<Show keyed>{(value) => ...}</Show>` | one-item `wx:for` under a `wx:if` |
 | `<Show>{(value) => ...}</Show>` | same, with the accessor call rewritten |
 | `<Switch>` + `<Match when={...}>` | `wx:if` / `wx:elif` / `wx:else` |
+| `<Match when={...} keyed>{(value) => ...}</Match>` | one-item `wx:for` under `wx:if` / `wx:elif` |
+| `<Match when={...}>{(value) => ...}</Match>` | same, with the accessor call rewritten |
 | `<Switch fallback={...}>` | final `wx:else` |
 | `<For each={...} keyed={(item) => item.id} fallback={...}>` | `wx:if` + `wx:for` + `wx:else` |
 | `<For keyed={false}>` | `wx:for` without `wx:key`; item is an accessor |
 | `<For keyed={(item) => item.id}>` | `wx:key="id"`; item and index are accessors |
 | `<Repeat count={...} from={...} fallback={...}>` | generated index array + `wx:for` |
 | item/index expressions inside `For` | inline `{{item.x}}` |
+| outer `props` / signal expressions inside `For` | hoisted to a parent `bN` binding |
+| `const` locals in a `For` / `Show` / `Match` callback | inlined at each use |
 | destructured `For` / `Show` callback parameter | aliased to `__glazeItem.x` / `__glazeValue.x` |
 | `class` object / array | `className(...)` binding, or inline WXML segments inside `For` |
 | `{...{ class: 'x', id: 'y' }}` | flattened static attributes |
@@ -99,8 +103,12 @@ list. The parent is compiled to a tag and the build script writes
 At runtime the child declares those names as mini-program `properties`, creates
 one Solid signal per prop, and exposes a getter-only `props` object. Property
 observers update the signals; the normal binding effects then update the child's
-own WXML. Prop names must be lowercase. Event props (`onToggle`, `onChange`, ...)
-are compiled as mini-program custom events instead of properties; see below.
+own WXML. Prop names may be camelCase: the compiler lowercases the WXML property
+name (`userName` -> `username`, `user-name` in WXML source is normalized by the
+mini-program runtime), emits `propMap: { userName: "username" }`, and the runtime
+Proxy resolves `props.userName` through that map. Event props (`onToggle`,
+`onChange`, ...) are compiled as mini-program custom events instead of
+properties; see below.
 
 `glaze build` compiles every `.tsx` under `src/`, resolves relative component
 imports, and emits each reached component plus its `usingComponents` map. Local
@@ -113,6 +121,9 @@ inlined are not emitted.
 A component imported from a relative file is inlined when all of these hold:
 
 - it is not inside a `For` (no loop scope);
+- it does not resolve back into the component currently being inlined (a
+  recursion guard records the file on the inline stack; a self-reference falls
+  back to a component boundary);
 - its own imports are `solid-js` or relative component imports that are
   themselves inlinable; helper-module imports still block inlining;
 - it has no module-level runtime statements (type aliases are fine);
@@ -349,11 +360,36 @@ single field; nested keys are rejected.
 the value; without it the callback receives an accessor (`value()`), matching
 Solid. At the top level the implementation binds a one-item array and iterates
 it; inside `For` it calls `glazeRange.single(value)` from an inline WXS module.
-This keeps a name for the value without a per-row JS binding.
+This keeps a name for the value without a per-row JS binding. `<Match>` function
+children use the same path: `keyed` receives the value, otherwise an accessor,
+and the branch becomes `wx:if` / `wx:elif` over a one-item `wx:for`.
 
 `Repeat` inside `For` uses the same inline WXS module:
 `glazeRange.range(count, from)` returns the index array for the row. The WXS
 module is emitted once per component that needs it.
+
+### Expressions inside loops
+
+A `For` / `Show` callback runs in WXML, where only the loop variables exist.
+The compiler therefore splits expressions into two groups:
+
+- expressions that do not reference a loop variable (`props.prefix`,
+  `format(props.suffix)`, a signal read, a signal call) are hoisted into a
+  normal `bN` binding; the WXML expression reads `{{bN}}`;
+- expressions that do reference the item/index stay inline as `{{item.x}}` or
+  `{{index.x}}`.
+
+Small sub-expressions inside a mixed expression are hoisted independently, so
+`{props.prefix}{item().title}` becomes `{{b1}}{{item.title}}` rather than one
+per-row expression. Calls are only allowed outside the loop values: a call such
+as `format(item().title)` cannot be evaluated per row without a per-row binding
+and is a compile error. Compute it before the loop or move it into a component
+boundary.
+
+A callback body may contain `const` declarations before its single `return`:
+the compiler inlines each local at every use (including event handlers). `let`,
+`var`, destructured locals, statements after `return`, and blocks without a
+single JSX return are rejected.
 
 Component `props` is a Proxy with `ownKeys`, `has`, and
 `getOwnPropertyDescriptor` traps, so Solid 2's `omit` and `merge` can enumerate
@@ -440,11 +476,13 @@ target/debug/minidev test \
 ```
 
 Result: `counter.test.js` passes. It covers title/count updates, `Show`,
-`Switch`/`Match`, keyed `For`, unkeyed `For`, `Show` function children,
-`For` fallback, `Repeat`, class objects, `TodoItem` props via `omit`, inline
-default slot, boundary default slot, named slot, custom component event, context
-value, ref measurement, nested `For` event, append/insert/delete updates, and
-row removal.
+`Switch`/`Match` (including keyed function children), keyed/unkeyed `For`,
+outer expressions inside `For`, `const` locals in a `For` callback, `Show`
+function children, `For` fallback, `Repeat`, class objects, camelCase props,
+`TodoItem` props via `omit`, inline default slot, boundary default slot, named
+slot, custom component event, context value, ref measurement, nested `For`
+event, append/insert/delete updates, and row removal. The compiler tests also
+cover the recursive-inline guard and the rejected item-dependent call.
 
 ## Benchmark
 

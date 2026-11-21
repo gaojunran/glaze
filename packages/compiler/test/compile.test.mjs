@@ -589,6 +589,116 @@ test('compiles Show function children', () => {
   assert.match(accessor.wxml, /\{\{user\.name\}\}/)
 })
 
+test('hoists outer expressions inside For', () => {
+  const result = compileComponent(`
+    import { For } from 'solid-js'
+    export default function Page(props) {
+      return (
+        <For each={props.items} keyed={(item) => item.id}>
+          {(item) => <text>{props.prefix}{format(props.suffix)}</text>}
+        </For>
+      )
+    }
+  `)
+  assert.match(result.wxml, /<text>\{\{b1\}\}\{\{b2\}\}<\/text>/)
+  assert.match(result.js, /ctx\.bind\(1, \(\) => \(props\.prefix\)\)/)
+  assert.match(result.js, /ctx\.bind\(2, \(\) => \(format\(props\.suffix\)\)\)/)
+})
+
+test('rejects calls that depend on a loop item', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Page(props) {
+          return (
+            <For each={props.items} keyed={(item) => item.id}>
+              {(item) => <text>{format(item().title)}</text>}
+            </For>
+          )
+        }
+      `),
+    /must not depend on loop values/,
+  )
+})
+
+test('supports local const declarations in For callbacks', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return (
+        <For each={props.items} keyed={(item) => item.id}>
+          {(item) => {
+            const label = item().done ? 'done' : 'todo'
+            const id = item().id
+            return <button onClick={() => pick(id)}>{label}</button>
+          }}
+        </For>
+      )
+    }
+  `)
+  assert.match(result.wxml, /\{\{item\.done \? 'done' : 'todo'\}\}/)
+  assert.match(result.js, /pick\(item\.id\)/)
+})
+
+test('compiles keyed Match callbacks', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return (
+        <Switch fallback={<text>none</text>}>
+          <Match when={props.user} keyed>
+            {(user) => <text>{user.name}</text>}
+          </Match>
+          <Match when={props.other}>
+            {(value) => <text>{value().label}</text>}
+          </Match>
+        </Switch>
+      )
+    }
+  `)
+  assert.match(result.wxml, /<block wx:if="\{\{b0\}\}">/)
+  assert.match(result.wxml, /wx:for-item="user"/)
+  assert.match(result.wxml, /wx:elif="\{\{b2\}\}"/)
+  assert.match(result.wxml, /\{\{value\.label\}\}/)
+})
+
+test('maps camelCase component props to lowercase WXML properties', () => {
+  const result = compileComponent(
+    `
+      import Child from './Child'
+      export default function Page() {
+        return <Child userName="Ada" />
+      }
+    `,
+    { inline: false },
+  )
+  assert.match(result.wxml, /<child username="Ada" \/>/)
+  const child = compileComponent(`
+    export default function Child(props) {
+      return <text>{props.userName}</text>
+    }
+  `)
+  assert.deepEqual(child.propertyNames, ['username'])
+  assert.deepEqual(child.propMap, { userName: 'username' })
+  assert.match(child.js, /properties: \["username"\]/)
+  assert.match(child.js, /propMap: \{"userName":"username"\}/)
+})
+
+test('stops recursive inlining at the component boundary', () => {
+  const source = `
+    import Node from './Node'
+    export default function NodeView(props) {
+      return <view><text>{props.label}</text><Node label="inner" /></view>
+    }
+  `
+  const result = compileComponent(source, {
+    inline: true,
+    sourceFile: '/src/Node.tsx',
+    resolveComponent: (name) =>
+      name === 'Node' ? { source, file: '/src/Node.tsx' } : null,
+  })
+  assert.match(result.wxml, /<node label="inner" \/>/)
+  assert.deepEqual(result.components.map((item) => item.name), ['Node'])
+})
+
 test('compiles destructured For and Show parameters', () => {
   const result = compileComponent(`
     export default function Page(props) {
