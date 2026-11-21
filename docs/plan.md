@@ -24,41 +24,69 @@ a Svelte renderer can be added without changing the boundary model.
 ### 3.1 Boundary
 
 A page hosts one `<glaze-root>` component. That component is a glass-easel
-component whose `templateEngine` is replaced by Glaze:
+component with `externalComponent: true` and a custom `templateEngine`:
 
 ```
 Page WXML
   <glaze-root id="app" />
 
-glaze-root component (glass-easel)
+glaze-root component (glass-easel, externalComponent: true)
   templateEngine: GlazeTemplateEngine
     createInstance() -> TemplateInstance
-      initValues(data) -> mount Solid root into the shadow root
+      shadowRoot: ExternalShadowRoot
+      initValues(data) -> mount Solid root into the backend element
       updateValues(data, changes) -> update boundary props
 ```
 
 The page and the boundary component declare `componentFramework: "glass-easel"`.
 The rest of the Solid component tree never becomes mini-program components.
 
+`externalComponent` makes glass-easel hand the shadow tree to Glaze instead of
+running its own template engine. Glaze renders directly to the backend elements
+provided by the DOM-like backend, which avoids creating glass-easel logical
+nodes for every element.
+
+This is the intended path for third-party frameworks, but it has hard limits
+that must be designed around:
+
+- only the **Domlike** backend supports external rendering;
+- only a single slot, no named or dynamic slots;
+- the external subtree cannot reference other glass-easel components;
+- selector queries and tree traversal cannot see inside the external subtree;
+- events are handled by `ExternalShadowRoot.handleEvent` / `setListener`, not by
+  glass-easel's normal event system.
+
+For the first wave the boundary is a root container with no WXML children, so
+these limits are acceptable. WXML component interop, if needed later, must go
+through a bridge outside the external boundary.
+
 ### 3.2 Renderer
 
 `@glaze/solid` wraps `createRenderer` from `@solidjs/universal` and maps its
-operations to glass-easel:
+operations to DOM-like backend elements:
 
-| Universal renderer | glass-easel |
+| Universal renderer | glass-easel backend |
 | --- | --- |
 | `createElement(name)` | descriptor, materialized on insert |
-| `createTextNode(text)` | `shadowRoot.createTextNode` |
-| `insertNode(parent, node, anchor)` | `parent.insertChildren` / `insertBefore` |
-| `removeNode(parent, node)` | `removeChildren` |
-| `setProperty(node, name, value)` | `setAttribute` / listener / prop |
-| `getParentNode` / `getFirstChild` / `getNextSibling` | glass-easel node fields |
+| `createTextNode(text)` | `context.document.createTextNode` |
+| `insertNode(parent, node, anchor)` | `parent.insertBefore(node, anchor)` |
+| `removeNode(parent, node)` | `parent.removeChild(node)` |
+| `setProperty(node, name, value)` | `setAttribute` / listener / class / style |
+| `getParentNode` / `getFirstChild` / `getNextSibling` | `parentNode` / `childNodes[0]` / `nextSibling` |
 
 `createElement` has no parent context: a component can create a node inside an
 effect, long after the root was mounted. Glaze therefore returns a lightweight
-**descriptor** and materializes the real glass-easel node in `insertNode`, where
-the parent shadow root is known. This avoids a global "current root" stack and
-makes multiple roots safe.
+**descriptor** and materializes the real backend element in `insertNode`, where
+the parent is known. This avoids a global "current root" stack and makes
+multiple roots safe.
+
+The boundary's `ExternalShadowRoot` is implemented by Glaze:
+
+- `root` is the component's backend element;
+- `slot` is a backend element created by Glaze (the component's WXML children
+  would be placed there);
+- `setListener` stores framework event listeners per backend element;
+- `handleEvent` walks from the event target to the root and dispatches them.
 
 ### 3.3 Props
 

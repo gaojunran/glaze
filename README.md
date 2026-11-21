@@ -31,14 +31,16 @@ and full Solid semantics instead of a mini-program-safe subset.
 
 ```
 <glaze-root>                         a normal mini-program component
-  └── glass-easel component           owns a shadow root
+  └── glass-easel component           externalComponent: true
         └── templateEngine            replaced by Glaze
-              └── Solid root          mounted into the shadow root
-                    └── renderer      creates / inserts / updates glass-easel nodes
+              └── Solid root          mounted into the backend element
+                    └── renderer      creates / inserts / updates backend nodes
 ```
 
 The boundary is deliberately small: glass-easel owns the page, props, events,
-lifetimes and style scope; Solid owns everything inside the boundary.
+lifetimes and style scope; Solid owns everything inside the boundary. The
+boundary uses `externalComponent`, so Glaze renders directly to the DOM-like
+backend and skips glass-easel's logical node tree for the subtree.
 
 ## Packages
 
