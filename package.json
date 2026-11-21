@@ -1,0 +1,13 @@
+{
+  "name": "glaze",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Solid and Svelte, running natively on glass-easel.",
+  "license": "MIT",
+  "packageManager": "pnpm@11.28.7",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  }
+}

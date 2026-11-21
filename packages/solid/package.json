@@ -1,0 +1,18 @@
+{
+  "name": "@glaze/solid",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Solid 2 renderer for glass-easel",
+  "exports": {
+    ".": "./src/index.ts",
+    "./jsx-runtime": "./src/jsx-runtime.ts",
+    "./jsx-dev-runtime": "./src/jsx-runtime.ts"
+  },
+  "dependencies": {
+    "@solidjs/universal": "^2.0.3"
+  },
+  "peerDependencies": {
+    "solid-js": "^2.0.3"
+  }
+}
