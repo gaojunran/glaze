@@ -1,5 +1,11 @@
 # Architecture
 
+> **Status: superseded by an empirical finding.** The external-component
+> boundary described below is not reachable from user appservice code. See
+> [findings-external-component.md](findings-external-component.md). The rest of
+> this document is kept as the original design record until a replacement
+> architecture is chosen.
+
 Glaze renders a framework component tree directly into glass-easel backend
 nodes. There is no WXML in the hot path, no `setData` for internal state, and no
 DOM shim.
