@@ -129,12 +129,16 @@ tests/
 ### M0 — repository and spike (0.5 day)
 
 - pnpm workspace, TypeScript, lint, CI.
-- Confirm `@solidjs/universal` + glass-easel node creation works in a Node
-  test.
+- Confirm `@solidjs/universal` + glass-easel backend element creation works in a
+  Node test.
 - Confirm minidev can run a glass-easel project with a custom boundary.
+- Confirm the project opts in with both `componentFramework: "glass-easel"` and
+  `window.glassEaselWebview: true`; without the latter the WebView runtime falls
+  back to exparser.
 
 Acceptance: a Node test mounts a Solid component and produces a glass-easel
-node tree.
+node tree; the simulator renders a `<glaze-root>` with `glassEaselWebview`
+enabled.
 
 ### M1 — renderer core (3–4 days)
 
