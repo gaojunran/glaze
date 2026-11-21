@@ -17,6 +17,7 @@ Source layout:
 - `src/Counter.tsx` — page `pages/index/index`;
 - `src/Bench.tsx` — page `pages/bench/index`;
 - `src/TodoItem.tsx` — component boundary inside `For`;
+- `src/Card.tsx` — inlined wrapper with a default slot;
 - `src/Header.tsx` — always inlined;
 - `src/static/pages/native` — hand-written comparison page.
 

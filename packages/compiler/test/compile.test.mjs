@@ -188,6 +188,62 @@ test('keeps a component boundary inside For', () => {
   assert.deepEqual(result.inlineComponents, [])
 })
 
+test('inlines default children through props.children', () => {
+  const card = `
+    export default function Card(props) {
+      return <view class="card"><text class="card-title">{props.title}</text>{props.children}</view>
+    }
+  `
+  const result = compileComponent(
+    `
+      import Card from './Card'
+
+      export default function Page() {
+        const [count] = createSignal(0)
+        return (
+          <Card title="Todos">
+            <text class="count">{count()}</text>
+          </Card>
+        )
+      }
+    `,
+    {
+      inline: true,
+      resolveComponent: (name) => (name === 'Card' ? card : null),
+    },
+  )
+
+  assert.doesNotMatch(result.wxml, /<card/)
+  assert.match(result.wxml, /<view class="card">/)
+  assert.match(result.wxml, /<text class="count">\{\{b0\}\}<\/text>/)
+  assert.match(result.js, /get title\(\) \{ return \("Todos"\); \}/)
+  assert.match(result.js, /ctx.bind\(0, \(\) => \(count\(\)\)\)/)
+})
+
+test('rejects an inlined component that drops props.children', () => {
+  const card = `
+    export default function Card(props) {
+      return <view class="card">{props.title}</view>
+    }
+  `
+  assert.throws(
+    () =>
+      compileComponent(
+        `
+          import Card from './Card'
+          export default function Page() {
+            return <Card title="x"><text>child</text></Card>
+          }
+        `,
+        {
+          inline: true,
+          resolveComponent: (name) => (name === 'Card' ? card : null),
+        },
+      ),
+    /does not render props.children/,
+  )
+})
+
 test('rejects destructured props', () => {
   assert.throws(
     () =>

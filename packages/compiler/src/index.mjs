@@ -100,6 +100,10 @@ export function compileComponent(source, options = {}) {
         .flatMap((node) => node.specifiers.map((specifier) => specifier.local.name)),
     ),
     extraImports: [],
+    inlineChildren: null,
+    inlinePropsParam: null,
+    inlineChildrenUsed: false,
+    inlineChildrenCount: 0,
     blocks: [
       {
         setup: statements.slice(0, returnIndex),
@@ -418,12 +422,12 @@ function compileComponentElement(node, ctx, scope, extraAttrs = []) {
   if (!source.startsWith('.')) {
     throw new Error(`Component <${name}> must come from a relative file, got "${source}"`)
   }
-  if (node.children.some((child) => !isWhitespaceText(child))) {
-    throw new Error(`Component <${name}> does not support children or slots yet`)
-  }
-
   const inlined = inlineComponent(node, ctx, scope, name, source)
   if (inlined != null) return inlined
+
+  if (node.children.some((child) => !isWhitespaceText(child))) {
+    throw new Error(`Component <${name}> cannot be inlined with children; check its imports and module state`)
+  }
 
   ctx.addComponent(name, source)
 
@@ -522,6 +526,10 @@ function inlineComponent(node, ctx, scope, name, source) {
 
   if (propGetters.length > 0 && !child.propsParam) return null
 
+  const hasChildren = node.children.some((child) => !isWhitespaceText(child))
+  if (hasChildren && !child.propsParam) return null
+  const childrenWxml = hasChildren ? compileChildren(node.children, ctx, scope) : ''
+
   const blockId = ctx.blocks.length
   ctx.blocks.push({
     setup: child.statements.slice(0, child.returnIndex),
@@ -530,9 +538,33 @@ function inlineComponent(node, ctx, scope, name, source) {
   })
 
   const previousBlock = ctx.currentBlock
+  const previousChildren = ctx.inlineChildren
+  const previousPropsParam = ctx.inlinePropsParam
+  const previousUsed = ctx.inlineChildrenUsed
+  const previousCount = ctx.inlineChildrenCount
   ctx.currentBlock = blockId
+  ctx.inlineChildren = childrenWxml
+  ctx.inlinePropsParam = child.propsParam?.name ?? null
+  ctx.inlineChildrenUsed = false
+  ctx.inlineChildrenCount = 0
+
   const wxml = compileNode(child.jsx, ctx, null)
+  const childrenUsed = ctx.inlineChildrenUsed
+  const childrenCount = ctx.inlineChildrenCount
+
   ctx.currentBlock = previousBlock
+  ctx.inlineChildren = previousChildren
+  ctx.inlinePropsParam = previousPropsParam
+  ctx.inlineChildrenUsed = previousUsed
+  ctx.inlineChildrenCount = previousCount
+
+  if (hasChildren && !childrenUsed) {
+    throw new Error(`<${name}> does not render props.children`)
+  }
+  if (childrenCount > 1) {
+    throw new Error(`<${name}> renders props.children more than once`)
+  }
+
   ctx.inlineComponents.push({ name, source })
   return wxml
 }
@@ -546,7 +578,24 @@ function compileChildren(children, ctx, scope) {
     .join('')
 }
 
+function isPropsMember(expression, propName, member) {
+  return (
+    t.isMemberExpression(expression) &&
+    t.isIdentifier(expression.object, { name: propName }) &&
+    t.isIdentifier(expression.property, { name: member })
+  )
+}
+
 function compileExpressionChild(expression, ctx, scope) {
+  if (
+    ctx.inlineChildren != null &&
+    ctx.inlinePropsParam &&
+    isPropsMember(expression, ctx.inlinePropsParam, 'children')
+  ) {
+    ctx.inlineChildrenUsed = true
+    ctx.inlineChildrenCount += 1
+    return ctx.inlineChildren
+  }
   if (t.isJSXElement(expression) || t.isJSXFragment(expression)) {
     return compileNode(expression, ctx, scope)
   }

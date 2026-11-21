@@ -82,8 +82,8 @@ list. The parent is compiled to a tag and the build script writes
 At runtime the child declares those names as mini-program `properties`, creates
 one Solid signal per prop, and exposes a getter-only `props` object. Property
 observers update the signals; the normal binding effects then update the child's
-own WXML. Prop names must be lowercase; children/slots and component events are
-not supported yet.
+own WXML. Prop names must be lowercase. Named slots and component events are not
+supported yet.
 
 `glaze build` compiles every `.tsx` under `src/`, resolves relative component
 imports, and emits each reached component plus its `usingComponents` map. Local
@@ -98,7 +98,8 @@ A component imported from a relative file is inlined when all of these hold:
 - it is not inside a `For` (no loop scope);
 - its own imports come only from `solid-js`;
 - it has no module-level runtime statements (type aliases are fine);
-- it has no children and no event props.
+- it has no event props;
+- if it has children, it renders `props.children` exactly once (default slot).
 
 The child's setup runs in a block inside the parent's Solid root, and its props
 become getters over the parent's expressions:
@@ -111,6 +112,19 @@ become getters over the parent's expressions:
   ctx.bind(0, () => (props.title));
 }
 ```
+
+Children are compiled in the parent's scope before the child block:
+
+```tsx
+<Card title="Todos">
+  <button onClick={toggle}>toggle first</button>
+</Card>
+```
+
+becomes a `view.card` with the button's WXML inside, and the button's handler
+stays in the parent's handler table. A child that has children but does not
+render `props.children` is a compile error, so children cannot be dropped
+silently.
 
 Consequences:
 
@@ -276,12 +290,12 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
 
 ## Known gaps
 
-1. **Component children and slots** are rejected. A component must be
-   self-closing in this wave.
+1. **Only default slots on inlined components** are supported. Named slots and
+   slots on component boundaries are rejected.
 2. **Component events** are rejected. Only native DOM-like events are wired.
-3. **Inlined components** cannot have relative imports, module-level state,
-   children, or loop-scoped props. They also lose their own style isolation
-   because their WXML lands in the parent's scope.
+3. **Inlined components** cannot have relative imports, module-level state, or
+   loop-scoped props. They also lose their own style isolation because their
+   WXML lands in the parent's scope.
 4. **List patches** only apply when key order and length are unchanged; reorder
    and structural changes send the whole array.
 5. **Nested-loop event lookup** is not supported; only the innermost loop index

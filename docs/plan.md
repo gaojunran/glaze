@@ -80,9 +80,10 @@ array.
 Acceptance met: `pnpm build` writes a clean project; builder test passes; the
 counter e2e passes against the generated output.
 
-### M5 — component surface (next)
+### M5 — component surface (in progress)
 
-- Children / default slot.
+- Children / default slot: supported on inlined components; named slots and
+  boundary slots are next.
 - Component custom events.
 - Context Provider.
 - refs and node query.

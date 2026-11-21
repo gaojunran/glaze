@@ -17,6 +17,7 @@ test('counter renders and updates through the compiled bindings', async (miniPro
   for (let i = 0; i < 3; i += 1) await buttons[1].tap()
   await expect(app).toMatchText('.count', '4')
   await expect(app).toMatchText('.hint', 'count is greater than 3')
+  await expect(app).toMatchText('.card-title', 'Todos')
 
   let xml = await app.outerWxml()
   await expect(xml).toContain('done="true" title="Compile Solid to WXML"')

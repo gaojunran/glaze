@@ -1,4 +1,5 @@
 import { createSignal, For, Show } from 'solid-js'
+import Card from './Card'
 import Header from './Header'
 import TodoItem from './TodoItem'
 
@@ -30,34 +31,36 @@ export default function Counter() {
         <text class="hint">count is greater than 3</text>
       </Show>
 
-      <button
-        class="toggle"
-        onClick={() =>
-          setTodos((items) =>
-            items.map((todo, index) =>
-              index === 0 ? { ...todo, done: !todo.done } : todo,
-            ),
-          )
-        }
-      >
-        toggle first
-      </button>
+      <Card title="Todos">
+        <button
+          class="toggle"
+          onClick={() =>
+            setTodos((items) =>
+              items.map((todo, index) =>
+                index === 0 ? { ...todo, done: !todo.done } : todo,
+              ),
+            )
+          }
+        >
+          toggle first
+        </button>
 
-      <view class="list">
-        <For each={todos()} key="id">
-          {(todo) => (
-            <view class="item-wrap">
-              <TodoItem title={todo.title} done={todo.done} />
-              <button
-                class="remove"
-                onClick={() => setTodos((items) => items.filter((item) => item.id !== todo.id))}
-              >
-                x
-              </button>
-            </view>
-          )}
-        </For>
-      </view>
+        <view class="list">
+          <For each={todos()} key="id">
+            {(todo) => (
+              <view class="item-wrap">
+                <TodoItem title={todo.title} done={todo.done} />
+                <button
+                  class="remove"
+                  onClick={() => setTodos((items) => items.filter((item) => item.id !== todo.id))}
+                >
+                  x
+                </button>
+              </view>
+            )}
+          </For>
+        </view>
+      </Card>
 
       <text class="footer">tap + to update the count</text>
     </view>
