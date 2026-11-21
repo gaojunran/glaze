@@ -6,12 +6,19 @@ benchmark compiled to mini-program WXML by `@glaze/compiler`.
 ## Build
 
 ```bash
-cd ../..
-node packages/compiler/src/build-example.mjs
+pnpm build
 ```
 
-This generates `miniprogram/components/glaze-counter` and
-`miniprogram/components/glaze-bench`.
+This writes the whole `miniprogram` directory from `src`, using
+`glaze.config.mjs`. The output is generated and git-ignored.
+
+Source layout:
+
+- `src/Counter.tsx` — page `pages/index/index`;
+- `src/Bench.tsx` — page `pages/bench/index`;
+- `src/TodoItem.tsx` — component boundary inside `For`;
+- `src/Header.tsx` — always inlined;
+- `src/static/pages/native` — hand-written comparison page.
 
 ## Run
 

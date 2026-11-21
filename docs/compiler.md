@@ -85,10 +85,11 @@ observers update the signals; the normal binding effects then update the child's
 own WXML. Prop names must be lowercase; children/slots and component events are
 not supported yet.
 
-The build script compiles every `.tsx` under `src/`, resolves relative component
-imports, and emits each component plus its `usingComponents` map. Local
+`glaze build` compiles every `.tsx` under `src/`, resolves relative component
+imports, and emits each reached component plus its `usingComponents` map. Local
 component imports are removed from the generated parent module because the
-child is rendered by WXML, not by the parent's JS.
+child is rendered by WXML, not by the parent's JS. Components that are always
+inlined are not emitted.
 
 ### Static component inlining
 
@@ -208,11 +209,14 @@ This is documented as a user-facing rule for Glaze, not hidden by the runtime.
 
 ## Validation
 
-Build the example:
+Build the example project:
 
 ```bash
-node packages/compiler/src/build-example.mjs
+pnpm build
 ```
+
+The builder writes `examples/solid-todo/miniprogram`. See
+[build.md](build.md) for the project layout.
 
 Run the real mini-program in the simulator:
 
@@ -284,6 +288,6 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
    is wired.
 6. **Unsupported JSX** (`.map`, dynamic components, render props, `Portal`,
    `Transition`) is a compile error.
-7. **Build integration** is a standalone script; a Vite plugin and per-component
-   discovery are next.
+7. **Build integration** is a CLI (`glaze build`); there is no Vite plugin or
+   watch mode yet.
 8. **Svelte** has no compiler yet.

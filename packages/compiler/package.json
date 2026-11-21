@@ -10,13 +10,9 @@
   "dependencies": {
     "@babel/generator": "^7.28.0",
     "@babel/parser": "^7.28.0",
-    "@babel/types": "^7.28.0",
-    "@glaze/runtime": "workspace:*",
-    "esbuild": "^0.28.0",
-    "solid-js": "^2.0.3"
+    "@babel/types": "^7.28.0"
   },
   "scripts": {
-    "build": "node src/build-example.mjs",
     "test": "node --test test/*.test.mjs"
   }
 }

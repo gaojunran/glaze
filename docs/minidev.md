@@ -47,11 +47,13 @@ renderer, so set it explicitly.
 
 ```bash
 cd ~/Projects/glaze
-node packages/compiler/src/build-example.mjs
+pnpm build
 ```
 
-This compiles `examples/solid-todo/src/*.tsx` into mini-program components under
-`examples/solid-todo/miniprogram/components/`.
+This writes the entire mini-program project to
+`examples/solid-todo/miniprogram`, including page wrappers and components. The
+output directory is generated and git-ignored; source lives in
+`examples/solid-todo/src`.
 
 ## Build and serve
 

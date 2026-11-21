@@ -8,6 +8,27 @@ importers:
 
   .: {}
 
+  examples/solid-todo:
+    dependencies:
+      '@glaze/build':
+        specifier: workspace:*
+        version: link:../../packages/build
+
+  packages/build:
+    dependencies:
+      '@glaze/compiler':
+        specifier: workspace:*
+        version: link:../compiler
+      '@glaze/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.2
+      solid-js:
+        specifier: ^2.0.3
+        version: 2.0.3
+
   packages/compiler:
     dependencies:
       '@babel/generator':
@@ -19,15 +40,6 @@ importers:
       '@babel/types':
         specifier: ^7.28.0
         version: 7.29.14
-      '@glaze/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-      esbuild:
-        specifier: ^0.28.0
-        version: 0.28.2
-      solid-js:
-        specifier: ^2.0.3
-        version: 2.0.3
 
   packages/runtime:
     dependencies:

@@ -1,0 +1,22 @@
+{
+  "name": "@glaze/build",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Mini-program project builder for Glaze",
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "bin": {
+    "glaze": "./src/cli.mjs"
+  },
+  "dependencies": {
+    "@glaze/compiler": "workspace:*",
+    "@glaze/runtime": "workspace:*",
+    "esbuild": "^0.28.0",
+    "solid-js": "^2.0.3"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}

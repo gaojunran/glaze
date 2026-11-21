@@ -1,0 +1,11 @@
+{
+  "name": "@glaze/example-solid-todo",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "glaze build"
+  },
+  "dependencies": {
+    "@glaze/build": "workspace:*"
+  }
+}

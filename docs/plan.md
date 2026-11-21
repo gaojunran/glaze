@@ -69,14 +69,27 @@ log), removing a row through a `For` event works in e2e, and 1000-row reverse is
 65–71 ms on Glaze versus 65–68 ms native. Structural changes still send the full
 array.
 
-### M4 — build integration
+### M4 — build integration (done)
 
-- Vite plugin: discover components, compile, bundle, emit WXML/JSON/WXSS.
-- JSX intrinsic types for `view`, `text`, `button`, `input`, `scroll-view`.
+- `@glaze/build` CLI: `glaze build`.
+- Config for pages, static directories and static pages.
+- Compiles reached components, page wrappers, `app.json` and the app shell.
 - A single `pnpm build` produces a project accepted by `minidev sim build`.
-- Remove the standalone example build script.
+- Removed the standalone example build script.
 
-### M5 — Svelte 5
+Acceptance met: `pnpm build` writes a clean project; builder test passes; the
+counter e2e passes against the generated output.
+
+### M5 — component surface (next)
+
+- Children / default slot.
+- Component custom events.
+- Context Provider.
+- refs and node query.
+- Nested `For` event lookup.
+- Structural list patches.
+
+### M6 — Svelte 5
 
 - Svelte compiler AST to the same WXML/binding IR.
 - `$state` / `$derived` / `$effect` mapping.
