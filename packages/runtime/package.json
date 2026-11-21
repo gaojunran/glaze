@@ -11,5 +11,8 @@
   "dependencies": {
     "glass-easel": "^1.2.1",
     "solid-js": "^2.0.3"
+  },
+  "scripts": {
+    "test": "node --conditions=browser --test test/*.test.mjs"
   }
 }

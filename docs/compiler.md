@@ -51,9 +51,10 @@ First-wave support:
 | `<Show when={...}>` | `wx:if` |
 | `<Show fallback={...}>` | `wx:if` + `wx:else` |
 | `<Show keyed>{(value) => ...}</Show>` | one-item `wx:for` under a `wx:if` |
-| `<Show>{(value) => ...}</Show>` | same, with the accessor call rewritten |
+| `<Show>{(value) => ...}</Show>` | `wx:if` over a value binding; accessor calls are rewritten to the bound value |
 | `<Switch>` + `<Match when={...}>` | `wx:if` / `wx:elif` / `wx:else` |
 | `<Match when={...} keyed>{(value) => ...}</Match>` | one-item `wx:for` under `wx:if` / `wx:elif` |
+| `<Match when={...}>{(value) => ...}</Match>` | `wx:if` / `wx:elif` over a value binding |
 | `<Match when={...}>{(value) => ...}</Match>` | same, with the accessor call rewritten |
 | `<Switch fallback={...}>` | final `wx:else` |
 | `<For each={...} keyed={(item) => item.id} fallback={...}>` | `wx:if` + `wx:for` + `wx:else` |
@@ -346,8 +347,9 @@ Nested loops use one marker per level; the handler walks the whole scope chain.
 and the handler reconstructs the callback variable from the loop index.
 
 `<For fallback>` checks `(each || []).length > 0`. `<Repeat>` builds
-`Array.from({ length: count }, (_, index) => index + from)` in a binding; it is
-not supported inside another `For` yet.
+`Array.from({ length: count }, (_, index) => index + from)` in a binding. Inside
+another `For` it uses the inline WXS range helper and offsets event indices by
+`from`.
 
 `For` follows Solid 2's `keyed` modes: default (`true`) gives a value item and
 an index accessor; `keyed={false}` gives an accessor item and a numeric index;
@@ -358,15 +360,18 @@ single field; nested keys are rejected.
 
 `Show` function children work at the top level and inside `For`. `keyed` passes
 the value; without it the callback receives an accessor (`value()`), matching
-Solid. At the top level the implementation binds a one-item array and iterates
-it; inside `For` it calls `glazeRange.single(value)` from an inline WXS module.
-This keeps a name for the value without a per-row JS binding. `<Match>` function
-children use the same path: `keyed` receives the value, otherwise an accessor,
-and the branch becomes `wx:if` / `wx:elif` over a one-item `wx:for`.
+Solid. A non-keyed callback renders directly under a `wx:if` and reads the
+current value from a binding (or the enclosing row expression), so a truthy
+change does not remount the subtree. A keyed callback uses a one-item
+`wx:for`; at the top level it binds the array, and inside `For` it calls
+`glazeRange.single(value)` from an inline WXS module. `<Match>` function children
+use the same split: `keyed` gets the one-item loop, otherwise the branch is a
+direct `wx:if` / `wx:elif` value binding.
 
 `Repeat` inside `For` uses the same inline WXS module:
-`glazeRange.range(count, from)` returns the index array for the row. The WXS
-module is emitted once per component that needs it.
+`glazeRange.range(count, from)` returns the index array for the row, and event
+handlers reconstruct the callback variable as `index + from`. The WXS module is
+emitted once per component that needs it.
 
 ### Expressions inside loops
 
@@ -542,3 +547,63 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
 10. **Build integration** has `glaze build`, `glaze watch`, and a Vite build
    bridge. There is no mini-program HMR or incremental compile.
 11. **Svelte** has no compiler yet.
+
+
+## Boundary fixes from the Solid / glass-easel review
+
+The compiler now rejects or guards the following instead of emitting silently
+broken code:
+
+- `wx:if` / `wx:elif` / `wx:else` on a nested `Show`, `Switch`, `For`, `Repeat`,
+  `Provider`, fragment, text, or inline component are wrapped in a `<block>`
+  instead of being dropped.
+- Conditional and fallback bindings are guarded with the branch condition, so
+  `{user().name}` inside `<Show when={user()}>` does not read `null` before the
+  branch is active. `For fallback`, `Repeat fallback`, `Switch fallback`, and
+  non-keyed `Show` / `Match` callbacks use the same guard.
+- Raw JSX values in expressions, component props, and dynamic spread are a
+  compile error. Use a JSX branch, `children`, or a component boundary.
+- Event handlers reconstruct loop values from expressions that exist in JS;
+  hoisted `bN` data keys are never referenced from a handler. Nested defaults
+  use `__glazeIndex`, `__glazeIndex1`, and so on, so two `<For>`s without an
+  index parameter no longer collide.
+- Component custom events inside `For` carry `data-glaze-index` markers just
+  like native events.
+- Numeric component props are emitted as `{{3}}`, not `"3"`; string props stay
+  strings.
+- `export const` and `export function` declarations are kept in generated
+  modules; only the default component export is removed.
+- Solid 2 `<Theme value="...">` is recognized as a provider as well as the
+  legacy `<Theme.Provider>`. Providers inside `For` / `Show` / `Match` are a
+  compile error because there is no per-row provider scope.
+- Text whitespace is collapsed per JSX rules instead of a global `trim()`;
+  `{` / `}` in literal text are escaped for WXML, and static style objects are
+  normalized from camelCase to kebab-case.
+- A `ref` inside `For` / `Show` / `Match` is a compile error until per-row node
+  queries exist. Unknown native events and `innerHTML` / `textContent` are also
+  compile errors.
+- A `<For>` without a key emits no `wx:key` rather than `*this`: glass-easel
+  stringifies object items to `"[object Object]"`, which is worse than
+  position-based reuse. Pass `keyed={(item) => item.id}` for keyed object lists.
+- Component props may not lowercase to `b0`, `b1`, ...; the runtime also rejects
+  a property that collides with a generated binding key.
+
+Build-side safety (path validation, staging, reachable-only compilation,
+helper imports, name collisions, WXSS `@import`, static pages, style isolation,
+bundle size) is documented in `docs/build.md`.
+
+### Validation for this wave
+
+Run on 2026-11-22 in the repository workspace:
+
+- `pnpm -r test` — compiler 57 passed, build 13 passed, runtime 10 passed.
+- `pnpm build` — `2 pages, 6 components`.
+- `target/debug/minidev test --project examples/solid-todo --browser
+  ~/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell`
+  — 1 case passed, 0 failed (about 8.1 s). The counter e2e covers nested loops,
+  component events, keyed/non-keyed control flow, context, refs, and list
+  insert/append/delete.
+
+The simulator still prints `wx:key` performance warnings for the intentional
+`keyed={false}` and keyless object-list examples; they are warnings, not
+rendering failures, and the reasoning is recorded above.

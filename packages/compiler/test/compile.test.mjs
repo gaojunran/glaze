@@ -40,7 +40,7 @@ test('keeps module-level constants in the generated module', () => {
   const result = compileComponent(source)
   assert.match(result.js, /const items =/)
   assert.match(result.js, /ctx\.bind\(0, \(\) => \(count\(\)\)\)/)
-  assert.match(result.js, /ctx\.event\(0, \(\) => setCount/)
+  assert.match(result.js, /ctx\.event\(0, \(event\) => \(\(\) => setCount/)
 })
 
 test('rejects an unsupported nested component', () => {
@@ -196,7 +196,7 @@ test('inlines a stateful imported component and merges solid-js imports', () => 
   const solidImports = result.js.match(/from ['\"]solid-js['\"]/g) ?? []
   assert.equal(solidImports.length, 1)
   assert.match(result.js, /const \[n, setN\] = createSignal\(1\)/)
-  assert.match(result.js, /ctx.event\(0, \(\) => setN/)
+  assert.match(result.js, /ctx\.event\(0, \(event\) => \(\(\) => setN/)
 })
 
 test('keeps a component boundary inside For', () => {
@@ -586,7 +586,7 @@ test('compiles Show function children', () => {
       )
     }
   `)
-  assert.match(accessor.wxml, /\{\{user\.name\}\}/)
+  assert.match(accessor.wxml, /\{\{b0\.name\}\}/)
 })
 
 test('hoists outer expressions inside For', () => {
@@ -657,7 +657,7 @@ test('compiles keyed Match callbacks', () => {
   assert.match(result.wxml, /<block wx:if="\{\{b0\}\}">/)
   assert.match(result.wxml, /wx:for-item="user"/)
   assert.match(result.wxml, /wx:elif="\{\{b2\}\}"/)
-  assert.match(result.wxml, /\{\{value\.label\}\}/)
+  assert.match(result.wxml, /\{\{b2\.label\}\}/)
 })
 
 test('maps camelCase component props to lowercase WXML properties', () => {
@@ -794,4 +794,333 @@ test('rejects destructured props', () => {
       `),
     /Destructuring props is not reactive/,
   )
+})
+
+test('keeps wx:if on nested control flow and inline components', () => {
+  const result = compileComponent(
+    `
+      import Card from './Card'
+      export default function Page(props) {
+        return (
+          <Show when={props.outer}>
+            <Show when={props.inner}><text>both</text></Show>
+            <Card title="x" />
+          </Show>
+        )
+      }
+    `,
+    {
+      inline: true,
+      resolveComponent: () => `
+        export default function Card(props) {
+          return <view><text>{props.title}</text></view>
+        }
+      `,
+    },
+  )
+  assert.match(result.wxml, /<block wx:if="\{\{b0\}\}">/)
+  assert.match(result.wxml, /<text wx:if="\{\{b1\}\}">both<\/text>/)
+  assert.match(result.wxml, /<block wx:if="\{\{b0\}\}">.*<view><text>\{\{b2\}\}<\/text><\/view>/)
+})
+
+test('guards conditional and fallback bindings against nullish values', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return (
+        <view>
+          <Show when={props.user} fallback={<text>{props.empty.value}</text>}>
+            <text>{props.user.name}</text>
+          </Show>
+          <For each={props.items} fallback={<text>{props.items[0].title}</text>}>
+            {(item) => <text>{item.title}</text>}
+          </For>
+        </view>
+      )
+    }
+  `)
+  assert.match(result.js, /\(\(props\.user\)\) \? \(props\.user\.name\) : undefined/)
+  assert.match(result.js, /\(\(!\(props\.user\)\)\) \? \(props\.empty\.value\) : undefined/)
+  assert.match(result.js, /\(\(\(props\.items \|\| \[\]\)\.length === 0\)\) \? \(props\.items\[0\]\.title\) : undefined/)
+})
+
+test('rejects raw JSX values in expressions and props', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Page(props) {
+          return <view>{props.items.map((item) => <text>{item}</text>)}</view>
+        }
+      `),
+    /JSX values are not supported/,
+  )
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Page(props) {
+          return <view title={<text>a</text>} />
+        }
+      `),
+    /JSX values are not supported/,
+  )
+})
+
+test('supports numeric component props without stringifying them', () => {
+  const result = compileComponent(
+    `
+      import Child from './Child'
+      export default function Page() {
+        return <Child count={3} />
+      }
+    `,
+    { inline: false },
+  )
+  assert.match(result.wxml, /count="\{\{3\}\}"/)
+})
+
+test('adds loop index markers to component events', () => {
+  const result = compileComponent(
+    `
+      import Item from './Item'
+      export default function Page(props) {
+        return (
+          <For each={props.items} keyed={(item) => item.id}>
+            {(item) => <Item onToggle={() => pick(item().id)} />}
+          </For>
+        )
+      }
+    `,
+    { inline: false },
+  )
+  assert.match(result.wxml, /bind:toggle="e0" data-glaze-index="\{\{__glazeIndex\}\}"/)
+  assert.match(result.js, /dataset\.glazeIndex/)
+  assert.match(result.js, /const item = \(props\.items\)\[__glazeIndex\]/)
+})
+
+test('rejects multiple children on For and Repeat', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Page(props) {
+          return <For each={props.items}>{(item) => <text>{item}</text>}{(item) => <b>{item}</b>}</For>
+        }
+      `),
+    /exactly one arrow-function child/,
+  )
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Page() {
+          return <Repeat count={2}>{() => <text>a</text>}{() => <text>b</text>}</Repeat>
+        }
+      `),
+    /exactly one arrow-function child/,
+  )
+})
+
+test('uses distinct default indexes for nested For loops', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return (
+        <For each={props.rows}>
+          {(row) => <For each={row.cells}>{(cell) => <text>{cell}</text>}</For>}
+        </For>
+      )
+    }
+  `)
+  assert.match(result.wxml, /wx:for-index="__glazeIndex"/)
+  assert.match(result.wxml, /wx:for-index="__glazeIndex1"/)
+})
+
+test('omits wx:key by default instead of stringifying object items', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return <For each={props.items}>{(item) => <text>{item.title}</text>}</For>
+    }
+  `)
+  assert.doesNotMatch(result.wxml, /wx:key="\*this"/)
+})
+
+test('offsets Repeat index inside For event handlers', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return (
+        <For each={props.rows}>
+          {(row) => (
+            <Repeat count={2} from={10}>
+              {(n) => <button onClick={() => pick(n)}>{n}</button>}
+            </Repeat>
+          )}
+        </For>
+      )
+    }
+  `)
+  assert.match(result.js, /const __glazeRepeat1 = __glazeIndex1 \+ \(10\);/)
+  assert.match(result.js, /pick\(__glazeRepeat1\)/)
+})
+
+test('rejects refs and providers inside loop or branch scopes', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Page(props) {
+          return <For each={props.items}>{(item) => <view ref={(node) => pick(node)} />}</For>
+        }
+      `),
+    /ref inside/,
+  )
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Page(props) {
+          const Theme = createContext('light')
+          return <For each={props.items}>{(item) => <Theme value="dark"><text>x</text></Theme>}</For>
+        }
+      `),
+    /not supported inside/,
+  )
+})
+
+test('rejects unknown native events and innerHTML', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Page() {
+          return <view onHover={() => {}} />
+        }
+      `),
+    /Unsupported event/,
+  )
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Page() {
+          return <view innerHTML="<b>x</b>" />
+        }
+      `),
+    /innerHTML/,
+  )
+})
+
+test('keeps named export declarations in the generated module', () => {
+  const result = compileComponent(`
+    export const format = (value) => String(value).toUpperCase()
+    export function helper(value) {
+      return value
+    }
+    export default function Page(props) {
+      return <text>{format(props.name)}</text>
+    }
+  `)
+  assert.match(result.js, /const format =/)
+  assert.match(result.js, /function helper/)
+  assert.doesNotMatch(result.js, /export const format/)
+})
+
+test('supports Solid 2 context providers and rejects loop providers', () => {
+  const result = compileComponent(`
+    export default function Page() {
+      const Theme = createContext('light')
+      return <Theme value="dark"><text>{useContext(Theme)}</text></Theme>
+    }
+  `)
+  assert.match(result.js, /withProvider\(Theme, \("dark"\)/)
+  assert.match(result.js, /ctx\.bind\(0, \(\) => \(useContext\(Theme\)\)\)/)
+})
+
+test('preserves text whitespace without WXML brace collisions', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return <text>Hello {props.name}!</text>
+    }
+  `)
+  assert.match(result.wxml, /Hello \{\{b0\}\}!/)
+
+  const literal = compileComponent(`
+    export default function Page() {
+      return <text>use {'{{ value }}'} here</text>
+    }
+  `)
+  assert.match(literal.wxml, /&#123;&#123; value &#125;&#125;/)
+})
+
+test('normalizes static style objects to kebab-case', () => {
+  const result = compileComponent(`
+    export default function Page() {
+      return <view style={{ backgroundColor: 'red', width: 10 }} />
+    }
+  `)
+  assert.match(result.wxml, /style="background-color: red; width: 10"/)
+})
+
+test('supports a Switch fallback without any Match', () => {
+  const result = compileComponent(`
+    export default function Page() {
+      return <Switch fallback={<text>none</text>}></Switch>
+    }
+  `)
+  assert.match(result.wxml, /<text>none<\/text>/)
+})
+
+test('renders non-keyed Show callbacks without remounting loops', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return (
+        <Show when={props.user}>
+          {(user) => <text>{user().name}</text>}
+        </Show>
+      )
+    }
+  `)
+  assert.doesNotMatch(result.wxml, /wx:for/)
+  assert.match(result.wxml, /<block wx:if="\{\{b0\}\}"><text>\{\{b0\.name\}\}<\/text><\/block>/)
+})
+
+test('rejects props that collide with generated data keys', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Child(props) {
+          return <text>{props.b0}</text>
+        }
+      `),
+    /compiler data keys/,
+  )
+})
+
+test('resolves outer Show accessors inside nested For scopes', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return (
+        <For each={props.rows}>
+          {(row) => (
+            <Show when={row.user}>
+              {(user) => (
+                <For each={user().items}>
+                  {(item) => <button onClick={() => pick(item, user().name)}>{item}</button>}
+                </For>
+              )}
+            </Show>
+          )}
+        </For>
+      )
+    }
+  `)
+  assert.match(result.wxml, /wx:for="\{\{row\.user\.items\}\}"/)
+  assert.match(result.js, /const __glazeValue1 = \(row\.user\);/)
+  assert.match(result.js, /pick\(item, __glazeValue1\.name\)/)
+})
+
+test('supports class and style objects on component tags', () => {
+  const result = compileComponent(
+    `
+      import Child from './Child'
+      export default function Page(props) {
+        return <Child class={{ active: props.active }} style={{ marginTop: 4 }} />
+      }
+    `,
+    { inline: false },
+  )
+  assert.match(result.wxml, /class="\{\{b0\}\}"/)
+  assert.match(result.wxml, /style="margin-top: 4"/)
+  assert.match(result.js, /className\(\{[\s\S]*active: props\.active[\s\S]*\}\)/)
 })

@@ -33,11 +33,36 @@ const EVENT_MAP = {
 }
 
 const escapeText = (value) =>
-  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  value.replace(/[&<>{}]/g, (char) => {
+    if (char === '&') return '&amp;'
+    if (char === '<') return '&lt;'
+    if (char === '>') return '&gt;'
+    if (char === '{') return '&#123;'
+    return '&#125;'
+  })
 
 const escapeAttr = (value) => escapeText(value).replace(/"/g, '&quot;')
 
-const normalizeText = (value) => value.replace(/\s+/g, ' ').trim()
+const normalizeText = (value) => {
+  const lines = value.replace(/\r\n?/g, '\n').split('\n')
+  let first = -1
+  let last = -1
+  for (let i = 0; i < lines.length; i += 1) {
+    if (lines[i].trim() !== '') {
+      if (first === -1) first = i
+      last = i
+    }
+  }
+  if (first === -1) return ''
+  const parts = []
+  for (let i = first; i <= last; i += 1) {
+    let line = lines[i]
+    if (i !== first) line = line.replace(/^\s+/, '')
+    if (i !== last) line = line.replace(/\s+$/, '')
+    if (line !== '') parts.push(line)
+  }
+  return parts.join(' ')
+}
 
 const isWhitespaceText = (node) =>
   t.isJSXText(node) && normalizeText(node.value) === ''
@@ -109,6 +134,14 @@ const kebabCase = (name) =>
     .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
     .toLowerCase()
 
+const containsJsx = (node) => {
+  let found = false
+  walkAst(node, (item) => {
+    if (t.isJSXElement(item) || t.isJSXFragment(item)) found = true
+  })
+  return found
+}
+
 const walkAst = (node, visit) => {
   if (!node || typeof node.type !== 'string') return
   visit(node)
@@ -136,6 +169,17 @@ export function compileComponent(source, options = {}) {
   const parsed = parseComponent(source)
   const { ast, statements, returnIndex, jsx, propsParam, props } = parsed
 
+  const contextNames = new Set()
+  walkAst({ type: 'Program', body: statements }, (node) => {
+    if (!t.isVariableDeclarator(node) || !t.isIdentifier(node.id) || !node.init) return
+    if (
+      t.isCallExpression(node.init) &&
+      t.isIdentifier(node.init.callee, { name: 'createContext' })
+    ) {
+      contextNames.add(node.id.name)
+    }
+  })
+
   const ctx = {
     bindings: [],
     events: [],
@@ -155,6 +199,7 @@ export function compileComponent(source, options = {}) {
     inlineChildrenUsed: false,
     inlineChildrenCount: 0,
     rootPropsParam: propsParam?.name ?? null,
+    contextNames,
     currentProvider: null,
     usesSlot: false,
     namedSlots: new Set(),
@@ -170,11 +215,19 @@ export function compileComponent(source, options = {}) {
     currentBlock: 0,
     currentFile: options.sourceFile ?? null,
     inlineStack: options.sourceFile ? [options.sourceFile] : [],
+    guards: [],
     inline: options.inline ?? false,
     resolveComponent: options.resolveComponent ?? null,
     addBinding(expression, listKey = null) {
+      if (containsJsx(expression)) {
+        throw new Error('JSX values are not supported in expressions; use a JSX branch or child')
+      }
       const index = this.bindings.length
-      this.bindings.push({ code: codeOf(expression), listKey, block: this.currentBlock })
+      this.bindings.push({
+        code: this.guardCode(codeOf(expression)),
+        listKey,
+        block: this.currentBlock,
+      })
       return index
     },
     addEvent(expression, scope = null, custom = false) {
@@ -184,8 +237,26 @@ export function compileComponent(source, options = {}) {
     },
     addBindingCode(code, listKey = null) {
       const index = this.bindings.length
-      this.bindings.push({ code, listKey, block: this.currentBlock })
+      this.bindings.push({
+        code: this.guardCode(code),
+        listKey,
+        block: this.currentBlock,
+      })
       return index
+    },
+    guardCode(code) {
+      if (this.guards.length === 0) return code
+      const guard = this.guards.map((item) => `(${item})`).join(' && ')
+      return `(${guard}) ? (${code}) : undefined`
+    },
+    withGuard(guard, fn) {
+      if (!guard) return fn()
+      this.guards.push(guard)
+      try {
+        return fn()
+      } finally {
+        this.guards.pop()
+      }
     },
     addHelper(name) {
       this.helpers.add(name)
@@ -214,6 +285,9 @@ export function compileComponent(source, options = {}) {
   const propertyNames = plainProps.map((name) => name.toLowerCase())
   if (new Set(propertyNames).size !== propertyNames.length) {
     throw new Error('Component props collide after lowercasing to mini-program property names')
+  }
+  if (propertyNames.some((name) => /^b\d+$/.test(name))) {
+    throw new Error('Component props may not use compiler data keys such as b0')
   }
   const propMap = Object.fromEntries(plainProps.map((name, index) => [name, propertyNames[index]]))
 
@@ -290,9 +364,24 @@ function findComponentFunction(ast) {
     }
     if (t.isIdentifier(declaration)) {
       const match = ast.program.body.find(
-        (item) => t.isFunctionDeclaration(item) && item.id?.name === declaration.name,
+        (item) =>
+          (t.isFunctionDeclaration(item) && item.id?.name === declaration.name) ||
+          (t.isVariableDeclaration(item) &&
+            item.declarations.some(
+              (declarator) =>
+                t.isIdentifier(declarator.id, { name: declaration.name }) &&
+                declarator.init &&
+                (t.isArrowFunctionExpression(declarator.init) ||
+                  t.isFunctionExpression(declarator.init)),
+            )),
       )
-      if (match) return match
+      if (match) {
+        if (t.isFunctionDeclaration(match)) return match
+        const declarator = match.declarations.find(
+          (item) => t.isIdentifier(item.id, { name: declaration.name }),
+        )
+        return declarator?.init ?? null
+      }
     }
   }
   return null
@@ -318,14 +407,29 @@ function collectImports(ast) {
 
 function collectProps(paramName, body) {
   const props = new Set()
-  walkAst(body, (node) => {
-    if (!t.isMemberExpression(node) && !t.isOptionalMemberExpression(node)) return
-    if (!t.isIdentifier(node.object, { name: paramName })) return
-    if (!t.isIdentifier(node.property)) {
-      throw new Error(`Computed prop access is not supported; use props.name instead`)
+  const visit = (node) => {
+    if (!node || typeof node.type !== 'string') return
+    if (
+      t.isFunction(node) &&
+      node.params.some((param) => t.isIdentifier(param, { name: paramName }))
+    ) {
+      return
     }
-    props.add(node.property.name)
-  })
+    if (t.isMemberExpression(node) || t.isOptionalMemberExpression(node)) {
+      if (t.isIdentifier(node.object, { name: paramName })) {
+        if (!t.isIdentifier(node.property)) {
+          throw new Error(`Computed prop access is not supported; use props.name instead`)
+        }
+        props.add(node.property.name)
+      }
+    }
+    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+      const child = node[key]
+      if (Array.isArray(child)) child.forEach(visit)
+      else visit(child)
+    }
+  }
+  visit(body)
   return [...props].sort()
 }
 
@@ -346,13 +450,14 @@ function emitModule(ast, setupStatements, ctx, options) {
   ].join('\n')
 
   const moduleStatements = ast.program.body
-    .filter(
-      (node) =>
-        !t.isImportDeclaration(node) &&
-        !t.isExportDefaultDeclaration(node) &&
-        !t.isExportNamedDeclaration(node),
-    )
-    .map((node) => codeOf(node))
+    .flatMap((node) => {
+      if (t.isImportDeclaration(node) || t.isExportDefaultDeclaration(node)) return []
+      if (t.isExportNamedDeclaration(node)) {
+        return node.declaration ? [codeOf(node.declaration)] : []
+      }
+      if (t.isExportAllDeclaration(node)) return []
+      return [codeOf(node)]
+    })
     .join('\n')
 
   const data = JSON.stringify(
@@ -399,13 +504,13 @@ function emitModule(ast, setupStatements, ctx, options) {
       .map((event, index) => {
         if (event.block !== blockId) return ''
         const code = event.scope
-          ? codeOf(rewriteAccessorCalls(event.ast, event.scope))
+          ? codeOf(rewriteAccessorCalls(event.ast, event.scope, true))
           : event.code
         const call = event.custom
           ? `(${code})(event.detail)`
           : `(${code})(event)`
         if (!event.scope) {
-          if (!event.custom) return `    ctx.event(${index}, ${code});`
+          if (!event.custom) return `    ctx.event(${index}, (event) => (${code})(event));`
           return `    ctx.event(${index}, (event) => ${call});`
         }
         const chain = []
@@ -414,14 +519,18 @@ function emitModule(ast, setupStatements, ctx, options) {
         }
         const lines = chain
           .map((scope) => {
+            if (scope.direct) {
+              return `      const ${scope.eventItem ?? scope.item} = (${scope.direct});`
+            }
             const key = scope.level === 0 ? 'glazeIndex' : `glazeIndex${scope.level}`
             const indexLine = `      const ${scope.index} = Number(event.currentTarget.dataset.${key});`
             if (scope.isIndexRepeat) {
+              const offset = scope.offset ? ` + (${scope.offset})` : ''
               return scope.item === scope.index
                 ? indexLine
-                : `${indexLine}\n      const ${scope.item} = ${scope.index};`
+                : `${indexLine}\n      const ${scope.item} = ${scope.index}${offset};`
             }
-            return `${indexLine}\n      const ${scope.item} = (${scope.source})[${scope.index}];`
+            return `${indexLine}\n      const ${scope.item} = (${scope.jsSource ?? scope.source})[${scope.index}];`
           })
           .join('\n')
         return `    ctx.event(${index}, (event) => {
@@ -454,7 +563,8 @@ ${lines}
         .map((_, index) => (index !== blockId && ctx.blocks[index].provider === blockId ? renderBlock(index) : ''))
         .filter(Boolean)
         .join('\n')
-      return `  {\n    withProvider(${block.providerContext}, (${block.providerValue}), () => {\n${indent(children, 6)}\n    });\n  }`
+      const inner = [body, children].filter(Boolean).join('\n')
+      return `  {\n    withProvider(${block.providerContext}, (${block.providerValue}), () => {\n${indent(inner, 6)}\n    });\n  }`
     }
 
     const props = block.propsParam
@@ -496,16 +606,36 @@ ${setup}
 `
 }
 
+function pushScopeIndexAttrs(attrs, scope) {
+  for (let cursor = scope; cursor; cursor = cursor.parent) {
+    if (cursor.direct) continue
+    const attr = cursor.level === 0 ? 'data-glaze-index' : `data-glaze-index${cursor.level}`
+    if (!attrs.some((item) => item.startsWith(`${attr}=`))) {
+      attrs.push(`${attr}="{{${cursor.index}}}"`)
+    }
+  }
+}
+
+const directiveText = (extraAttrs) =>
+  extraAttrs.length > 0 ? ` ${extraAttrs.join(' ')}` : ''
+
+const wrapDirectives = (wxml, extraAttrs) =>
+  extraAttrs.length > 0 ? `<block${directiveText(extraAttrs)}>${wxml}</block>` : wxml
+
 function compileNode(node, ctx, scope, extraAttrs = []) {
   if (t.isJSXElement(node)) return compileElement(node, ctx, scope, extraAttrs)
   if (t.isJSXFragment(node)) {
     const children = compileChildren(node.children, ctx, scope)
-    const attrs = extraAttrs.length > 0 ? ` ${extraAttrs.join(' ')}` : ''
-    return `<block${attrs}>${children}</block>`
+    return wrapDirectives(`<block>${children}</block>`, extraAttrs)
   }
-  if (t.isJSXText(node)) return escapeText(normalizeText(node.value))
+  if (t.isJSXText(node)) {
+    return wrapDirectives(escapeText(normalizeText(node.value)), extraAttrs)
+  }
   if (t.isJSXExpressionContainer(node)) {
-    return compileExpressionChild(node.expression, ctx, scope)
+    return wrapDirectives(
+      compileExpressionChild(node.expression, ctx, scope),
+      extraAttrs,
+    )
   }
   throw new Error('Unsupported JSX child')
 }
@@ -516,13 +646,16 @@ function compileElement(node, ctx, scope, extraAttrs = []) {
     t.isJSXMemberExpression(tag) &&
     t.isJSXIdentifier(tag.property, { name: 'Provider' })
   ) {
-    return compileProvider(node, ctx, scope)
+    return wrapDirectives(compileProvider(node, ctx, scope), extraAttrs)
   }
   const name = tagName(tag)
-  if (name === 'Show') return compileShow(node, ctx, scope)
-  if (name === 'For') return compileFor(node, ctx, scope)
-  if (name === 'Switch') return compileSwitch(node, ctx, scope)
-  if (name === 'Repeat') return compileRepeat(node, ctx, scope)
+  if (t.isJSXIdentifier(tag) && ctx.contextNames.has(name)) {
+    return wrapDirectives(compileProvider(node, ctx, scope), extraAttrs)
+  }
+  if (name === 'Show') return wrapDirectives(compileShow(node, ctx, scope), extraAttrs)
+  if (name === 'For') return wrapDirectives(compileFor(node, ctx, scope), extraAttrs)
+  if (name === 'Switch') return wrapDirectives(compileSwitch(node, ctx, scope), extraAttrs)
+  if (name === 'Repeat') return wrapDirectives(compileRepeat(node, ctx, scope), extraAttrs)
   if (name === 'Match') {
     throw new Error('<Match> must be a direct child of <Switch>')
   }
@@ -547,6 +680,9 @@ function compileElement(node, ctx, scope, extraAttrs = []) {
     if (!attrName) throw new Error('Unsupported JSX attribute name')
     if (attrName === 'key') continue
     if (attrName === 'ref') {
+      if (scope) {
+        throw new Error('ref inside <For>, <Show> or <Match> is not supported yet')
+      }
       if (
         node.openingElement.attributes.some(
           (item) => t.isJSXAttribute(item) && t.isJSXIdentifier(item.name, { name: 'id' }),
@@ -556,6 +692,7 @@ function compileElement(node, ctx, scope, extraAttrs = []) {
       }
       const expression = getExpression(attr)
       if (!expression) throw new Error('ref requires a callback')
+      if (containsJsx(expression)) throw new Error('ref cannot be JSX')
       const index = ctx.addRef(expression)
       attrs.push(`id="glaze-r${index}"`)
       continue
@@ -565,20 +702,22 @@ function compileElement(node, ctx, scope, extraAttrs = []) {
     if (expression == null) continue
 
     if (EVENT_MAP[attrName] || /^on[A-Z]/.test(attrName)) {
-      const eventName = EVENT_MAP[attrName] ?? `bind${attrName.slice(2).toLowerCase()}`
+      if (/^on[A-Z]/.test(attrName) && !EVENT_MAP[attrName]) {
+        throw new Error(`Unsupported event "${attrName}" on a native element`)
+      }
+      if (containsJsx(expression)) {
+        throw new Error(`Event handler "${attrName}" cannot be JSX`)
+      }
+      const eventName = EVENT_MAP[attrName]
       const index = ctx.addEvent(expression, scope)
       attrs.push(`${eventName}="e${index}"`)
-      if (scope) {
-        for (let cursor = scope; cursor; cursor = cursor.parent) {
-          const attr = cursor.level === 0 ? 'data-glaze-index' : `data-glaze-index${cursor.level}`
-          if (!attrs.some((item) => item.startsWith(`${attr}=`))) {
-            attrs.push(`${attr}="{{${cursor.index}}}"`)
-          }
-        }
-      }
+      pushScopeIndexAttrs(attrs, scope)
       continue
     }
 
+    if (attrName === 'innerHTML' || attrName === 'textContent') {
+      throw new Error(`"${attrName}" is not supported; render child nodes instead`)
+    }
     const propName = attrName === 'className' ? 'class' : attrName
     if (t.isStringLiteral(expression) || t.isNumericLiteral(expression)) {
       attrs.push(`${propName}="${escapeAttr(String(expression.value))}"`)
@@ -618,7 +757,7 @@ function compileComponentElement(node, ctx, scope, extraAttrs = []) {
     throw new Error(`Component <${name}> must come from a relative file, got "${source}"`)
   }
   const inlined = inlineComponent(node, ctx, scope, name, source)
-  if (inlined != null) return inlined
+  if (inlined != null) return wrapDirectives(inlined, extraAttrs)
 
   ctx.addComponent(name, source, ctx.currentFile)
 
@@ -636,8 +775,12 @@ function compileComponentElement(node, ctx, scope, extraAttrs = []) {
     if (/^on[A-Z]/.test(attrName)) {
       const expression = getExpression(attr)
       if (expression == null) continue
+      if (containsJsx(expression)) {
+        throw new Error(`Event handler "${attrName}" cannot be JSX`)
+      }
       const index = ctx.addEvent(expression, scope, true)
       attrs.push(`bind:${eventNameFor(attrName)}="e${index}"`)
+      pushScopeIndexAttrs(attrs, scope)
       continue
     }
     if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(attrName)) {
@@ -647,8 +790,20 @@ function compileComponentElement(node, ctx, scope, extraAttrs = []) {
     const propName = attrName.toLowerCase()
     const expression = getExpression(attr)
     if (expression == null) continue
-    if (t.isStringLiteral(expression) || t.isNumericLiteral(expression)) {
-      attrs.push(`${propName}="${escapeAttr(String(expression.value))}"`)
+    if (propName === 'class' && (t.isObjectExpression(expression) || t.isArrayExpression(expression))) {
+      attrs.push(classAttr(expression, ctx, scope))
+      continue
+    }
+    if (propName === 'style' && t.isObjectExpression(expression)) {
+      attrs.push(styleAttr(expression, ctx, scope))
+      continue
+    }
+    if (t.isStringLiteral(expression)) {
+      attrs.push(`${propName}="${escapeAttr(expression.value)}"`)
+      continue
+    }
+    if (t.isNumericLiteral(expression)) {
+      attrs.push(`${propName}="{{${expression.value}}}"`)
       continue
     }
     if (scope) {
@@ -690,7 +845,12 @@ function inlineComponent(node, ctx, scope, name, source) {
   if (ctx.inlineStack.includes(identity)) return null
   ctx.inlineStack.push(identity)
   try {
-  const child = parseComponent(childSource)
+  let child
+  try {
+    child = parseComponent(childSource)
+  } catch {
+    return null
+  }
   if (usesSlotElement(child.jsx)) return null
   const body = child.ast.program.body
   for (const node of body) {
@@ -732,7 +892,9 @@ function inlineComponent(node, ctx, scope, name, source) {
       (item) =>
         t.isVariableDeclaration(item) ||
         t.isFunctionDeclaration(item) ||
-        t.isExpressionStatement(item),
+        t.isExpressionStatement(item) ||
+        t.isExportNamedDeclaration(item) ||
+        t.isExportAllDeclaration(item),
     )
   ) {
     return null
@@ -749,6 +911,9 @@ function inlineComponent(node, ctx, scope, name, source) {
 
     const expression = getExpression(attr)
     if (expression == null) continue
+    if (containsJsx(expression)) {
+      throw new Error('JSX values are not supported in component props; use children instead')
+    }
     propGetters.push({ name: attrName, code: codeOf(expression) })
   }
 
@@ -822,13 +987,25 @@ function isPropsMember(expression, propName, member) {
 }
 
 function compileProvider(node, ctx, scope) {
+  if (scope) {
+    throw new Error('<Context.Provider> is not supported inside <For>, <Show> or <Match>')
+  }
   const tag = node.openingElement.name
-  if (!t.isJSXIdentifier(tag.object)) {
+  if (t.isJSXMemberExpression(tag) && !t.isJSXIdentifier(tag.object)) {
     throw new Error('Context provider must be a plain identifier object')
   }
   const valueAttr = getAttribute(node, 'value')
   const value = valueAttr ? getExpression(valueAttr) : null
-  if (!value) throw new Error('<Context.Provider> requires a value expression')
+  if (!value) throw new Error('A Context provider requires a value expression')
+  if (containsJsx(value)) {
+    throw new Error('A Context provider value cannot be JSX')
+  }
+  const contextName = t.isJSXMemberExpression(tag)
+    ? tag.object.name
+    : t.isJSXIdentifier(tag)
+      ? tag.name
+      : null
+  if (!contextName) throw new Error('Unsupported context provider form')
 
   const blockId = ctx.blocks.length
   ctx.blocks.push({
@@ -836,14 +1013,17 @@ function compileProvider(node, ctx, scope) {
     propsParam: null,
     propGetters: [],
     provider: ctx.currentProvider,
-    providerContext: tag.object.name,
+    providerContext: contextName,
     providerValue: codeOf(value),
   })
 
   const previous = ctx.currentProvider
+  const previousBlock = ctx.currentBlock
   ctx.currentProvider = blockId
+  ctx.currentBlock = blockId
   const children = compileChildren(node.children, ctx, scope)
   ctx.currentProvider = previous
+  ctx.currentBlock = previousBlock
   return children
 }
 
@@ -871,6 +1051,9 @@ function compileExpressionChild(expression, ctx, scope) {
   if (t.isStringLiteral(expression) || t.isNumericLiteral(expression)) {
     return escapeText(String(expression.value))
   }
+  if (t.isBooleanLiteral(expression) || t.isNullLiteral(expression)) {
+    return ''
+  }
   if (t.isLogicalExpression(expression) && expression.operator === '&&') {
     if (t.isJSXElement(expression.right) || t.isJSXFragment(expression.right)) {
       return compileConditional(expression.left, expression.right, null, ctx, scope)
@@ -878,12 +1061,30 @@ function compileExpressionChild(expression, ctx, scope) {
   }
   if (t.isConditionalExpression(expression)) {
     const { consequent, alternate } = expression
-    if (
-      (t.isJSXElement(consequent) || t.isJSXFragment(consequent)) &&
-      (t.isJSXElement(alternate) || t.isJSXFragment(alternate))
-    ) {
+    const isJsx = (node) => t.isJSXElement(node) || t.isJSXFragment(node)
+    const isEmpty = (node) =>
+      node == null ||
+      t.isNullLiteral(node) ||
+      (t.isBooleanLiteral(node) && node.value === false) ||
+      (t.isIdentifier(node, { name: 'undefined' }))
+    if (isJsx(consequent) && isJsx(alternate)) {
       return compileConditional(expression.test, consequent, alternate, ctx, scope)
     }
+    if (isJsx(consequent) && isEmpty(alternate)) {
+      return compileConditional(expression.test, consequent, null, ctx, scope)
+    }
+    if (isEmpty(consequent) && isJsx(alternate)) {
+      return compileConditional(
+        t.unaryExpression('!', expression.test, true),
+        alternate,
+        null,
+        ctx,
+        scope,
+      )
+    }
+  }
+  if (containsJsx(expression)) {
+    throw new Error('JSX values are not supported in expressions; use a JSX branch or child')
   }
   if (scope) return `{{${inlineExpression(expression, scope, ctx)}}}`
   const index = ctx.addBinding(expression)
@@ -892,9 +1093,14 @@ function compileExpressionChild(expression, ctx, scope) {
 
 function compileConditional(test, consequent, alternate, ctx, scope) {
   const condition = conditionExpression(test, ctx, scope)
-  const thenNode = compileNode(consequent, ctx, scope, [`wx:if="{{${condition}}}"`])
+  const guard = scope ? null : codeOf(test)
+  const thenNode = ctx.withGuard(guard, () =>
+    compileNode(consequent, ctx, scope, [`wx:if="{{${condition}}}"`]),
+  )
   if (!alternate) return thenNode
-  const elseNode = compileNode(alternate, ctx, scope, ['wx:else'])
+  const elseNode = ctx.withGuard(guard ? `!(${guard})` : null, () =>
+    compileNode(alternate, ctx, scope, ['wx:else']),
+  )
   return `${thenNode}${elseNode}`
 }
 
@@ -920,7 +1126,34 @@ function compileCallbackBranch(fn, label, when, keyed, ctx, scope, directive) {
   }
 
   const whenCode = scope ? inlineExpression(when, scope, ctx) : codeOf(when)
+  const jsWhenCode = scope ? codeOf(rewriteAccessorCalls(when, scope, true)) : codeOf(when)
+  const condition = scope ? whenCode : `b${ctx.addBinding(when)}`
   const indexName = scope ? `__glazeIndex${scope.level + 1}` : '__glazeIndex'
+
+  if (!keyed) {
+    const itemScope = {
+      item: param,
+      itemAst: scope
+        ? rewriteAccessorCalls(when, scope)
+        : t.identifier(condition),
+      eventItem: `__glazeValue${scope ? scope.level + 1 : ''}`,
+      index: indexName,
+      source: `[(${whenCode})]`,
+      jsSource: `[(${jsWhenCode})]`,
+      direct: jsWhenCode,
+      directKey: scope ? null : condition,
+      parent: scope,
+      level: scope ? scope.level + 1 : 0,
+      itemAccessor: true,
+      indexAccessor: false,
+      aliases,
+    }
+    const content = ctx.withGuard(scope ? null : codeOf(when), () =>
+      compileNode(body, ctx, itemScope),
+    )
+    return `<block ${directive}="{{${condition}}}">${content}</block>`
+  }
+
   const itemName = destructured
     ? scope
       ? `__glazeValue${scope.level + 1}`
@@ -930,22 +1163,19 @@ function compileCallbackBranch(fn, label, when, keyed, ctx, scope, directive) {
     item: itemName,
     index: indexName,
     source: `[(${whenCode})]`,
+    jsSource: `[(${jsWhenCode})]`,
     parent: scope,
     level: scope ? scope.level + 1 : 0,
-    itemAccessor: !keyed,
+    itemAccessor: false,
     indexAccessor: false,
     aliases,
-    isIndexRepeat: false,
   }
   const content = compileNode(body, ctx, itemScope)
   let valuesExpr
-  let condition
   if (scope) {
     ctx.addWxs()
     valuesExpr = `glazeRange.single(${whenCode})`
-    condition = whenCode
   } else {
-    condition = `b${ctx.addBinding(when)}`
     const values = ctx.addBindingCode(`[(${whenCode})]`)
     valuesExpr = `b${values}`
   }
@@ -956,7 +1186,10 @@ function compileCallbackBranch(fn, label, when, keyed, ctx, scope, directive) {
 function compileShowCallback(node, ctx, scope, when, keyed, fn, fallback) {
   const thenNode = compileCallbackBranch(fn, '<Show>', when, keyed, ctx, scope, 'wx:if')
   if (!fallback) return thenNode
-  const elseNode = compileNode(fallback, ctx, scope, ['wx:else'])
+  const guard = scope ? null : `!(${codeOf(when)})`
+  const elseNode = ctx.withGuard(guard, () =>
+    compileNode(fallback, ctx, scope, ['wx:else']),
+  )
   return `${thenNode}${elseNode}`
 }
 
@@ -986,13 +1219,17 @@ function compileShow(node, ctx, scope) {
   }
 
   const condition = conditionExpression(when, ctx, scope)
-  const thenNode =
+  const guard = scope ? null : codeOf(when)
+  const thenNode = ctx.withGuard(guard, () =>
     children.length === 1
       ? compileNode(children[0], ctx, scope, [`wx:if="{{${condition}}}"`])
-      : `<block wx:if="{{${condition}}}">${compileChildren(children, ctx, scope)}</block>`
+      : `<block wx:if="{{${condition}}}">${compileChildren(children, ctx, scope)}</block>`,
+  )
 
   if (!fallback) return thenNode
-  const elseNode = compileNode(fallback, ctx, scope, ['wx:else'])
+  const elseNode = ctx.withGuard(guard ? `!(${guard})` : null, () =>
+    compileNode(fallback, ctx, scope, ['wx:else']),
+  )
   return `${thenNode}${elseNode}`
 }
 
@@ -1001,11 +1238,24 @@ function compileSwitch(node, ctx, scope) {
   const matches = children.filter(
     (child) => t.isJSXElement(child) && t.isJSXIdentifier(child.openingElement.name, { name: 'Match' }),
   )
-  if (matches.length === 0) throw new Error('<Switch> requires at least one <Match>')
   if (matches.length !== children.length) {
     throw new Error('<Switch> accepts only <Match> children and a fallback prop')
   }
+  if (matches.length === 0) {
+    const emptyFallback = getAttribute(node, 'fallback')
+    if (!emptyFallback) throw new Error('<Switch> requires a <Match> or fallback')
+    const expression = getExpression(emptyFallback)
+    if (!expression || (!t.isJSXElement(expression) && !t.isJSXFragment(expression))) {
+      throw new Error('<Switch> fallback must be JSX')
+    }
+    return compileNode(expression, ctx, scope)
+  }
 
+  const whenCodes = matches.map((match) => {
+    const when = getExpression(getAttribute(match, 'when'))
+    if (!when) throw new Error('<Match> requires a when expression')
+    return codeOf(when)
+  })
   let output = ''
   matches.forEach((match, index) => {
     const when = getExpression(getAttribute(match, 'when'))
@@ -1029,9 +1279,6 @@ function compileSwitch(node, ctx, scope) {
         t.isFunctionExpression(body[0].expression))
         ? body[0].expression
         : null
-    if (keyed && !callback) {
-      throw new Error('<Match> keyed requires a function child')
-    }
     if (callback) {
       const directive = index === 0 ? 'wx:if' : 'wx:elif'
       output += compileCallbackBranch(callback, '<Match>', when, keyed, ctx, scope, directive)
@@ -1040,11 +1287,16 @@ function compileSwitch(node, ctx, scope) {
 
     const condition = conditionExpression(when, ctx, scope)
     const directive = index === 0 ? `wx:if="{{${condition}}}"` : `wx:elif="{{${condition}}}"`
-    if (body.length === 1) {
-      output += compileNode(body[0], ctx, scope, [directive])
-    } else {
-      output += `<block ${directive}>${compileChildren(body, ctx, scope)}</block>`
-    }
+    const guard = scope
+      ? null
+      : [whenCodes[index], ...whenCodes.slice(0, index).map((item) => `!(${item})`)]
+          .map((item) => `(${item})`)
+          .join(' && ')
+    output += ctx.withGuard(guard, () =>
+      body.length === 1
+        ? compileNode(body[0], ctx, scope, [directive])
+        : `<block ${directive}>${compileChildren(body, ctx, scope)}</block>`,
+    )
   })
 
   const fallback = getAttribute(node, 'fallback')
@@ -1053,7 +1305,12 @@ function compileSwitch(node, ctx, scope) {
     if (!expression || (!t.isJSXElement(expression) && !t.isJSXFragment(expression))) {
       throw new Error('<Switch> fallback must be JSX')
     }
-    output += compileNode(expression, ctx, scope, ['wx:else'])
+    const guard = scope
+      ? null
+      : whenCodes.map((item) => `!(${item})`).join(' && ')
+    output += ctx.withGuard(guard, () =>
+      compileNode(expression, ctx, scope, ['wx:else']),
+    )
   }
 
   return output
@@ -1205,7 +1462,7 @@ function compileFor(node, ctx, scope) {
     }
   }
 
-  let key = '*this'
+  let key = null
   if (keyAttr) {
     if (keyAttr.value && t.isStringLiteral(keyAttr.value)) key = keyAttr.value.value
     else throw new Error('<For> key must be a string literal in the first compiler wave')
@@ -1217,11 +1474,13 @@ function compileFor(node, ctx, scope) {
 
   const eachCode = scope ? inlineExpression(each, scope, ctx) : codeOf(each)
   const eachExpr = scope ? eachCode : `b${ctx.addBinding(each, key)}`
+  const jsEachCode = scope ? codeOf(rewriteAccessorCalls(each, scope, true)) : codeOf(each)
 
-  const child = node.children.find((item) => !isWhitespaceText(item))
-  if (!child || !t.isJSXExpressionContainer(child)) {
-    throw new Error('<For> requires a single arrow-function child')
+  const childNodes = node.children.filter((item) => !isWhitespaceText(item))
+  if (childNodes.length !== 1 || !t.isJSXExpressionContainer(childNodes[0])) {
+    throw new Error('<For> requires exactly one arrow-function child')
   }
+  const child = childNodes[0]
   const fn = child.expression
   if (!t.isArrowFunctionExpression(fn) && !t.isFunctionExpression(fn)) {
     throw new Error('<For> child must be an arrow function')
@@ -1239,7 +1498,11 @@ function compileFor(node, ctx, scope) {
     : t.isIdentifier(firstParam)
       ? firstParam.name
       : 'item'
-  const indexName = t.isIdentifier(fn.params[1]) ? fn.params[1].name : 'index'
+  const indexName = t.isIdentifier(fn.params[1])
+    ? fn.params[1].name
+    : scope
+      ? `__glazeIndex${scope.level + 1}`
+      : '__glazeIndex'
   const callback = callbackBody(fn, '<For>', [itemName, indexName])
   const aliases = mergeAliases(
     destructured ? patternAliases(firstParam, [itemName]) : null,
@@ -1263,6 +1526,7 @@ function compileFor(node, ctx, scope) {
     item: itemName,
     index: indexName,
     source: eachCode,
+    jsSource: jsEachCode,
     parent: scope,
     level: scope ? scope.level + 1 : 0,
     itemAccessor,
@@ -1285,11 +1549,10 @@ function compileFor(node, ctx, scope) {
   const condition = scope
     ? `(${eachCode} || []).length > 0`
     : `b${ctx.addBindingCode(`(${eachCode} || []).length > 0`)}`
-  return `<block wx:if="{{${condition}}}">${loop}</block>${compileNode(
-    fallbackExpression,
-    ctx,
-    scope,
-    ['wx:else'],
+  const fallbackGuard = scope ? null : `(${codeOf(each)} || []).length === 0`
+  return `<block wx:if="{{${condition}}}">${loop}</block>${ctx.withGuard(
+    fallbackGuard,
+    () => compileNode(fallbackExpression, ctx, scope, ['wx:else']),
   )}`
 }
 
@@ -1299,10 +1562,11 @@ function compileRepeatInScope(node, ctx, scope) {
   const from = getExpression(getAttribute(node, 'from'))
   const countCode = inlineExpression(count, scope, ctx)
   const fromCode = from ? inlineExpression(from, scope, ctx) : '0'
-  const child = node.children.find((item) => !isWhitespaceText(item))
-  if (!child || !t.isJSXExpressionContainer(child)) {
-    throw new Error('<Repeat> requires a single arrow-function child')
+  const childNodes = node.children.filter((item) => !isWhitespaceText(item))
+  if (childNodes.length !== 1 || !t.isJSXExpressionContainer(childNodes[0])) {
+    throw new Error('<Repeat> requires exactly one arrow-function child')
   }
+  const child = childNodes[0]
   const fn = child.expression
   if (!t.isArrowFunctionExpression(fn) && !t.isFunctionExpression(fn)) {
     throw new Error('<Repeat> child must be an arrow function')
@@ -1327,6 +1591,8 @@ function compileRepeatInScope(node, ctx, scope) {
     item: itemName,
     index: indexName,
     source: null,
+    jsSource: null,
+    offset: fromCode,
     parent: scope,
     level: scope.level + 1,
     itemAccessor: false,
@@ -1345,11 +1611,9 @@ function compileRepeatInScope(node, ctx, scope) {
   ) {
     throw new Error('<Repeat> fallback must be JSX')
   }
-  return `<block wx:if="{{${countCode} > 0}}">${loop}</block>${compileNode(
-    fallbackExpression,
-    ctx,
-    scope,
-    ['wx:else'],
+  return `<block wx:if="{{${countCode} > 0}}">${loop}</block>${ctx.withGuard(
+    scope ? null : `!(${codeOf(count)} > 0)`,
+    () => compileNode(fallbackExpression, ctx, scope, ['wx:else']),
   )}`
 }
 
@@ -1360,10 +1624,11 @@ function compileRepeat(node, ctx, scope) {
   const from = getExpression(getAttribute(node, 'from'))
   const fromCode = from ? codeOf(from) : '0'
 
-  const child = node.children.find((item) => !isWhitespaceText(item))
-  if (!child || !t.isJSXExpressionContainer(child)) {
-    throw new Error('<Repeat> requires a single arrow-function child')
+  const childNodes = node.children.filter((item) => !isWhitespaceText(item))
+  if (childNodes.length !== 1 || !t.isJSXExpressionContainer(childNodes[0])) {
+    throw new Error('<Repeat> requires exactly one arrow-function child')
   }
+  const child = childNodes[0]
   const fn = child.expression
   if (!t.isArrowFunctionExpression(fn) && !t.isFunctionExpression(fn)) {
     throw new Error('<Repeat> child must be an arrow function')
@@ -1387,6 +1652,7 @@ function compileRepeat(node, ctx, scope) {
     item: itemName,
     index: '__glazeIndex',
     source: `b${binding}`,
+    jsSource: `Array.from({ length: (${codeOf(count)}) }, (_, index) => index + (${fromCode}))`,
     parent: null,
     level: 0,
   }
@@ -1402,11 +1668,9 @@ function compileRepeat(node, ctx, scope) {
   ) {
     throw new Error('<Repeat> fallback must be JSX')
   }
-  return `<block wx:if="{{b${binding}.length > 0}}">${loop}</block>${compileNode(
-    fallbackExpression,
-    ctx,
-    scope,
-    ['wx:else'],
+  return `<block wx:if="{{b${binding}.length > 0}}">${loop}</block>${ctx.withGuard(
+    `!(${codeOf(count)} > 0)`,
+    () => compileNode(fallbackExpression, ctx, scope, ['wx:else']),
   )}`
 }
 
@@ -1535,9 +1799,10 @@ function staticStyle(node) {
           ? property.key.value
           : null
       if (!key) throw new Error('Unsupported style key')
+      const cssName = key.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`)
       const value = property.value
       if (t.isStringLiteral(value) || t.isNumericLiteral(value)) {
-        return `${key}: ${value.value}`
+        return `${cssName}: ${value.value}`
       }
       throw new Error('Dynamic style values are not supported in the first compiler wave')
     })
@@ -1564,7 +1829,7 @@ function inlineExpression(expression, scope, ctx) {
 
 function isLoopName(name, scope) {
   for (let cursor = scope; cursor; cursor = cursor.parent) {
-    if (cursor.item === name || cursor.index === name) return true
+    if (cursor.item === name || cursor.index === name || cursor.directKey === name) return true
     if (cursor.aliases && Object.prototype.hasOwnProperty.call(cursor.aliases, name)) return true
   }
   return false
@@ -1639,12 +1904,16 @@ function hoistLoopExpression(expression, scope, ctx) {
   return visit(expression, true)
 }
 
-function accessorKind(name, scope) {
+function accessorTarget(name, scope) {
   for (let cursor = scope; cursor; cursor = cursor.parent) {
-    if (cursor.item === name && cursor.itemAccessor) return 'item'
-    if (cursor.index === name && cursor.indexAccessor) return 'index'
+    if (cursor.item === name && cursor.itemAccessor) return { kind: 'item', scope: cursor }
+    if (cursor.index === name && cursor.indexAccessor) return { kind: 'index', scope: cursor }
   }
   return null
+}
+
+function accessorKind(name, scope) {
+  return accessorTarget(name, scope)?.kind ?? null
 }
 
 function isStaticPropertyKey(node, parent) {
@@ -1654,7 +1923,7 @@ function isStaticPropertyKey(node, parent) {
   return false
 }
 
-function rewriteAccessorCalls(expression, scope) {
+function rewriteAccessorCalls(expression, scope, js = false) {
   if (!scope) return expression
   const cloned = t.cloneNode(expression, true)
   const visit = (node, parent = null) => {
@@ -1676,6 +1945,16 @@ function rewriteAccessorCalls(expression, scope) {
       if (node.arguments.length > 0) {
         throw new Error(`Solid accessor ${node.callee.name}() does not take arguments`)
       }
+      const found = accessorTarget(node.callee.name, scope)
+      const owner = found?.scope ?? scope
+      const target =
+        found?.kind === 'index'
+          ? owner.index
+          : js
+            ? (owner.eventItem ?? owner.item)
+            : null
+      if (target) return t.identifier(target)
+      if (owner.itemAst) return t.cloneNode(owner.itemAst, true)
       return t.identifier(node.callee.name)
     }
     for (const key of t.VISITOR_KEYS[node.type] ?? []) {

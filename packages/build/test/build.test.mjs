@@ -1,43 +1,75 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { spawnSync } from 'node:child_process'
+import { access, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { buildProject } from '../src/build.mjs'
+import { fileURLToPath } from 'node:url'
+import {
+  buildProject,
+  outputNameForRelative,
+} from '../src/build.mjs'
 
-test('builds a page, its inlined child and a page wrapper', async () => {
+const exists = async (file) => {
+  try {
+    await access(file)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function createProject({ config, files = {} }) {
   const project = await mkdtemp(path.join(tmpdir(), 'glaze-build-'))
-  const src = path.join(project, 'src')
-  await mkdir(src, { recursive: true })
-
   await writeFile(
     path.join(project, 'glaze.config.mjs'),
-    `export default {
+    `export default ${JSON.stringify(config, null, 2)}\n`,
+  )
+  for (const [relative, content] of Object.entries(files)) {
+    const file = path.join(project, relative)
+    await mkdir(path.dirname(file), { recursive: true })
+    await writeFile(file, content)
+  }
+  return project
+}
+
+const writeProjectFile = async (project, relative, content) => {
+  const file = path.join(project, relative)
+  await mkdir(path.dirname(file), { recursive: true })
+  await writeFile(file, content)
+}
+
+const appShell = (project) => [
+  writeProjectFile(project, 'src/app.js', 'App({})\n'),
+  writeProjectFile(project, 'src/app.wxss', 'page { background: #fff; }\n'),
+  writeProjectFile(
+    project,
+    'src/app.json',
+    JSON.stringify({ componentFramework: 'glass-easel', window: {} }),
+  ),
+]
+
+test('builds a page, its inlined child and a page wrapper', async () => {
+  const project = await createProject({
+    config: {
       source: 'src',
       output: 'miniprogram',
       pages: { 'pages/home/index': 'App.tsx' },
-    }\n`,
-  )
-  await writeFile(
-    path.join(src, 'app.json'),
-    JSON.stringify({ componentFramework: 'glass-easel', window: {} }),
-  )
-  await writeFile(
-    path.join(src, 'App.tsx'),
-    `import Child from './Child'
+    },
+    files: {
+      'src/App.tsx': `import Child from './Child'
 
 export default function App() {
   return <view class="page"><Child title="Hello" /></view>
 }
 `,
-  )
-  await writeFile(
-    path.join(src, 'Child.tsx'),
-    `export default function Child(props) {
+      'src/Child.tsx': `export default function Child(props) {
   return <text class="title">{props.title}</text>
 }
 `,
-  )
+    },
+  })
+  await Promise.all(appShell(project))
 
   const result = await buildProject(project)
 
@@ -57,8 +89,442 @@ export default function App() {
   assert.match(wxml, /<text class="title">/)
   assert.doesNotMatch(wxml, /<child/)
 
+  const componentJson = JSON.parse(
+    await readFile(
+      path.join(project, 'miniprogram/components/glaze-app/index.json'),
+      'utf8',
+    ),
+  )
+  assert.equal(componentJson.styleIsolation, 'apply-shared')
+
+  const bundle = await readFile(
+    path.join(project, 'miniprogram/components/glaze-app/index.js'),
+    'utf8',
+  )
+  assert.ok(bundle.length < 60 * 1024, `bundle should stay minified, got ${bundle.length}`)
+
   const appJson = JSON.parse(
     await readFile(path.join(project, 'miniprogram/app.json'), 'utf8'),
   )
   assert.deepEqual(appJson.pages, ['pages/home/index'])
+})
+
+test('resolves helper, JSON and type-only imports from the source file', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `import { fmt } from './utils/format'
+import data from './data.json'
+import type { Label } from './types'
+
+export default function App() {
+  const label: Label = data.title
+  return <view class="page">{fmt(label)}</view>
+}
+`,
+      'src/utils/format.ts': `export const fmt = (value: string) => '<' + value + '>'
+`,
+      'src/data.json': `{ "title": "Hello" }\n`,
+      'src/types.ts': `export type Label = string
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+
+  const result = await buildProject(project)
+  assert.deepEqual(result.components, ['glaze-app'])
+
+  const bundle = await readFile(
+    path.join(project, 'miniprogram/components/glaze-app/index.js'),
+    'utf8',
+  )
+  assert.match(bundle, /Hello/)
+  assert.ok(bundle.length > 0)
+})
+
+test('rejects unsafe output paths without touching sources', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'src/build',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view>safe</view>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+  const sourceBefore = await readFile(path.join(project, 'src/App.tsx'), 'utf8')
+
+  await assert.rejects(
+    () => buildProject(project),
+    /Config "output" must not be inside "source"/,
+  )
+  assert.equal(await readFile(path.join(project, 'src/App.tsx'), 'utf8'), sourceBefore)
+
+  await writeProjectFile(
+    project,
+    'glaze.config.mjs',
+    `export default { source: 'src', output: '../outside', pages: { 'pages/home/index': 'App.tsx' } }\n`,
+  )
+  await assert.rejects(
+    () => buildProject(project),
+    /Config "output" must be a subdirectory of the project/,
+  )
+
+  await writeProjectFile(
+    project,
+    'glaze.config.mjs',
+    `export default { source: '.', output: 'dist', pages: { 'pages/home/index': 'App.tsx' } }\n`,
+  )
+  await assert.rejects(
+    () => buildProject(project),
+    /Config "source" must be a subdirectory of the project/,
+  )
+})
+
+test('preserves previous output when a later build fails', async () => {
+  const config = {
+    source: 'src',
+    output: 'miniprogram',
+    pages: { 'pages/home/index': 'App.tsx' },
+  }
+  const project = await createProject({
+    config,
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view>first</view>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await buildProject(project)
+  await writeProjectFile(project, 'miniprogram/marker.txt', 'keep me\n')
+
+  await writeProjectFile(
+    project,
+    'glaze.config.mjs',
+    `export default { source: 'src', output: 'miniprogram', pages: { 'pages/home/index': 'Missing.tsx' } }\n`,
+  )
+  await assert.rejects(() => buildProject(project), /Page source not found: Missing.tsx/)
+  assert.equal(
+    await readFile(path.join(project, 'miniprogram/marker.txt'), 'utf8'),
+    'keep me\n',
+  )
+
+  await writeProjectFile(
+    project,
+    'glaze.config.mjs',
+    `export default ${JSON.stringify(config)}\n`,
+  )
+  await writeProjectFile(
+    project,
+    'src/App.tsx',
+    `export default function App( {
+  return <view>broken</view>
+}
+`,
+  )
+  await assert.rejects(() => buildProject(project))
+  assert.equal(
+    await readFile(path.join(project, 'miniprogram/marker.txt'), 'utf8'),
+    'keep me\n',
+  )
+  assert.equal(
+    await readFile(
+      path.join(project, 'miniprogram/components/glaze-app/index.wxml'),
+      'utf8',
+    ),
+    '<view>first</view>',
+  )
+})
+
+test('clean: false merges into output and keeps custom files', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      clean: false,
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view>first</view>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await buildProject(project)
+  await writeProjectFile(project, 'miniprogram/custom.txt', 'keep\n')
+  await writeProjectFile(
+    project,
+    'src/App.tsx',
+    `export default function App() {
+  return <view>second</view>
+}
+`,
+  )
+
+  await buildProject(project)
+  assert.equal(
+    await readFile(path.join(project, 'miniprogram/custom.txt'), 'utf8'),
+    'keep\n',
+  )
+  assert.match(
+    await readFile(
+      path.join(project, 'miniprogram/components/glaze-app/index.wxml'),
+      'utf8',
+    ),
+    /<view>second<\/view>/,
+  )
+})
+
+test('compiles only TSX reachable from pages', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view>ok</view>
+}
+`,
+      'src/Unused.tsx': `export default function Unused(props) {
+  return <view {...props} />
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+
+  const result = await buildProject(project)
+  assert.deepEqual(result.components, ['glaze-app'])
+  assert.equal(
+    await exists(path.join(project, 'miniprogram/components/glaze-unused')),
+    false,
+  )
+
+  await writeProjectFile(
+    project,
+    'src/App.tsx',
+    `import Unused from './Unused'
+
+export default function App() {
+  return <view><Unused /></view>
+}
+`,
+  )
+  await assert.rejects(() => buildProject(project), /Only object literals can be spread/)
+})
+
+test('rejects two source files that map to the same component name', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `import FooBar from './FooBar'
+import FooBarLower from './foo-bar'
+
+export default function App() {
+  return <view><FooBar /><FooBarLower /></view>
+}
+`,
+      'src/FooBar.tsx': `export default function FooBar() {
+  return <view><slot /></view>
+}
+`,
+      'src/foo-bar.tsx': `export default function FooBarLower() {
+  return <view><slot /></view>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await assert.rejects(
+    () => buildProject(project),
+    (error) => {
+      assert.match(error.message, /Output name collision "glaze-foo-bar"/)
+      assert.match(error.message, /FooBar\.tsx/)
+      assert.match(error.message, /foo-bar\.tsx/)
+      return true
+    },
+  )
+})
+
+test('normalizes Windows separators in output names', () => {
+  assert.equal(outputNameForRelative('pages\\FooBar.tsx'), 'glaze-pages-foo-bar')
+  assert.equal(outputNameForRelative('pages/FooBar.tsx'), 'glaze-pages-foo-bar')
+  assert.equal(outputNameForRelative('foo-bar.tsx'), 'glaze-foo-bar')
+})
+
+test('rejects WXSS @import and relative url() but accepts portable URLs', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view>styled</view>
+}
+`,
+      'src/App.wxss': `@import './shared.wxss';\n`,
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await assert.rejects(
+    () => buildProject(project),
+    /WXSS @import is not supported.*App\.wxss/,
+  )
+
+  await writeProjectFile(project, 'src/App.wxss', `.page { background: url('./bg.png'); }\n`)
+  await assert.rejects(
+    () => buildProject(project),
+    /WXSS url\(\) must be absolute.*App\.wxss/,
+  )
+
+  await writeProjectFile(
+    project,
+    'src/App.wxss',
+    `.page {
+  background: url('/images/bg.png');
+  mask: url('data:image/png;base64,AAAA');
+  color: red;
+}
+`,
+  )
+  await buildProject(project)
+  const wxss = await readFile(
+    path.join(project, 'miniprogram/components/glaze-app/index.wxss'),
+    'utf8',
+  )
+  assert.match(wxss, /url\('\/images\/bg\.png'\)/)
+})
+
+test('dedupes staticPages routes and skips wrappers for them', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      staticPages: ['pages/home/index', 'pages/native/index', 'pages/native/index'],
+    },
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view>home</view>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+
+  const result = await buildProject(project)
+  assert.deepEqual(result.pages, ['pages/home/index'])
+
+  const appJson = JSON.parse(
+    await readFile(path.join(project, 'miniprogram/app.json'), 'utf8'),
+  )
+  assert.deepEqual(appJson.pages, ['pages/home/index', 'pages/native/index'])
+  assert.equal(await exists(path.join(project, 'miniprogram/pages/home/index.wxml')), false)
+})
+
+test('warns about missing app.js and app.wxss', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view>warn</view>
+}
+`,
+    },
+  })
+
+  const warnings = []
+  const originalWarn = console.warn
+  console.warn = (message) => warnings.push(String(message))
+  try {
+    await buildProject(project)
+  } finally {
+    console.warn = originalWarn
+  }
+  assert.ok(warnings.some((message) => message.includes('app.js is missing')))
+  assert.ok(warnings.some((message) => message.includes('app.wxss is missing')))
+
+  await Promise.all(appShell(project))
+  const second = []
+  console.warn = (message) => second.push(String(message))
+  try {
+    await buildProject(project)
+  } finally {
+    console.warn = originalWarn
+  }
+  assert.deepEqual(second, [])
+})
+
+test('reloads a changed config on the next build', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view>reload</view>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await buildProject(project)
+  await writeProjectFile(
+    project,
+    'glaze.config.mjs',
+    `export default { source: 'src', output: 'dist', pages: { 'pages/home/index': 'App.tsx' } }\n`,
+  )
+
+  const result = await buildProject(project)
+  assert.equal(result.outputDir, path.join(project, 'dist'))
+  assert.equal(await exists(path.join(project, 'dist/app.json')), true)
+  assert.equal(await exists(path.join(project, 'miniprogram/app.json')), true)
+})
+
+test('CLI prints help and rejects a missing or unknown command', () => {
+  const cli = fileURLToPath(new URL('../src/cli.mjs', import.meta.url))
+
+  const help = spawnSync(process.execPath, [cli, '--help'], { encoding: 'utf8' })
+  assert.equal(help.status, 0)
+  assert.match(help.stdout, /Usage: glaze/)
+
+  const missing = spawnSync(process.execPath, [cli], { encoding: 'utf8' })
+  assert.equal(missing.status, 1)
+  assert.match(missing.stderr, /Missing command/)
+
+  const unknown = spawnSync(process.execPath, [cli, 'nope'], { encoding: 'utf8' })
+  assert.equal(unknown.status, 1)
+  assert.match(unknown.stderr, /Unknown command: nope/)
 })

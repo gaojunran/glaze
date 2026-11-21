@@ -36,12 +36,37 @@ export default {
 
 | Field | Meaning |
 | --- | --- |
-| `source` | source root, relative to the project |
-| `output` | generated mini-program root, relative to the project |
+| `source` | source root, a subdirectory of the project |
+| `output` | generated mini-program root, a subdirectory of the project |
 | `pages` | route → page component source, relative to `source` |
 | `static` | directories whose contents are copied into the output root |
 | `staticPages` | routes already present in `static` and kept in `app.json` |
-| `clean` | delete the output directory first; defaults to `true` |
+| `clean` | replace the previous output after a successful build; defaults to `true` |
+
+Paths are validated before anything is written:
+
+- `source` and `output` must both be strict subdirectories of the project;
+- `output` must not be the project root, `source`, inside `source`, or an
+  ancestor of `source`;
+- `output` must not contain the internal staging directory
+  `.tmp/glaze-build`.
+
+This protects the project from a config typo such as `output: 'src'` or
+`output: '.'` deleting source files or the project itself.
+
+## Build pipeline
+
+1. Load and validate the config, source directory, output path and pages.
+2. Compile the configured page components first.
+3. Discover components from each page's compiled result and compile only the
+   components that are reachable. Unrelated `.tsx` files under `source` are
+   never parsed.
+4. Write into a staging directory under `.tmp/glaze-build`.
+5. Replace `output` only after the whole build succeeds.
+
+Because the output is staged, a failed compile or a missing page leaves the
+previous `output` directory intact. `clean: false` merges the staged files into
+the existing output instead of replacing it.
 
 ## What it writes
 
@@ -66,12 +91,64 @@ Each compiled component directory contains:
 
 - `index.wxml` — structure and bindings;
 - `index.js` — Solid setup and binding effects, bundled with esbuild;
-- `index.json` — `component: true`, `usingComponents`, and `multipleSlots` when
-  the component declares named slots;
+- `index.json` — `component: true`, `styleIsolation: "apply-shared"`,
+  `usingComponents`, and `multipleSlots` when the component declares named
+  slots;
 - `index.wxss` — its own styles plus styles from inlined children.
 
 Only components actually reached from a page are emitted. A component that is
 always inlined (`Header` in the example) does not get an output directory.
+
+Generated modules bundle with `minify: true` and always resolve `solid-js` from
+the builder's own copy. The runtime is still duplicated per component; a shared
+runtime chunk is a future improvement. A simple component currently produces a
+roughly 30 KB bundle instead of the previous 75–90 KB.
+
+## Module resolution
+
+The compiler emits the source file's import statements. The builder passes the
+generated module to esbuild through `stdin` with the original source file's
+directory as `resolveDir`, so helper imports resolve relative to the TSX file
+rather than the staging directory:
+
+```tsx
+import { fmt } from './utils/format'
+import data from './data.json'
+import type { Label } from './types'
+```
+
+Both `.ts` helpers, JSON modules and type-only imports are bundled or erased by
+esbuild as usual.
+
+Output names are derived from the path relative to `source`:
+`pages/FooBar.tsx` becomes `glaze-pages-foo-bar`. Path separators are
+normalized to `/` before the name is generated, so Windows and POSIX produce the
+same names. If two source files map to the same name, the build fails with both
+paths instead of silently overwriting one component.
+
+## WXSS limits
+
+Component styles are copied next to the generated component, so source-relative
+WXSS references cannot work:
+
+- `@import` is rejected with an error naming the source `.wxss` file;
+- `url()` is rejected unless it is absolute (`/...`), remote (`http:`,
+  `https:`), protocol-relative (`//...`) or a `data:` URL.
+
+Inlining `@import` and copying assets is not implemented yet.
+
+## Static pages
+
+`staticPages` routes are unioned into `app.json.pages` and deduplicated. If a
+route is already listed in `staticPages`, the builder does not generate a page
+wrapper over it, so the static page keeps ownership of that route.
+
+## App shell
+
+`app.js` and `app.wxss` are copied when present. If either is missing the build
+still succeeds, but warns clearly because a mini-program normally needs both.
+`app.json` is copied when present; otherwise a minimal glass-easel default is
+written.
 
 ## Command
 
@@ -81,9 +158,10 @@ pnpm build
 pnpm --filter @glaze/example-solid-todo build
 ```
 
-The CLI can also be run against another project:
+The CLI requires a command and prints usage for `--help`:
 
 ```bash
+node packages/build/src/cli.mjs --help
 node packages/build/src/cli.mjs build /path/to/project
 ```
 
@@ -98,6 +176,10 @@ pnpm --filter @glaze/example-solid-todo exec glaze watch
 `watch` performs an initial build, then debounces source changes and serializes
 rebuilds. It watches `.tsx`, `.ts`, `.js`, `.json`, `.wxml`, and `.wxss` files
 under `source`, plus `glaze.config.mjs`.
+
+Every rebuild reloads the config with a cache-busting query, so editing
+`glaze.config.mjs` takes effect without restarting the watcher. When the config
+changes `source`, the watcher targets are rebuilt as well.
 
 ## Vite plugin
 
@@ -117,14 +199,17 @@ the automatic build while keeping the plugin loaded.
 
 ## Validation
 
-Builder test:
+Builder tests:
 
 ```bash
 pnpm --filter @glaze/build test
 ```
 
-It builds a temporary project and asserts the page wrapper, the inlined child
-and the generated `app.json`.
+They build temporary projects and cover: page wrappers and inlined children,
+helper/JSON/type-only imports, output path safety, preservation of previous
+output on failure, `clean: false` merging, reachability, output-name collisions, Windows separators,
+WXSS portability, `staticPages` deduplication, app shell warnings, config
+reloads, CLI help and generated `styleIsolation`.
 
 Real simulator run:
 
@@ -143,15 +228,20 @@ Result: the counter e2e passes against the generated `miniprogram` directory.
 
 ## Known gaps
 
-1. **Watch is full rebuild.** Every change reruns the whole pipeline; there is
-   no incremental compile yet.
+1. **Watch is a full rebuild.** Every change reruns the whole pipeline; config
+   reloads and watcher targets are refreshed, but there is no incremental
+   compile.
 2. **Vite plugin is a build bridge.** It does not provide mini-program HMR or a
    web preview renderer.
 3. **No asset pipeline.** Images and other assets are copied only through
    `static`.
 4. **No per-page config.** `app.json` window/navigation settings are shared.
-5. **Output ownership is all-or-nothing.** `clean: true` deletes the whole
+5. **Output ownership is all-or-nothing.** `clean: true` replaces the whole
    output directory; custom files must live in `static`.
+6. **Each component bundles its own runtime.** `solid-js` is deduplicated within
+   a bundle and minified, but not shared between component bundles yet.
+7. **WXSS references need manual handling.** `@import` is rejected and relative
+   `url()` must be rewritten before building.
 
 ## Rejected alternatives
 
