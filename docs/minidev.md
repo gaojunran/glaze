@@ -1,7 +1,7 @@
 # Running with minidev
 
-Glaze targets the **glass-easel** component framework. A mini-program project
-must opt in twice: once at compile time, once at runtime.
+Glaze targets the **glass-easel** component framework. A project must opt in
+twice: once at compile time, once at runtime.
 
 ## 1. Compile with glass-easel
 
@@ -12,9 +12,6 @@ In `app.json` (or a page's `.json`):
   "componentFramework": "glass-easel"
 }
 ```
-
-This selects the glass-easel template compiler. Without it, the project is
-compiled for exparser.
 
 ## 2. Use glass-easel in the WebView renderer
 
@@ -27,9 +24,7 @@ compiled for exparser.
 ```
 
 `glassEaselWebview` is the runtime gate. **Without it, the WebView renderer
-falls back to exparser even when `componentFramework` is `glass-easel`.** This
-is the configuration that is easy to miss: the project compiles for glass-easel,
-but the page still runs the old component framework.
+falls back to exparser even when `componentFramework` is `glass-easel`.**
 
 A complete `app.json` for a Glaze project:
 
@@ -45,48 +40,49 @@ A complete `app.json` for a Glaze project:
 ```
 
 For Skyline projects, `componentFramework` must be `glass-easel`, and the
-simulator/host injects `glassEaselWebview` for Skyline pages. Glaze's first
-target is the WebView renderer, so set it explicitly.
+host injects `glassEaselWebview` for Skyline pages. Glaze targets the WebView
+renderer, so set it explicitly.
 
-## Optional: `useGlassEaselForWxml`
+## Build the example
 
-`project.config.json`:
-
-```json
-{
-  "setting": {
-    "useGlassEaselForWxml": true
-  }
-}
+```bash
+cd ~/Projects/glaze
+node packages/compiler/src/build-example.mjs
 ```
 
-This compiles WXML exclusively with glass-easel and removes the wcc `$gwx`
-artifacts. It is not required for an external component, and pure-glass output
-has packaging limitations. Leave it off unless you are deliberately testing the
-pure glass-easel pipeline.
+This compiles `examples/solid-todo/src/*.tsx` into mini-program components under
+`examples/solid-todo/miniprogram/components/`.
 
-## Commands
+## Build and serve
 
 Use the local minidev checkout; do not depend on a globally installed binary.
 
 ```bash
 cd ~/Playground/minibuild
 
-cargo run -p daemon --bin minidev -- sim build \
+target/debug/minidev sim build \
   --project ~/Projects/glaze/examples/solid-todo \
   --out ~/Projects/glaze/.tmp/sim
 
-cargo run -p daemon --bin minidev -- sim serve \
+target/debug/minidev sim serve \
   --dist ~/Projects/glaze/.tmp/sim \
-  --browser /snap/bin/chromium
-
-cargo run -p daemon --bin minidev -- test \
-  --project ~/Projects/glaze/examples/solid-todo \
-  --browser /snap/bin/chromium
+  --browser ~/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell \
+  --port 9422
 ```
 
-`--browser` depends on the machine; `/snap/bin/chromium` is the path used on the
-current development host. A Playwright `chromium_headless_shell` also works.
+Open `http://127.0.0.1:9422/appservice/mainframe`.
+
+## End-to-end test
+
+```bash
+cd ~/Playground/minibuild
+target/debug/minidev test \
+  --project ~/Projects/glaze/examples/solid-todo \
+  --browser ~/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell
+```
+
+The test uses a custom component id (`#app`) because mini-program selector
+queries do not pierce a component's shadow root from the page level.
 
 ## Where this is enforced
 

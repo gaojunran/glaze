@@ -1,0 +1,13 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/bench/index",
+    "pages/native/index"
+  ],
+  "componentFramework": "glass-easel",
+  "window": {
+    "glassEaselWebview": true,
+    "navigationStyle": "default",
+    "navigationBarTitleText": "Glaze"
+  }
+}

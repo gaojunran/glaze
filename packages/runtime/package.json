@@ -3,11 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "glass-easel adapter for Glaze: boundary component, template engine and props bridge",
+  "description": "Solid binding runtime for mini-program components",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./mini": "./src/mini.ts"
   },
   "dependencies": {
-    "glass-easel": "^1.2.1"
+    "glass-easel": "^1.2.1",
+    "solid-js": "^2.0.3"
   }
 }

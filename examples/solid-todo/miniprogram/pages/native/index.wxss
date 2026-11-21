@@ -1,0 +1,36 @@
+.bench {
+  padding: 24rpx;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  margin-bottom: 16rpx;
+}
+
+.tick {
+  font-size: 36rpx;
+  font-weight: 600;
+  min-width: 80rpx;
+}
+
+.bump {
+  height: 64rpx;
+  line-height: 64rpx;
+  padding: 0 24rpx;
+  font-size: 28rpx;
+  border-radius: 32rpx;
+  background: #1677ff;
+  color: #fff;
+}
+
+.row {
+  padding: 12rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.row-title {
+  font-size: 28rpx;
+  color: #374151;
+}

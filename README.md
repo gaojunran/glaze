@@ -2,31 +2,35 @@
 
 **Solid and Svelte, running natively on glass-easel.**
 
-Glaze renders modern web frameworks directly into glass-easel nodes. There is no
-WXML compilation in the hot path, no `setData` for internal state, and no DOM
-shim.
+Glaze compiles modern web frameworks to native mini-program WXML and runs only
+their reactive logic at runtime. No virtual DOM, no generic recursive template,
+no `setData` for unrelated state.
 
-The first target is **Solid 2**. Svelte 5 is planned on top of the same adapter.
+The first target is **Solid 2**. Svelte 5 is planned on the same compiler.
 
 ## Status
 
-Early. The first milestone is a Solid counter and todo running in a real
-mini-program through the minidev simulator. Svelte is not implemented yet.
+Working spike: a Solid counter and a 1000-row benchmark run in the minidev
+simulator. The 1000-row first render is within ~1–2% of hand-written WXML in the
+same harness, and a scalar update is the same.
 
 ## Packages
 
 | Package | Role |
 | --- | --- |
-| `@glaze/runtime` | glass-easel boundary, template engine, props and events bridge |
-| `@glaze/solid` | Solid 2 renderer for glass-easel |
-| `@glaze/vite-plugin` | build integration for mini-program output |
-| `examples/solid-todo` | end-to-end example |
+| `@glaze/compiler` | Solid JSX to WXML + binding runtime |
+| `@glaze/runtime` | per-instance Solid root and binding bridge |
+| `@glaze/solid` | future renderer experiments |
+| `@glaze/vite-plugin` | future build integration |
+| `examples/solid-todo` | counter, todo list and 1000-row benchmark |
 
 ## Documentation
 
-- [Implementation plan](docs/plan.md)
 - [Architecture](docs/architecture.md)
+- [Compiler](docs/compiler.md)
+- [Implementation plan](docs/plan.md)
 - [Running with minidev](docs/minidev.md)
+- [Why external components do not work](docs/findings-external-component.md)
 
 ## License
 

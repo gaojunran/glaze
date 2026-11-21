@@ -1,0 +1,10 @@
+{
+  "miniprogramRoot": "miniprogram/",
+  "compileType": "miniprogram",
+  "setting": {
+    "es6": false,
+    "minified": false
+  },
+  "appid": "wx0000000000000000",
+  "projectname": "glaze-spike"
+}

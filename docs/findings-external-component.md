@@ -2,6 +2,10 @@
 
 Date: 2026-11-21.
 
+> Historical note: the spike component was removed when the architecture moved
+to the compiler. The commands below describe the experiment that produced the
+finding.
+
 ## Summary
 
 The planned `externalComponent: true` + custom `templateEngine` boundary does not
