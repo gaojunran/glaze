@@ -477,7 +477,12 @@ function inlineComponent(node, ctx, scope, name, source) {
     if (node.source.value !== 'solid-js') return null
     for (const specifier of node.specifiers) {
       const local = specifier.local.name
-      if (ctx.knownImports.has(local)) continue
+      const existing = ctx.imports.get(local)
+      if (existing !== undefined) {
+        if (existing !== 'solid-js') return null
+        continue
+      }
+      ctx.imports.set(local, 'solid-js')
       ctx.knownImports.add(local)
       if (t.isImportSpecifier(specifier)) {
         const imported = specifier.imported.name ?? specifier.imported.value
