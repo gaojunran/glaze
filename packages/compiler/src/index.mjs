@@ -42,6 +42,39 @@ const getAttribute = (node, name) =>
     (attr) => t.isJSXAttribute(attr) && t.isJSXIdentifier(attr.name, { name }),
   )
 
+function expandAttributes(attributes) {
+  const expanded = []
+  for (const attr of attributes) {
+    if (t.isJSXAttribute(attr)) {
+      expanded.push(attr)
+      continue
+    }
+    if (!t.isJSXSpreadAttribute(attr) || !t.isObjectExpression(attr.argument)) {
+      throw new Error('Only object literals can be spread into JSX attributes')
+    }
+    for (const property of attr.argument.properties) {
+      if (!t.isObjectProperty(property) || property.computed) {
+        throw new Error('JSX spread object must use static keys')
+      }
+      const key = t.isIdentifier(property.key)
+        ? property.key.name
+        : t.isStringLiteral(property.key)
+          ? property.key.value
+          : null
+      if (!key) throw new Error('JSX spread object must use static keys')
+      expanded.push(
+        t.jsxAttribute(
+          t.jsxIdentifier(key),
+          t.isStringLiteral(property.value)
+            ? property.value
+            : t.jsxExpressionContainer(property.value),
+        ),
+      )
+    }
+  }
+  return expanded
+}
+
 const getExpression = (attr) => {
   if (!attr) return null
   if (attr.value == null) return t.booleanLiteral(true)
@@ -133,7 +166,7 @@ export function compileComponent(source, options = {}) {
     },
     addEvent(expression, scope = null, custom = false) {
       const index = this.events.length
-      this.events.push({ code: codeOf(expression), scope, custom, block: this.currentBlock })
+      this.events.push({ code: codeOf(expression), ast: expression, scope, custom, block: this.currentBlock })
       return index
     },
     addBindingCode(code, listKey = null) {
@@ -332,11 +365,14 @@ function emitModule(ast, setupStatements, ctx, options) {
     ctx.events
       .map((event, index) => {
         if (event.block !== blockId) return ''
+        const code = event.scope
+          ? codeOf(rewriteAccessorCalls(event.ast, event.scope))
+          : event.code
         const call = event.custom
-          ? `(${event.code})(event.detail)`
-          : `(${event.code})(event)`
+          ? `(${code})(event.detail)`
+          : `(${code})(event)`
         if (!event.scope) {
-          if (!event.custom) return `    ctx.event(${index}, ${event.code});`
+          if (!event.custom) return `    ctx.event(${index}, ${code});`
           return `    ctx.event(${index}, (event) => ${call});`
         }
         const chain = []
@@ -464,7 +500,7 @@ function compileElement(node, ctx, scope, extraAttrs = []) {
   }
 
   const attrs = []
-  for (const attr of node.openingElement.attributes) {
+  for (const attr of expandAttributes(node.openingElement.attributes)) {
     if (!t.isJSXAttribute(attr)) {
       throw new Error('JSX spread attributes are not supported')
     }
@@ -548,7 +584,7 @@ function compileComponentElement(node, ctx, scope, extraAttrs = []) {
   ctx.addComponent(name, source)
 
   const attrs = []
-  for (const attr of node.openingElement.attributes) {
+  for (const attr of expandAttributes(node.openingElement.attributes)) {
     if (!t.isJSXAttribute(attr)) {
       throw new Error('JSX spread attributes are not supported')
     }
@@ -801,14 +837,76 @@ function compileConditional(test, consequent, alternate, ctx, scope) {
   return `${thenNode}${elseNode}`
 }
 
+function compileShowCallback(node, ctx, scope, when, keyed, fn, fallback) {
+  if (scope) throw new Error('<Show> function children are only supported at the top level')
+  const firstParam = fn.params[0]
+  const destructured = t.isObjectPattern(firstParam) || t.isArrayPattern(firstParam)
+  if (destructured && !keyed) {
+    throw new Error('Destructuring a <Show> value requires keyed')
+  }
+  const param = destructured
+    ? '__glazeValue'
+    : t.isIdentifier(firstParam)
+      ? firstParam.name
+      : 'value'
+  const aliases = destructured ? patternAliases(firstParam, [param]) : null
+  const body = t.isBlockStatement(fn.body)
+    ? (() => {
+        const ret = fn.body.body.find((item) => t.isReturnStatement(item))
+        if (!ret) throw new Error('<Show> callback must return JSX')
+        return ret.argument
+      })()
+    : fn.body
+  if (!t.isJSXElement(body) && !t.isJSXFragment(body)) {
+    throw new Error('<Show> callback must return JSX')
+  }
+
+  const condition = ctx.addBinding(when)
+  const values = ctx.addBindingCode(`[(${codeOf(when)})]`)
+  const itemScope = {
+    item: param,
+    index: '__glazeIndex',
+    source: `b${values}`,
+    parent: null,
+    level: 0,
+    itemAccessor: !keyed,
+    indexAccessor: false,
+    aliases,
+  }
+  const content = compileNode(body, ctx, itemScope)
+  const loop = `<block wx:for="{{b${values}}}" wx:for-item="${param}" wx:for-index="__glazeIndex" wx:key="*this">${content}</block>`
+  const thenNode = `<block wx:if="{{b${condition}}}">${loop}</block>`
+  if (!fallback) return thenNode
+  const elseNode = compileNode(fallback, ctx, scope, ['wx:else'])
+  return `${thenNode}${elseNode}`
+}
+
 function compileShow(node, ctx, scope) {
   const when = getExpression(getAttribute(node, 'when'))
   if (!when) throw new Error('<Show> requires a when expression')
-  const condition = conditionExpression(when, ctx, scope)
+  const keyedAttr = getAttribute(node, 'keyed')
+  let keyed = false
+  if (keyedAttr) {
+    const keyedExpression = getExpression(keyedAttr)
+    if (!t.isBooleanLiteral(keyedExpression)) {
+      throw new Error('<Show> keyed must be a boolean')
+    }
+    keyed = keyedExpression.value
+  }
   const fallback = getExpression(getAttribute(node, 'fallback'))
   const children = node.children.filter((child) => !isWhitespaceText(child))
   if (children.length === 0) throw new Error('<Show> requires a child')
 
+  if (
+    children.length === 1 &&
+    t.isJSXExpressionContainer(children[0]) &&
+    (t.isArrowFunctionExpression(children[0].expression) ||
+      t.isFunctionExpression(children[0].expression))
+  ) {
+    return compileShowCallback(node, ctx, scope, when, keyed, children[0].expression, fallback)
+  }
+
+  const condition = conditionExpression(when, ctx, scope)
   const thenNode =
     children.length === 1
       ? compileNode(children[0], ctx, scope, [`wx:if="{{${condition}}}"`])
@@ -857,15 +955,117 @@ function compileSwitch(node, ctx, scope) {
   return output
 }
 
+function patternAliases(pattern, base, aliases = {}) {
+  if (t.isObjectPattern(pattern)) {
+    for (const property of pattern.properties) {
+      if (!t.isObjectProperty(property)) {
+        throw new Error('Rest elements in destructured For/Show items are not supported')
+      }
+      const key = t.isIdentifier(property.key)
+        ? property.key.name
+        : t.isStringLiteral(property.key)
+          ? property.key.value
+          : null
+      if (!key) throw new Error('Destructured item keys must be static')
+      const path = [...base, key]
+      assignAlias(property.value, path, aliases)
+    }
+    return aliases
+  }
+  if (t.isArrayPattern(pattern)) {
+    pattern.elements.forEach((element, index) => {
+      if (element) assignAlias(element, [...base, index], aliases)
+    })
+    return aliases
+  }
+  throw new Error('Unsupported destructuring pattern')
+}
+
+function assignAlias(node, path, aliases) {
+  if (t.isIdentifier(node)) {
+    aliases[node.name] = path
+    return
+  }
+  if (t.isAssignmentPattern(node)) {
+    throw new Error('Destructured defaults are not supported in For/Show callbacks')
+  }
+  if (t.isObjectPattern(node) || t.isArrayPattern(node)) {
+    patternAliases(node, path, aliases)
+    return
+  }
+  throw new Error('Unsupported destructuring pattern')
+}
+
+function aliasPath(name, scope) {
+  for (let cursor = scope; cursor; cursor = cursor.parent) {
+    if (cursor.aliases?.[name]) return cursor.aliases[name]
+  }
+  return null
+}
+
+function buildMember(path) {
+  return path.slice(1).reduce(
+    (node, segment) =>
+      t.memberExpression(
+        node,
+        typeof segment === 'number' ? t.numericLiteral(segment) : t.identifier(segment),
+        typeof segment === 'number',
+      ),
+    t.identifier(path[0]),
+  )
+}
+
+function inferKeyedField(fn) {
+  const param = t.isIdentifier(fn.params[0]) ? fn.params[0].name : null
+  if (!param) return null
+  const body = t.isBlockStatement(fn.body)
+    ? (() => {
+        const ret = fn.body.body.find((item) => t.isReturnStatement(item))
+        return ret?.argument ?? null
+      })()
+    : fn.body
+  if (!body || !t.isMemberExpression(body)) return null
+  if (!t.isIdentifier(body.object, { name: param })) return null
+  if (body.computed) {
+    return t.isStringLiteral(body.property) ? body.property.value : null
+  }
+  return t.isIdentifier(body.property) ? body.property.name : null
+}
+
 function compileFor(node, ctx, scope) {
   const each = getExpression(getAttribute(node, 'each'))
   if (!each) throw new Error('<For> requires an each expression')
 
   const keyAttr = getAttribute(node, 'key')
+  const keyedAttr = getAttribute(node, 'keyed')
+  let keyed = true
+  let keyedField = null
+  if (keyedAttr) {
+    const keyedExpression = getExpression(keyedAttr)
+    if (t.isBooleanLiteral(keyedExpression)) {
+      keyed = keyedExpression.value
+    } else if (
+      t.isArrowFunctionExpression(keyedExpression) ||
+      t.isFunctionExpression(keyedExpression)
+    ) {
+      keyed = 'fn'
+      keyedField = inferKeyedField(keyedExpression)
+      if (!keyedField) {
+        throw new Error('<For> keyed function must return a single field, e.g. (item) => item.id')
+      }
+    } else {
+      throw new Error('<For> keyed must be a boolean or a function')
+    }
+  }
+
   let key = '*this'
   if (keyAttr) {
     if (keyAttr.value && t.isStringLiteral(keyAttr.value)) key = keyAttr.value.value
     else throw new Error('<For> key must be a string literal in the first compiler wave')
+  } else if (keyed === false) {
+    key = null
+  } else if (keyedField) {
+    key = keyedField
   }
 
   const eachCode = scope ? inlineExpression(each, scope) : codeOf(each)
@@ -879,8 +1079,21 @@ function compileFor(node, ctx, scope) {
   if (!t.isArrowFunctionExpression(fn) && !t.isFunctionExpression(fn)) {
     throw new Error('<For> child must be an arrow function')
   }
-  const itemName = t.isIdentifier(fn.params[0]) ? fn.params[0].name : 'item'
+  const itemAccessor = keyed === false || keyed === 'fn'
+  const firstParam = fn.params[0]
+  const destructured = t.isObjectPattern(firstParam) || t.isArrayPattern(firstParam)
+  if (destructured && itemAccessor) {
+    throw new Error('Destructuring a <For> item requires keyed=true')
+  }
+  const itemName = destructured
+    ? scope
+      ? `__glazeItem${scope.level + 1}`
+      : '__glazeItem'
+    : t.isIdentifier(firstParam)
+      ? firstParam.name
+      : 'item'
   const indexName = t.isIdentifier(fn.params[1]) ? fn.params[1].name : 'index'
+  const aliases = destructured ? patternAliases(firstParam, [itemName]) : null
   const body = t.isBlockStatement(fn.body)
     ? (() => {
         const ret = fn.body.body.find((item) => t.isReturnStatement(item))
@@ -907,9 +1120,13 @@ function compileFor(node, ctx, scope) {
     source: eachCode,
     parent: scope,
     level: scope ? scope.level + 1 : 0,
+    itemAccessor,
+    indexAccessor: keyed !== false,
+    aliases,
   }
   const children = compileNode(body, ctx, itemScope)
-  const loop = `<block wx:for="{{${eachExpr}}}" wx:for-item="${itemName}" wx:for-index="${indexName}" wx:key="${key}">${children}</block>`
+  const keyAttrCode = key ? ` wx:key="${key}"` : ''
+  const loop = `<block wx:for="{{${eachExpr}}}" wx:for-item="${itemName}" wx:for-index="${indexName}"${keyAttrCode}>${children}</block>`
 
   const fallback = getAttribute(node, 'fallback')
   if (!fallback) return loop
@@ -1123,8 +1340,57 @@ function staticStyle(node) {
 }
 
 function inlineExpression(expression, scope) {
-  validateInline(expression, scope)
-  return codeOf(expression)
+  const rewritten = rewriteAccessorCalls(expression, scope)
+  validateInline(rewritten, scope)
+  return codeOf(rewritten)
+}
+
+function accessorKind(name, scope) {
+  for (let cursor = scope; cursor; cursor = cursor.parent) {
+    if (cursor.item === name && cursor.itemAccessor) return 'item'
+    if (cursor.index === name && cursor.indexAccessor) return 'index'
+  }
+  return null
+}
+
+function isStaticPropertyKey(node, parent) {
+  if (!parent) return false
+  if (t.isMemberExpression(parent) && parent.property === node && !parent.computed) return true
+  if (t.isObjectProperty(parent) && parent.key === node && !parent.computed) return true
+  return false
+}
+
+function rewriteAccessorCalls(expression, scope) {
+  if (!scope) return expression
+  const cloned = t.cloneNode(expression, true)
+  const visit = (node, parent = null) => {
+    if (!node || typeof node !== 'object') return node
+    if (
+      t.isIdentifier(node) &&
+      (parent ? t.isReferenced(node, parent) : true) &&
+      !isStaticPropertyKey(node, parent)
+    ) {
+      const path = aliasPath(node.name, scope)
+      if (path) return buildMember(path)
+    }
+    if (
+      t.isCallExpression(node) &&
+      t.isIdentifier(node.callee) &&
+      accessorKind(node.callee.name, scope)
+    ) {
+      if (node.arguments.length > 0) {
+        throw new Error(`Solid accessor ${node.callee.name}() does not take arguments`)
+      }
+      return t.identifier(node.callee.name)
+    }
+    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+      const value = node[key]
+      if (Array.isArray(value)) node[key] = value.map((child) => visit(child, node))
+      else if (value && typeof value === 'object') node[key] = visit(value, node)
+    }
+    return node
+  }
+  return visit(cloned)
 }
 
 function validateInline(expression, scope) {

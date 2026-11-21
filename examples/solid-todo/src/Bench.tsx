@@ -19,10 +19,10 @@ export default function Bench() {
         </button>
       </view>
       <view class="list">
-        <For each={items()} key="id">
+        <For each={items()} keyed={(item) => item.id}>
           {(item) => (
             <view class="row">
-              <text class="row-title">{item.title}</text>
+              <text class="row-title">{item().title}</text>
             </view>
           )}
         </For>

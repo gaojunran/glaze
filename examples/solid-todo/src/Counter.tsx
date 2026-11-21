@@ -66,11 +66,23 @@ export default function Counter() {
         </Match>
       </Switch>
 
+      <Show when={status()} keyed>
+        {(value) => <text class="show-keyed">{value}</text>}
+      </Show>
+
+      <For each={['a', 'b']} keyed={false}>
+        {(item) => <text class="unkeyed">{item()}</text>}
+      </For>
+
+      <For each={[{ id: 1 }]}>
+        {({ id }) => <text class="destructured">{id}</text>}
+      </For>
+
       <Repeat count={3}>
         {(index) => <text class="dot">{index}</text>}
       </Repeat>
 
-      <For each={[]} key="*this" fallback={<text class="empty-list">empty</text>}>
+      <For each={[]} fallback={<text class="empty-list">empty</text>}>
         {(item) => <text>{item}</text>}
       </For>
 
@@ -114,17 +126,19 @@ export default function Counter() {
         </button>
 
         <view class="list">
-          <For each={todos()} key="id">
+          <For each={todos()} keyed={(todo) => todo.id}>
             {(todo) => (
               <Panel>
                 <TodoItem
-                  title={todo.title}
-                  done={todo.done}
-                  onToggle={() => toggleTodo(todo.id)}
+                  title={todo().title}
+                  done={todo().done}
+                  onToggle={() => toggleTodo(todo().id)}
                 />
                 <button
                   class="remove"
-                  onClick={() => setTodos((items) => items.filter((item) => item.id !== todo.id))}
+                  onClick={() =>
+                    setTodos((items) => items.filter((item) => item.id !== todo().id))
+                  }
                 >
                   x
                 </button>
@@ -146,21 +160,21 @@ export default function Counter() {
       </view>
 
       <view class="grid">
-        <For each={grid()} key="id">
+        <For each={grid()} keyed={(row) => row.id}>
           {(row, rowIndex) => (
             <view class="row">
-              <For each={row.cells} key="id">
+              <For each={row().cells} keyed={(cell) => cell.id}>
                 {(cell, cellIndex) => (
                   <button
                     class="cell"
                     onClick={() =>
                       setGrid((rows) =>
                         rows.map((item, index) =>
-                          index === rowIndex
+                          index === rowIndex()
                             ? {
                                 ...item,
                                 cells: item.cells.map((value, cellAt) =>
-                                  cellAt === cellIndex
+                                  cellAt === cellIndex()
                                     ? { ...value, id: `${value.id}!` }
                                     : value,
                                 ),
@@ -170,7 +184,7 @@ export default function Counter() {
                       )
                     }
                   >
-                    {cell.id}
+                    {cell().id}
                   </button>
                 )}
               </For>

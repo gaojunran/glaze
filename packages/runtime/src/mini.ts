@@ -229,6 +229,12 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
               }
               return state.props[key]?.[0]()
             },
+            has: (_, key: string) => key in eventProps || key in state.props,
+            ownKeys: () => [...propertyNames, ...Object.keys(eventProps)],
+            getOwnPropertyDescriptor: (_, key: string) =>
+              key in eventProps || key in state.props
+                ? { enumerable: true, configurable: true }
+                : undefined,
           },
         )
 

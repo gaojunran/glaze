@@ -50,12 +50,18 @@ First-wave support:
 | `onClick` / `onTap` / `onInput` / ... | `bindtap` / `bindinput` + `eN` |
 | `<Show when={...}>` | `wx:if` |
 | `<Show fallback={...}>` | `wx:if` + `wx:else` |
+| `<Show keyed>{(value) => ...}</Show>` | one-item `wx:for` under a `wx:if` |
+| `<Show>{(value) => ...}</Show>` | same, with the accessor call rewritten |
 | `<Switch>` + `<Match when={...}>` | `wx:if` / `wx:elif` / `wx:else` |
 | `<Switch fallback={...}>` | final `wx:else` |
-| `<For each={...} key="id" fallback={...}>` | `wx:if` + `wx:for` + `wx:else` |
+| `<For each={...} keyed={(item) => item.id} fallback={...}>` | `wx:if` + `wx:for` + `wx:else` |
+| `<For keyed={false}>` | `wx:for` without `wx:key`; item is an accessor |
+| `<For keyed={(item) => item.id}>` | `wx:key="id"`; item and index are accessors |
 | `<Repeat count={...} from={...} fallback={...}>` | generated index array + `wx:for` |
 | item/index expressions inside `For` | inline `{{item.x}}` |
+| destructured `For` / `Show` callback parameter | aliased to `__glazeItem.x` / `__glazeValue.x` |
 | `class` object / array | `className(...)` binding, or inline WXML segments inside `For` |
+| `{...{ class: 'x', id: 'y' }}` | flattened static attributes |
 | `style` object | `styleName(...)` binding, or inline WXML segments inside `For` |
 | imported component `<TodoItem title={...} />` | `<todo-item title="{{...}}" />` + `usingComponents` |
 | stateless component outside `For` | inlined into the parent's WXML and setup |
@@ -244,9 +250,9 @@ node: it has no `focus`, `scrollIntoView`, or child traversal. An element with
 Nested `For` elements must use distinct item and index names:
 
 ```tsx
-<For each={grid()} key="id">
+<For each={grid()} keyed={(row) => row.id}>
   {(row, rowIndex) => (
-    <For each={row.cells} key="id">
+    <For each={row.cells} keyed={(cell) => cell.id}>
       {(cell, cellIndex) => <button onClick={...}>{cell.id}</button>}
     </For>
   )}
@@ -323,6 +329,22 @@ Nested loops use one marker per level; the handler walks the whole scope chain.
 `<For fallback>` checks `(each || []).length > 0`. `<Repeat>` builds
 `Array.from({ length: count }, (_, index) => index + from)` in a binding; it is
 not supported inside another `For` yet.
+
+`For` follows Solid 2's `keyed` modes: default (`true`) gives a value item and
+an index accessor; `keyed={false}` gives an accessor item and a numeric index;
+`keyed={(item) => item.id}` gives accessor item/index and an inferred
+`wx:key`. Accessor calls such as `item()` or `index()` are rewritten to the
+WXML variable in expressions and event handlers. `keyed` functions must return a
+single field; nested keys are rejected.
+
+`Show` function children are supported at the top level only. `keyed` passes
+the value; without it the callback receives an accessor (`value()`), matching
+Solid. The implementation binds a one-item array and iterates it so WXML has a
+name for the value.
+
+Component `props` is a Proxy with `ownKeys`, `has`, and
+`getOwnPropertyDescriptor` traps, so Solid 2's `omit` and `merge` can enumerate
+it. `splitProps` was removed in Solid 2; use `omit` for the rest object.
 
 Binding writes are merged in a microtask: several signals updated in one event
 produce one `setData` call. The initial values still go through one synchronous
@@ -405,10 +427,11 @@ target/debug/minidev test \
 ```
 
 Result: `counter.test.js` passes. It covers title/count updates, `Show`,
-`Switch`/`Match`, keyed `For`, `For` fallback, `Repeat`, class objects,
-`TodoItem` props, inline default slot, boundary default slot, named slot, custom
-component event, context value, ref measurement, nested `For` event,
-append/insert/delete updates, and row removal.
+`Switch`/`Match`, keyed `For`, unkeyed `For`, `Show` function children,
+`For` fallback, `Repeat`, class objects, `TodoItem` props via `omit`, inline
+default slot, boundary default slot, named slot, custom component event, context
+value, ref measurement, nested `For` event, append/insert/delete updates, and
+row removal.
 
 ## Benchmark
 
@@ -454,7 +477,16 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
 6. **Component event payloads** pass `event.detail` as one argument; multiple
    arguments arrive as an array.
 7. **Unsupported JSX** (`.map`, dynamic components, render props, `Portal`,
-   `Transition`) is a compile error.
-8. **Build integration** is a CLI (`glaze build`); there is no Vite plugin or
+   `Transition`) is a compile error. JSX spread only accepts an object literal;
+   spreading `props` is rejected because attributes must be known at compile
+   time. Destructuring supports objects, arrays, nested patterns and aliases;
+   rest elements and defaults are rejected.
+8. **`For` keyed functions** must return a single field (`(item) => item.id`);
+   nested keys are rejected. `keyed={false}` intentionally omits `wx:key`, so
+   the simulator prints a performance warning.
+9. **`Show` function children** are top-level only; a callback inside `For`
+   is rejected.
+10. **`Repeat`** cannot be nested inside `For` yet.
+11. **Build integration** is a CLI (`glaze build`); there is no Vite plugin or
    watch mode yet.
-9. **Svelte** has no compiler yet.
+12. **Svelte** has no compiler yet.

@@ -483,6 +483,131 @@ test('compiles For fallback and Repeat', () => {
   assert.match(repeatResult.js, /Array\.from\(\{ length: \(props\.count\) \}/)
 })
 
+test('compiles keyed For modes', () => {
+  const unkeyed = compileComponent(`
+    export default function Page(props) {
+      return (
+        <For each={props.items} keyed={false}>
+          {(item) => <text>{item().title}</text>}
+        </For>
+      )
+    }
+  `)
+  assert.doesNotMatch(unkeyed.wxml, /wx:key=/)
+  assert.match(unkeyed.wxml, /\{\{item\.title\}\}/)
+
+  const unkeyedEvent = compileComponent(`
+    export default function Page(props) {
+      return (
+        <For each={props.items} keyed={false}>
+          {(item) => <text onClick={() => pick(item().id)}>{item().title}</text>}
+        </For>
+      )
+    }
+  `)
+  assert.match(unkeyedEvent.js, /pick\(item\.id\)/)
+  assert.doesNotMatch(unkeyedEvent.js, /item\(\)/)
+
+  const keyedFn = compileComponent(`
+    export default function Page(props) {
+      return (
+        <For each={props.items} keyed={(item) => item.id}>
+          {(item) => <text>{item().title}</text>}
+        </For>
+      )
+    }
+  `)
+  assert.match(keyedFn.wxml, /wx:key="id"/)
+  assert.match(keyedFn.wxml, /\{\{item\.title\}\}/)
+})
+
+test('compiles Show function children', () => {
+  const keyed = compileComponent(`
+    export default function Page(props) {
+      return (
+        <Show when={props.user} keyed fallback={<text>none</text>}>
+          {(user) => <text>{user.name}</text>}
+        </Show>
+      )
+    }
+  `)
+  assert.match(keyed.wxml, /<block wx:if="\{\{b0\}\}">/)
+  assert.match(keyed.wxml, /wx:for-item="user"/)
+  assert.match(keyed.wxml, /\{\{user\.name\}\}/)
+  assert.match(keyed.wxml, /<text wx:else>none<\/text>/)
+
+  const accessor = compileComponent(`
+    export default function Page(props) {
+      return (
+        <Show when={props.user}>
+          {(user) => <text>{user().name}</text>}
+        </Show>
+      )
+    }
+  `)
+  assert.match(accessor.wxml, /\{\{user\.name\}\}/)
+})
+
+test('compiles destructured For and Show parameters', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return (
+        <For each={props.items} key="id">
+          {({ id, title: label }) => (
+            <text onClick={() => pick(id)}>{id}-{label}</text>
+          )}
+        </For>
+      )
+    }
+  `)
+  assert.match(result.wxml, /\{\{__glazeItem\.id\}\}-\{\{__glazeItem\.title\}\}/)
+  assert.match(result.js, /pick\(__glazeItem\.id\)/)
+
+  const nested = compileComponent(`
+    export default function Page(props) {
+      return (
+        <Show when={props.user} keyed>
+          {({ profile: { name } }) => <text>{name}</text>}
+        </Show>
+      )
+    }
+  `)
+  assert.match(nested.wxml, /\{\{__glazeValue\.profile\.name\}\}/)
+})
+
+test('rejects destructuring an accessor item', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Page(props) {
+          return <For each={props.items} keyed={false}>{({ id }) => <text>{id}</text>}</For>
+        }
+      `),
+    /Destructuring a <For> item requires keyed=true/,
+  )
+})
+
+test('expands static spread attributes', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return <view {...{ class: 'box', id: 'main' }}>{props.title}</view>
+    }
+  `)
+  assert.match(result.wxml, /<view class="box" id="main">/)
+})
+
+test('rejects dynamic spread attributes', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Page(props) {
+          return <view {...props}>x</view>
+        }
+      `),
+    /Only object literals can be spread/,
+  )
+})
+
 test('rejects destructured props', () => {
   assert.throws(
     () =>

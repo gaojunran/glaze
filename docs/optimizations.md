@@ -8,7 +8,7 @@ recorded here so feature work can land first; none of them are implemented yet.
 `pages/bench/index` renders a flat `wx:for`:
 
 ```tsx
-<For each={items()} key="id">
+<For each={items()} keyed={(item) => item.id}>
   {(item) => (
     <view class="row">
       <text class="row-title">{item.title}</text>
@@ -21,7 +21,7 @@ It measures the template/binding path, not component boundaries. A real page is
 usually:
 
 ```tsx
-<For each={items()} key="id">
+<For each={items()} keyed={(item) => item.id}>
   {(item) => <TodoItem title={item.title} done={item.done} onToggle={...} />}
 </For>
 ```
