@@ -113,7 +113,8 @@ inlined are not emitted.
 A component imported from a relative file is inlined when all of these hold:
 
 - it is not inside a `For` (no loop scope);
-- its own imports come only from `solid-js`;
+- its own imports are `solid-js` or relative component imports that are
+  themselves inlinable; helper-module imports still block inlining;
 - it has no module-level runtime statements (type aliases are fine);
 - if it has children, it renders `props.children` exactly once (default slot);
 - it does not contain `<slot>` elements (those need a real component boundary).
@@ -155,6 +156,11 @@ Consequences:
 
 Ineligible components are compiled as a mini-program component, exactly as
 before. This is a per-usage decision, not a per-file flag.
+
+Relative component imports inside an inlined child resolve from that child's
+file, not from the parent. The compiler records the resolved file on each
+inlined component and the builder appends each of those `.wxss` files to the
+parent stylesheet.
 
 ### Component events
 
@@ -325,6 +331,8 @@ ctx.event(3, (event) => {
 ```
 
 Nested loops use one marker per level; the handler walks the whole scope chain.
+`Repeat` inside `For` adds an index-only scope: the WXS range supplies the index
+and the handler reconstructs the callback variable from the loop index.
 
 `<For fallback>` checks `(each || []).length > 0`. `<Repeat>` builds
 `Array.from({ length: count }, (_, index) => index + from)` in a binding; it is
@@ -337,10 +345,15 @@ an index accessor; `keyed={false}` gives an accessor item and a numeric index;
 WXML variable in expressions and event handlers. `keyed` functions must return a
 single field; nested keys are rejected.
 
-`Show` function children are supported at the top level only. `keyed` passes
+`Show` function children work at the top level and inside `For`. `keyed` passes
 the value; without it the callback receives an accessor (`value()`), matching
-Solid. The implementation binds a one-item array and iterates it so WXML has a
-name for the value.
+Solid. At the top level the implementation binds a one-item array and iterates
+it; inside `For` it calls `glazeRange.single(value)` from an inline WXS module.
+This keeps a name for the value without a per-row JS binding.
+
+`Repeat` inside `For` uses the same inline WXS module:
+`glazeRange.range(count, from)` returns the index array for the row. The WXS
+module is emitted once per component that needs it.
 
 Component `props` is a Proxy with `ownKeys`, `has`, and
 `getOwnPropertyDescriptor` traps, so Solid 2's `omit` and `merge` can enumerate
@@ -460,9 +473,10 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
 
 ## Known gaps
 
-1. **Inlined components** cannot have relative imports or module-level runtime
-   state. They lose their own style isolation because their WXML lands in the
-   parent's scope.
+1. **Inlined components** may import other stateless components through
+   relative paths, recursively. They still cannot import helper modules or have
+   module-level runtime state. They lose their own style isolation because
+   their WXML lands in the parent's scope.
 2. **Named slots** require a component boundary. An inlined component can only
    use the default `props.children` slot.
 3. **Context** only reaches inlined descendants. A separate mini-program
@@ -484,9 +498,9 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
 8. **`For` keyed functions** must return a single field (`(item) => item.id`);
    nested keys are rejected. `keyed={false}` intentionally omits `wx:key`, so
    the simulator prints a performance warning.
-9. **`Show` function children** are top-level only; a callback inside `For`
-   is rejected.
-10. **`Repeat`** cannot be nested inside `For` yet.
-11. **Build integration** is a CLI (`glaze build`); there is no Vite plugin or
-   watch mode yet.
-12. **Svelte** has no compiler yet.
+9. **Nested control flow** (`Show` callbacks and `Repeat` inside `For`) relies
+   on an inline WXS module for per-row arrays. It is not available on platforms
+   that disable WXS.
+10. **Build integration** has `glaze build`, `glaze watch`, and a Vite build
+   bridge. There is no mini-program HMR or incremental compile.
+11. **Svelte** has no compiler yet.

@@ -71,7 +71,8 @@ array.
 
 ### M4 — build integration (done)
 
-- `@glaze/build` CLI: `glaze build`.
+- `@glaze/build` CLI: `glaze build` and `glaze watch`.
+- A Vite build bridge in `@glaze/vite-plugin`.
 - Config for pages, static directories and static pages.
 - Compiles reached components, page wrappers, `app.json` and the app shell.
 - A single `pnpm build` produces a project accepted by `minidev sim build`.
@@ -92,8 +93,13 @@ counter e2e passes against the generated output.
   `spliceArrayDataOnPath` via `groupUpdates`; field patches remain for stable
   key order.
 - JSX surface: `Switch`/`Match`, class objects/arrays, dynamic style objects,
-  `For` fallback, `Repeat`, `For keyed` modes, `Show` function children, static object spread, and destructured callback
-  parameters. Component `props` supports `omit`/`merge` enumeration.
+  `For` fallback, `Repeat`, `For keyed` modes, `Show` function children, static
+  object spread, and destructured callback parameters. Component `props`
+  supports `omit`/`merge` enumeration.
+- Nested control flow: `Show` callbacks and `Repeat` inside `For` use the inline
+  `glazeRange` WXS module for per-row arrays.
+- Static inlining follows relative component imports recursively; helper-module
+  imports and module-level runtime state still block it.
 
 Acceptance met: unit tests cover every compile path; the counter e2e exercises
 inline default slot, boundary default slot, named slot, component event,

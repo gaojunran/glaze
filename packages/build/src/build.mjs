@@ -1,5 +1,5 @@
 import { build as esbuild } from 'esbuild'
-import { existsSync } from 'node:fs'
+import { existsSync, watch } from 'node:fs'
 import { copyFile, cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -68,6 +68,79 @@ function styleFor(sourceFile) {
 }
 
 /**
+ * Rebuild a project when source files change.
+ *
+ * This is a development helper, not an incremental compiler: each rebuild
+ * runs the same full pipeline as `glaze build`. Changes are debounced and
+ * serialized so a slow esbuild pass cannot overlap the next one.
+ */
+export async function watchProject(projectPath = process.cwd(), options = {}) {
+  const project = path.resolve(projectPath)
+  const config = await loadConfig(project)
+  const sourceDir = path.join(project, config.source)
+  const watched = new Set([sourceDir])
+  const configFile = path.join(project, 'glaze.config.mjs')
+  if (existsSync(configFile)) watched.add(configFile)
+
+  let timer = null
+  let building = false
+  let pending = false
+  let closed = false
+
+  const run = async () => {
+    if (closed) return
+    if (building) {
+      pending = true
+      return
+    }
+    building = true
+    try {
+      const result = await buildProject(project)
+      options.onBuild?.(result)
+    } catch (error) {
+      options.onError?.(error)
+    } finally {
+      building = false
+      if (pending) {
+        pending = false
+        run()
+      }
+    }
+  }
+
+  const schedule = () => {
+    if (closed) return
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => {
+      timer = null
+      run()
+    }, 100)
+  }
+
+  await run()
+  const watchers = [...watched].map((target) =>
+    watch(target, { recursive: true }, (_event, filename) => {
+      if (!filename) {
+        schedule()
+        return
+      }
+      const name = filename.toString()
+      if (name.includes('.tmp') || name.includes(config.output)) return
+      if (!/\.(tsx?|jsx?|mjs|json|wxml|wxss)$/.test(name)) return
+      schedule()
+    }),
+  )
+
+  return {
+    close() {
+      closed = true
+      if (timer) clearTimeout(timer)
+      for (const watcher of watchers) watcher.close()
+    },
+  }
+}
+
+/**
  * Build a mini-program project from a Glaze config.
  *
  * The output is a normal mini-program directory: pages are thin wrappers over
@@ -115,9 +188,10 @@ export async function buildProject(projectPath = process.cwd()) {
     compiled.set(file, {
       result: compileComponent(sources.get(file), {
         inline: true,
-        resolveComponent: (name, specifier) => {
-          const child = resolveSourceImport(file, specifier, sources)
-          return child ? sources.get(child) : null
+        sourceFile: file,
+        resolveComponent: (name, specifier, fromFile = file) => {
+          const child = resolveSourceImport(fromFile, specifier, sources)
+          return child ? { source: sources.get(child), file: child } : null
         },
       }),
     })
@@ -129,7 +203,7 @@ export async function buildProject(projectPath = process.cwd()) {
     const file = queue.pop()
     const entry = compiled.get(file)
     for (const component of entry.result.components) {
-      const child = resolveSourceImport(file, component.source, sources)
+      const child = resolveSourceImport(component.fromFile ?? file, component.source, sources)
       if (!child) {
         throw new Error(`Cannot resolve component "${component.name}" from ${file}`)
       }
@@ -168,7 +242,7 @@ export async function buildProject(projectPath = process.cwd()) {
       if (usingComponents[tag]) {
         throw new Error(`Duplicate component tag "${tag}" in ${file}`)
       }
-      const child = resolveSourceImport(file, component.source, sources)
+      const child = resolveSourceImport(component.fromFile ?? file, component.source, sources)
       usingComponents[tag] = `/components/${names.get(child)}/index`
     }
     const componentJson = { component: true, usingComponents }
@@ -182,7 +256,7 @@ export async function buildProject(projectPath = process.cwd()) {
 
     const inlineStyles = []
     for (const inline of result.inlineComponents) {
-      const child = resolveSourceImport(file, inline.source, sources)
+      const child = inline.file ?? resolveSourceImport(file, inline.source, sources)
       const childStyle = styleFor(child)
       if (existsSync(childStyle)) inlineStyles.push(await readFile(childStyle, 'utf8'))
     }

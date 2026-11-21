@@ -1,1 +1,1 @@
-export { buildProject } from './build.mjs'
+export { buildProject, watchProject } from './build.mjs'

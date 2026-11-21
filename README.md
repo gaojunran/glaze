@@ -12,11 +12,11 @@ The first target is **Solid 2**. Svelte 5 is planned on the same compiler.
 
 Working spike: a Solid counter with inlined components, slots, custom
 events, context, refs, nested `For`, `Switch`/`Match`, `For` fallback,
-`Repeat`, `For keyed` modes, `Show` callbacks, static spread, destructuring,
-class/style helpers, per-row patches and glass-easel splice updates,
-`glaze build`, and a 1000-row benchmark in the minidev simulator. First render
-and keyed reverse are within a few percent of hand-written WXML in the same
-harness.
+`Repeat`, `For keyed` modes, `Show` callbacks, nested `Repeat`/`Show`, static
+spread, destructuring, class/style helpers, per-row patches and glass-easel
+splice updates, `glaze build` / `glaze watch` / a Vite build bridge, and a
+1000-row benchmark in the minidev simulator. First render and keyed reverse
+are within a few percent of hand-written WXML in the same harness.
 
 ## Packages
 

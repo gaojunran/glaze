@@ -61,6 +61,9 @@ importers:
 
   packages/vite-plugin:
     dependencies:
+      '@glaze/build':
+        specifier: workspace:*
+        version: link:../build
       vite:
         specifier: ^7.0.0
         version: 7.3.8

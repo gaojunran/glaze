@@ -213,3 +213,11 @@
   color: #0f766e;
   font-size: 26rpx;
 }
+
+.nested-repeat,
+.nested-show {
+  display: inline-block;
+  margin-right: 8rpx;
+  color: #7c3aed;
+  font-size: 24rpx;
+}

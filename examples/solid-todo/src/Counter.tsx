@@ -1,6 +1,7 @@
 import { createContext, createSignal, For, Match, Repeat, Show, Switch } from 'solid-js'
 import Card from './Card'
 import Header from './Header'
+import Nested from './Nested'
 import Panel from './Panel'
 import SlotCard from './SlotCard'
 import ThemeLabel from './ThemeLabel'
@@ -37,6 +38,7 @@ export default function Counter() {
   return (
     <view class="page">
       <Header title="Glaze + Solid" />
+      <Nested title="Nested inline" />
 
       <view class="counter">
         <button class="btn" onClick={() => setCount((value) => value - 1)}>-</button>
@@ -134,6 +136,12 @@ export default function Counter() {
                   done={todo().done}
                   onToggle={() => toggleTodo(todo().id)}
                 />
+                <Repeat count={2} from={1}>
+                  {(index) => <text class="nested-repeat">{index}</text>}
+                </Repeat>
+                <Show when={todo().title} keyed>
+                  {(value) => <text class="nested-show">{value}</text>}
+                </Show>
                 <button
                   class="remove"
                   onClick={() =>

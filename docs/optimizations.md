@@ -120,20 +120,30 @@ Keep `setData` for the fallback path and for runtimes without these methods.
 
 ## P2 — LIS list moves through `spliceArrayDataOnPath`
 
+Status: investigated and deliberately **not implemented**.
+
 Insert, delete, and middle replacement already use
 `Component.spliceArrayDataOnPath` with `groupUpdates`. Reorder currently
-replaces the changed middle rather than computing a minimal move set.
+replaces the changed middle with one splice.
 
-Potential work:
+Source evidence:
 
-- derive LIS from the key sequence;
-- delete only rows outside the LIS;
-- insert only moved rows;
-- emit several splice operations inside one `groupUpdates`.
+- `Component.spliceArrayDataOnPath` records a `DataChange` with
+  `[path, inserts, index, del]`.
+- `TemplateInstance.updateValues`
+  (`glass-easel/src/tmpl/index.ts:162-235`) folds those changes into an
+  `UpdatePathTreeNode`; multiple splices are applied to the same tree.
+- `proc_gen_wrapper` creates a `RangeListManager` for each `wx:for`
+  (`glass-easel/src/tmpl/proc_gen_wrapper.ts:369`), and
+  `RangeListManager.diff` (`glass-easel/src/tmpl/range_list_diff.ts:145+`)
+  computes the new key order and LIS independently of how the splice changes
+  were shaped.
 
-Before implementing, inspect how `spliceArrayDataOnPath` reaches the template
-engine. Glass-easel's `RangeListManager.diff` may also diff the `wx:for` list;
-doing LIS on both sides could cancel the benefit.
+So sending a runtime LIS as several splices would add runtime work and payload
+while the view layer still performs its own key diff/LIS. The current one-splice
+middle replacement is the cheaper representation. Re-evaluate only if the
+template engine update mode changes to a path that consumes splice ops directly
+without `RangeListManager.diff`.
 
 ## P2 — External component islands
 

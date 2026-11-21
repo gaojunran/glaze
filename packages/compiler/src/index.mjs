@@ -4,6 +4,16 @@ import * as t from '@babel/types'
 
 const generate = generatorModule.default ?? generatorModule
 
+const WXS_SOURCE = `function range(count, from) {
+  var n = (count - 0) || 0;
+  var start = (from - 0) || 0;
+  var list = [];
+  for (var i = 0; i < n; i += 1) list.push(start + i);
+  return list;
+}
+function single(value) { return [value]; }
+module.exports = { range: range, single: single };`
+
 const EVENT_MAP = {
   onClick: 'bindtap',
   onTap: 'bindtap',
@@ -148,6 +158,7 @@ export function compileComponent(source, options = {}) {
     currentProvider: null,
     usesSlot: false,
     namedSlots: new Set(),
+    usesWxs: false,
     blocks: [
       {
         setup: statements.slice(0, returnIndex),
@@ -157,6 +168,7 @@ export function compileComponent(source, options = {}) {
       },
     ],
     currentBlock: 0,
+    currentFile: options.sourceFile ?? null,
     inline: options.inline ?? false,
     resolveComponent: options.resolveComponent ?? null,
     addBinding(expression, listKey = null) {
@@ -177,14 +189,17 @@ export function compileComponent(source, options = {}) {
     addHelper(name) {
       this.helpers.add(name)
     },
+    addWxs() {
+      this.usesWxs = true
+    },
     addRef(expression) {
       const index = this.refs.length
       this.refs.push({ code: codeOf(expression), block: this.currentBlock })
       return index
     },
-    addComponent(name, source) {
+    addComponent(name, source, fromFile = this.currentFile) {
       if (!this.components.some((item) => item.name === name)) {
-        this.components.push({ name, source })
+        this.components.push({ name, source, ...(fromFile ? { fromFile } : {}) })
       }
     },
   }
@@ -196,7 +211,10 @@ export function compileComponent(source, options = {}) {
   )
   const plainProps = props.filter((name) => !eventProps[name])
 
-  const wxml = compileNode(jsx, ctx, null)
+  const bodyWxml = compileNode(jsx, ctx, null)
+  const wxml = ctx.usesWxs
+    ? `<wxs module="glazeRange">${WXS_SOURCE}</wxs>${bodyWxml}`
+    : bodyWxml
   const js = emitModule(ast, statements.slice(0, returnIndex), ctx, {
     propsParam: propsParam?.name ?? null,
     props: plainProps,
@@ -382,7 +400,13 @@ function emitModule(ast, setupStatements, ctx, options) {
         const lines = chain
           .map((scope) => {
             const key = scope.level === 0 ? 'glazeIndex' : `glazeIndex${scope.level}`
-            return `      const ${scope.index} = Number(event.currentTarget.dataset.${key});\n      const ${scope.item} = (${scope.source})[${scope.index}];`
+            const indexLine = `      const ${scope.index} = Number(event.currentTarget.dataset.${key});`
+            if (scope.isIndexRepeat) {
+              return scope.item === scope.index
+                ? indexLine
+                : `${indexLine}\n      const ${scope.item} = ${scope.index};`
+            }
+            return `${indexLine}\n      const ${scope.item} = (${scope.source})[${scope.index}];`
           })
           .join('\n')
         return `    ctx.event(${index}, (event) => {
@@ -581,7 +605,7 @@ function compileComponentElement(node, ctx, scope, extraAttrs = []) {
   const inlined = inlineComponent(node, ctx, scope, name, source)
   if (inlined != null) return inlined
 
-  ctx.addComponent(name, source)
+  ctx.addComponent(name, source, ctx.currentFile)
 
   const attrs = []
   for (const attr of expandAttributes(node.openingElement.attributes)) {
@@ -642,33 +666,46 @@ function usesSlotElement(node) {
 function inlineComponent(node, ctx, scope, name, source) {
   if (!ctx.inline || scope || !ctx.resolveComponent) return null
 
-  const childSource = ctx.resolveComponent(name, source)
+  const resolved = ctx.resolveComponent(name, source, ctx.currentFile)
+  const childSource = typeof resolved === 'string' ? resolved : resolved?.source
   if (!childSource) return null
+  const childFile = typeof resolved === 'object' ? resolved.file ?? ctx.currentFile : ctx.currentFile
 
   const child = parseComponent(childSource)
   if (usesSlotElement(child.jsx)) return null
   const body = child.ast.program.body
   for (const node of body) {
     if (!t.isImportDeclaration(node)) continue
-    if (node.source.value !== 'solid-js') return null
-    for (const specifier of node.specifiers) {
-      const local = specifier.local.name
+    if (node.source.value === 'solid-js') {
+      for (const specifier of node.specifiers) {
+        const local = specifier.local.name
+        const existing = ctx.imports.get(local)
+        if (existing !== undefined) {
+          if (existing !== 'solid-js') return null
+          continue
+        }
+        ctx.imports.set(local, 'solid-js')
+        ctx.knownImports.add(local)
+        if (t.isImportSpecifier(specifier)) {
+          const imported = specifier.imported.name ?? specifier.imported.value
+          const alias = imported === local ? '' : ` as ${local}`
+          ctx.extraImports.push(`import { ${imported}${alias} } from "solid-js";`)
+        } else if (t.isImportDefaultSpecifier(specifier)) {
+          ctx.extraImports.push(`import ${local} from "solid-js";`)
+        } else {
+          ctx.extraImports.push(`import * as ${local} from "solid-js";`)
+        }
+      }
+      continue
+    }
+    if (!node.source.value.startsWith('.')) return null
+    const locals = node.specifiers.map((specifier) => specifier.local.name)
+    if (locals.some((local) => !/^[A-Z]/.test(local))) return null
+    for (const local of locals) {
       const existing = ctx.imports.get(local)
-      if (existing !== undefined) {
-        if (existing !== 'solid-js') return null
-        continue
-      }
-      ctx.imports.set(local, 'solid-js')
+      if (existing !== undefined && existing !== node.source.value) return null
+      ctx.imports.set(local, node.source.value)
       ctx.knownImports.add(local)
-      if (t.isImportSpecifier(specifier)) {
-        const imported = specifier.imported.name ?? specifier.imported.value
-        const alias = imported === local ? '' : ` as ${local}`
-        ctx.extraImports.push(`import { ${imported}${alias} } from "solid-js";`)
-      } else if (t.isImportDefaultSpecifier(specifier)) {
-        ctx.extraImports.push(`import ${local} from "solid-js";`)
-      } else {
-        ctx.extraImports.push(`import * as ${local} from "solid-js";`)
-      }
     }
   }
   if (
@@ -722,11 +759,14 @@ function inlineComponent(node, ctx, scope, name, source) {
   ctx.inlineChildrenUsed = false
   ctx.inlineChildrenCount = 0
 
+  const previousFile = ctx.currentFile
+  ctx.currentFile = childFile
   const wxml = compileNode(child.jsx, ctx, null)
   const childrenUsed = ctx.inlineChildrenUsed
   const childrenCount = ctx.inlineChildrenCount
 
   ctx.currentBlock = previousBlock
+  ctx.currentFile = previousFile
   ctx.inlineChildren = previousChildren
   ctx.inlinePropsParam = previousPropsParam
   ctx.inlineChildrenUsed = previousUsed
@@ -739,7 +779,7 @@ function inlineComponent(node, ctx, scope, name, source) {
     throw new Error(`<${name}> renders props.children more than once`)
   }
 
-  ctx.inlineComponents.push({ name, source })
+  ctx.inlineComponents.push({ name, source, ...(childFile ? { file: childFile } : {}) })
   return wxml
 }
 
@@ -838,7 +878,6 @@ function compileConditional(test, consequent, alternate, ctx, scope) {
 }
 
 function compileShowCallback(node, ctx, scope, when, keyed, fn, fallback) {
-  if (scope) throw new Error('<Show> function children are only supported at the top level')
   const firstParam = fn.params[0]
   const destructured = t.isObjectPattern(firstParam) || t.isArrayPattern(firstParam)
   if (destructured && !keyed) {
@@ -861,21 +900,38 @@ function compileShowCallback(node, ctx, scope, when, keyed, fn, fallback) {
     throw new Error('<Show> callback must return JSX')
   }
 
-  const condition = ctx.addBinding(when)
-  const values = ctx.addBindingCode(`[(${codeOf(when)})]`)
+  const whenCode = scope ? inlineExpression(when, scope) : codeOf(when)
+  const indexName = scope ? `__glazeIndex${scope.level + 1}` : '__glazeIndex'
+  const itemName = destructured
+    ? scope
+      ? `__glazeValue${scope.level + 1}`
+      : '__glazeValue'
+    : param
   const itemScope = {
-    item: param,
-    index: '__glazeIndex',
-    source: `b${values}`,
-    parent: null,
-    level: 0,
+    item: itemName,
+    index: indexName,
+    source: `[(${whenCode})]`,
+    parent: scope,
+    level: scope ? scope.level + 1 : 0,
     itemAccessor: !keyed,
     indexAccessor: false,
-    aliases,
+    aliases: destructured ? patternAliases(firstParam, [itemName]) : null,
+    isIndexRepeat: false,
   }
   const content = compileNode(body, ctx, itemScope)
-  const loop = `<block wx:for="{{b${values}}}" wx:for-item="${param}" wx:for-index="__glazeIndex" wx:key="*this">${content}</block>`
-  const thenNode = `<block wx:if="{{b${condition}}}">${loop}</block>`
+  let valuesExpr
+  let condition
+  if (scope) {
+    ctx.addWxs()
+    valuesExpr = `glazeRange.single(${whenCode})`
+    condition = whenCode
+  } else {
+    condition = `b${ctx.addBinding(when)}`
+    const values = ctx.addBindingCode(`[(${whenCode})]`)
+    valuesExpr = `b${values}`
+  }
+  const loop = `<block wx:for="{{${valuesExpr}}}" wx:for-item="${itemName}" wx:for-index="${indexName}" wx:key="*this">${content}</block>`
+  const thenNode = `<block wx:if="{{${condition}}}">${loop}</block>`
   if (!fallback) return thenNode
   const elseNode = compileNode(fallback, ctx, scope, ['wx:else'])
   return `${thenNode}${elseNode}`
@@ -1148,8 +1204,68 @@ function compileFor(node, ctx, scope) {
   )}`
 }
 
+function compileRepeatInScope(node, ctx, scope) {
+  const count = getExpression(getAttribute(node, 'count'))
+  if (!count) throw new Error('<Repeat> requires a count expression')
+  const from = getExpression(getAttribute(node, 'from'))
+  const countCode = inlineExpression(count, scope)
+  const fromCode = from ? inlineExpression(from, scope) : '0'
+  const child = node.children.find((item) => !isWhitespaceText(item))
+  if (!child || !t.isJSXExpressionContainer(child)) {
+    throw new Error('<Repeat> requires a single arrow-function child')
+  }
+  const fn = child.expression
+  if (!t.isArrowFunctionExpression(fn) && !t.isFunctionExpression(fn)) {
+    throw new Error('<Repeat> child must be an arrow function')
+  }
+  const param = t.isIdentifier(fn.params[0]) ? fn.params[0].name : 'index'
+  const itemName = `__glazeRepeat${scope.level + 1}`
+  const indexName = `__glazeIndex${scope.level + 1}`
+  const aliases = { [param]: [itemName] }
+  const body = t.isBlockStatement(fn.body)
+    ? (() => {
+        const ret = fn.body.body.find((item) => t.isReturnStatement(item))
+        if (!ret) throw new Error('<Repeat> callback must return JSX')
+        return ret.argument
+      })()
+    : fn.body
+  if (!t.isJSXElement(body) && !t.isJSXFragment(body)) {
+    throw new Error('<Repeat> callback must return JSX')
+  }
+
+  ctx.addWxs()
+  const itemScope = {
+    item: itemName,
+    index: indexName,
+    source: null,
+    parent: scope,
+    level: scope.level + 1,
+    itemAccessor: false,
+    indexAccessor: false,
+    isIndexRepeat: true,
+    aliases,
+  }
+  const children = compileNode(body, ctx, itemScope)
+  const loop = `<block wx:for="{{glazeRange.range(${countCode}, ${fromCode})}}" wx:for-item="${itemName}" wx:for-index="${indexName}" wx:key="*this">${children}</block>`
+  const fallback = getAttribute(node, 'fallback')
+  if (!fallback) return loop
+  const fallbackExpression = getExpression(fallback)
+  if (
+    !fallbackExpression ||
+    (!t.isJSXElement(fallbackExpression) && !t.isJSXFragment(fallbackExpression))
+  ) {
+    throw new Error('<Repeat> fallback must be JSX')
+  }
+  return `<block wx:if="{{${countCode} > 0}}">${loop}</block>${compileNode(
+    fallbackExpression,
+    ctx,
+    scope,
+    ['wx:else'],
+  )}`
+}
+
 function compileRepeat(node, ctx, scope) {
-  if (scope) throw new Error('<Repeat> is not supported inside <For> yet')
+  if (scope) return compileRepeatInScope(node, ctx, scope)
   const count = getExpression(getAttribute(node, 'count'))
   if (!count) throw new Error('<Repeat> requires a count expression')
   const from = getExpression(getAttribute(node, 'from'))

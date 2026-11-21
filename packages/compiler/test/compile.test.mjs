@@ -98,6 +98,47 @@ test('compiles events inside For with index lookup', () => {
   assert.match(result.js, /return \(\(\) => setCount\(item\.id\)\)\(event\)/)
 })
 
+test('inlines relative imports recursively', () => {
+  const badge = `
+    export default function Badge(props) {
+      return <text class="badge">{props.label}</text>
+    }
+  `
+  const nested = `
+    import Badge from './Badge'
+    export default function Nested(props) {
+      return <view><text>{props.title}</text><Badge label="inner" /></view>
+    }
+  `
+  const result = compileComponent(
+    `
+      import Nested from './Nested'
+      export default function Page() {
+        return <Nested title="outer" />
+      }
+    `,
+    {
+      inline: true,
+      sourceFile: '/src/Page.tsx',
+      resolveComponent: (name, specifier, fromFile) => {
+        if (name === 'Nested' && fromFile === '/src/Page.tsx') {
+          return { source: nested, file: '/src/Nested.tsx' }
+        }
+        if (name === 'Badge' && fromFile === '/src/Nested.tsx') {
+          return { source: badge, file: '/src/Badge.tsx' }
+        }
+        return null
+      },
+    },
+  )
+  assert.match(result.wxml, /class="badge"/)
+  assert.match(result.wxml, /\{\{b0\}\}/)
+  assert.deepEqual(
+    result.inlineComponents.map((item) => item.file).sort(),
+    ['/src/Badge.tsx', '/src/Nested.tsx'],
+  )
+})
+
 test('inlines a stateless imported component outside For', () => {
   const header = `
     export default function Header(props) {
@@ -585,6 +626,31 @@ test('rejects destructuring an accessor item', () => {
       `),
     /Destructuring a <For> item requires keyed=true/,
   )
+})
+
+test('compiles Show and Repeat inside For through WXS helpers', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return (
+        <For each={props.rows} keyed={(row) => row.id}>
+          {(row) => (
+            <view>
+              <Show when={row().user} keyed>
+                {(user) => <text>{user.name}</text>}
+              </Show>
+              <Repeat count={row().count} from={1}>
+                {(index) => <text>{index}</text>}
+              </Repeat>
+            </view>
+          )}
+        </For>
+      )
+    }
+  `)
+  assert.match(result.wxml, /<wxs module="glazeRange">/)
+  assert.match(result.wxml, /glazeRange\.single\(row\.user\)/)
+  assert.match(result.wxml, /glazeRange\.range\(row\.count, 1\)/)
+  assert.match(result.wxml, /wx:for-item="__glazeRepeat1"/)
 })
 
 test('expands static spread attributes', () => {

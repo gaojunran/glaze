@@ -13,9 +13,9 @@ needs:
 - a place for hand-written static pages;
 - a clean output directory so deleted files do not linger.
 
-The `glaze build` command owns those steps. It is intentionally a CLI first:
-Vite integration adds a dev server and file watching, which are separate
-concerns from producing a valid mini-program.
+The `glaze build` command owns those steps. `glaze watch` reruns the same
+pipeline on source changes. The Vite plugin is a thin wrapper around this
+pipeline; Vite is not used to render the mini-program.
 
 ## Config
 
@@ -87,6 +87,34 @@ The CLI can also be run against another project:
 node packages/build/src/cli.mjs build /path/to/project
 ```
 
+Watch mode:
+
+```bash
+node packages/build/src/cli.mjs watch /path/to/project
+# or
+pnpm --filter @glaze/example-solid-todo exec glaze watch
+```
+
+`watch` performs an initial build, then debounces source changes and serializes
+rebuilds. It watches `.tsx`, `.ts`, `.js`, `.json`, `.wxml`, and `.wxss` files
+under `source`, plus `glaze.config.mjs`.
+
+## Vite plugin
+
+`@glaze/vite-plugin` runs `buildProject` from `buildStart` and rebuilds on a
+`.ts`/`.tsx` hot update:
+
+```js
+import glaze from '@glaze/vite-plugin'
+
+export default {
+  plugins: [glaze({ project: process.cwd() })],
+}
+```
+
+It is deliberately a build bridge, not a DOM renderer. `build: false` disables
+the automatic build while keeping the plugin loaded.
+
 ## Validation
 
 Builder test:
@@ -115,13 +143,14 @@ Result: the counter e2e passes against the generated `miniprogram` directory.
 
 ## Known gaps
 
-1. **No watch mode.** Every build is a full clean build.
-2. **No Vite plugin.** The placeholder package does not compile yet.
+1. **Watch is full rebuild.** Every change reruns the whole pipeline; there is
+   no incremental compile yet.
+2. **Vite plugin is a build bridge.** It does not provide mini-program HMR or a
+   web preview renderer.
 3. **No asset pipeline.** Images and other assets are copied only through
    `static`.
 4. **No per-page config.** `app.json` window/navigation settings are shared.
-5. **No incremental compile.** esbuild runs once per component.
-6. **Output ownership is all-or-nothing.** `clean: true` deletes the whole
+5. **Output ownership is all-or-nothing.** `clean: true` deletes the whole
    output directory; custom files must live in `static`.
 
 ## Rejected alternatives
