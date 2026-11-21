@@ -244,6 +244,148 @@ test('rejects an inlined component that drops props.children', () => {
   )
 })
 
+test('compiles component events and boundary children', () => {
+  const panel = `
+    export default function Panel(props) {
+      return <view class="panel">{props.children}</view>
+    }
+  `
+  const result = compileComponent(
+    `
+      import Panel from './Panel'
+
+      export default function Page() {
+        return (
+          <Panel onToggle={() => {}}>
+            <text>body</text>
+          </Panel>
+        )
+      }
+    `,
+    {
+      inline: false,
+      resolveComponent: (name) => (name === 'Panel' ? panel : null),
+    },
+  )
+
+  assert.match(result.wxml, /<panel bind:toggle="e0"><text>body<\/text><\/panel>/)
+  assert.deepEqual(result.components, [{ name: 'Panel', source: './Panel' }])
+  assert.deepEqual(result.eventProps, {})
+})
+
+test('keeps a named-slot component as a boundary', () => {
+  const card = `
+    export default function SlotCard() {
+      return <view><slot name="header" /><slot /></view>
+    }
+  `
+  const result = compileComponent(
+    `
+      import SlotCard from './SlotCard'
+
+      export default function Page() {
+        return (
+          <SlotCard>
+            <text slot="header">header</text>
+            <text>body</text>
+          </SlotCard>
+        )
+      }
+    `,
+    {
+      inline: true,
+      resolveComponent: (name) => (name === 'SlotCard' ? card : null),
+    },
+  )
+
+  assert.match(result.wxml, /<slot-card><text slot="header">header<\/text><text>body<\/text><\/slot-card>/)
+  assert.deepEqual(result.namedSlots, [])
+})
+
+test('records named slots on the child component', () => {
+  const card = `
+    export default function SlotCard() {
+      return <view><slot name="header" /><slot /></view>
+    }
+  `
+  const result = compileComponent(card, {
+    inline: false,
+    resolveComponent: () => null,
+  })
+  assert.deepEqual(result.namedSlots, ['header'])
+  assert.equal(result.usesSlot, true)
+  assert.match(result.wxml, /<slot name="header" \/>/)
+  assert.match(result.wxml, /<slot \/>/)
+})
+
+test('compiles ref to a generated id and runtime query', () => {
+  const result = compileComponent(`
+    export default function Page() {
+      return <view ref={(node) => console.log(node)}>x</view>
+    }
+  `)
+  assert.match(result.wxml, /<view id="glaze-r0">x<\/view>/)
+  assert.match(result.js, /ctx.ref\(0, node => console.log\(node\)\)/)
+  assert.equal(result.refCount, 1)
+})
+
+test('rejects ref together with id', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Page() {
+          return <view id="x" ref={() => {}}>x</view>
+        }
+      `),
+    /cannot also set id/,
+  )
+})
+
+test('compiles a context provider around an inlined consumer', () => {
+  const label = `
+    import { useContext } from 'solid-js'
+    export default function Label(props) {
+      const theme = useContext(props.theme)
+      return <text class="theme">{theme}</text>
+    }
+  `
+  const result = compileComponent(
+    `
+      import { createContext } from 'solid-js'
+      import Label from './Label'
+
+      export default function Page() {
+        const Theme = createContext('light')
+        return (
+          <Theme.Provider value="dark">
+            <Label theme={Theme} />
+          </Theme.Provider>
+        )
+      }
+    `,
+    {
+      inline: true,
+      resolveComponent: (name) => (name === 'Label' ? label : null),
+    },
+  )
+
+  assert.match(result.wxml, /<text class="theme">\{\{b0\}\}<\/text>/)
+  assert.match(result.js, /withProvider\(Theme, \("dark"\), \(\) => \{/)
+  assert.match(result.js, /const theme = useContext\(props\.theme\)/)
+})
+
+test('separates event props from properties', () => {
+  const result = compileComponent(`
+    export default function Item(props) {
+      return <text onClick={() => props.onToggle?.()}>{props.title}</text>
+    }
+  `)
+  assert.deepEqual(result.props, ['title'])
+  assert.deepEqual(result.eventProps, { onToggle: 'toggle' })
+  assert.match(result.js, /eventProps: \{"onToggle":"toggle"\}/)
+  assert.match(result.js, /props\.onToggle\?\.\(\)/)
+})
+
 test('rejects destructured props', () => {
   assert.throws(
     () =>

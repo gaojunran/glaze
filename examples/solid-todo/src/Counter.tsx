@@ -1,6 +1,9 @@
-import { createSignal, For, Show } from 'solid-js'
+import { createContext, createSignal, For, Show } from 'solid-js'
 import Card from './Card'
 import Header from './Header'
+import Panel from './Panel'
+import SlotCard from './SlotCard'
+import ThemeLabel from './ThemeLabel'
 import TodoItem from './TodoItem'
 
 type Todo = {
@@ -17,6 +20,19 @@ export default function Counter() {
     { id: 3, title: 'Measure against native', done: false },
   ])
 
+  const Theme = createContext('light')
+  const [refWidth, setRefWidth] = createSignal(0)
+
+  const [grid, setGrid] = createSignal([
+    { id: 1, cells: [{ id: 'a' }, { id: 'b' }] },
+    { id: 2, cells: [{ id: 'c' }, { id: 'd' }] },
+  ])
+
+  const toggleTodo = (id: number) =>
+    setTodos((items) =>
+      items.map((item) => (item.id === id ? { ...item, done: !item.done } : item)),
+    )
+
   return (
     <view class="page">
       <Header title="Glaze + Solid" />
@@ -31,36 +47,98 @@ export default function Counter() {
         <text class="hint">count is greater than 3</text>
       </Show>
 
+      <SlotCard>
+        <text slot="header" class="slot-header">Slot header</text>
+        <text class="slot-body">Slot body</text>
+      </SlotCard>
+
+      <Panel auto style="display: none" onToggle={() => toggleTodo(2)} />
+
       <Card title="Todos">
         <button
           class="toggle"
-          onClick={() =>
-            setTodos((items) =>
-              items.map((todo, index) =>
-                index === 0 ? { ...todo, done: !todo.done } : todo,
-              ),
-            )
-          }
+          onClick={() => toggleTodo(1)}
         >
           toggle first
+        </button>
+
+        <button
+          class="append"
+          onClick={() =>
+            setTodos((items) => [
+              ...items,
+              { id: items.length + 1, title: 'Appended', done: false },
+            ])
+          }
+        >
+          append
         </button>
 
         <view class="list">
           <For each={todos()} key="id">
             {(todo) => (
-              <view class="item-wrap">
-                <TodoItem title={todo.title} done={todo.done} />
+              <Panel>
+                <TodoItem
+                  title={todo.title}
+                  done={todo.done}
+                  onToggle={() => toggleTodo(todo.id)}
+                />
                 <button
                   class="remove"
                   onClick={() => setTodos((items) => items.filter((item) => item.id !== todo.id))}
                 >
                   x
                 </button>
-              </view>
+              </Panel>
             )}
           </For>
         </view>
       </Card>
+
+      <Theme.Provider value="dark">
+        <ThemeLabel theme={Theme} />
+      </Theme.Provider>
+
+      <view
+        class="ref-probe"
+        ref={(node: { width?: number } | null) => setRefWidth(node?.width ?? 0)}
+      >
+        <text class="ref-width">{refWidth()}</text>
+      </view>
+
+      <view class="grid">
+        <For each={grid()} key="id">
+          {(row, rowIndex) => (
+            <view class="row">
+              <For each={row.cells} key="id">
+                {(cell, cellIndex) => (
+                  <button
+                    class="cell"
+                    onClick={() =>
+                      setGrid((rows) =>
+                        rows.map((item, index) =>
+                          index === rowIndex
+                            ? {
+                                ...item,
+                                cells: item.cells.map((value, cellAt) =>
+                                  cellAt === cellIndex
+                                    ? { ...value, id: `${value.id}!` }
+                                    : value,
+                                ),
+                              }
+                            : item,
+                        ),
+                      )
+                    }
+                  >
+                    {cell.id}
+                  </button>
+                )}
+              </For>
+            </view>
+          )}
+        </For>
+      </view>
 
       <text class="footer">tap + to update the count</text>
     </view>

@@ -91,3 +91,50 @@
 .remove::after {
   border: none;
 }
+
+.append {
+  height: 64rpx;
+  line-height: 64rpx;
+  padding: 0 24rpx;
+  margin-top: 16rpx;
+  font-size: 28rpx;
+  border: none;
+  border-radius: 32rpx;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.append::after {
+  border: none;
+}
+
+.ref-probe {
+  width: 100rpx;
+  height: 1rpx;
+  overflow: hidden;
+  font-size: 0;
+  color: transparent;
+}
+
+.grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 24rpx;
+}
+
+.cell {
+  width: 72rpx;
+  height: 56rpx;
+  line-height: 56rpx;
+  padding: 0;
+  font-size: 24rpx;
+  border: 1rpx solid #d1d5db;
+  border-radius: 12rpx;
+  background: #fff;
+  color: #374151;
+}
+
+.cell::after {
+  border: none;
+}

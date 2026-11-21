@@ -16,8 +16,11 @@ Source layout:
 
 - `src/Counter.tsx` — page `pages/index/index`;
 - `src/Bench.tsx` — page `pages/bench/index`;
-- `src/TodoItem.tsx` — component boundary inside `For`;
+- `src/TodoItem.tsx` — component boundary inside `For` with a custom `onToggle`;
 - `src/Card.tsx` — inlined wrapper with a default slot;
+- `src/Panel.tsx` — boundary component with default slot and event probe;
+- `src/SlotCard.tsx` — boundary component with named and default slots;
+- `src/ThemeLabel.tsx` — inlined context consumer;
 - `src/Header.tsx` — always inlined;
 - `src/static/pages/native` — hand-written comparison page.
 
@@ -32,8 +35,8 @@ target/debug/minidev test --project ~/Projects/glaze/examples/solid-todo --brows
 
 Pages:
 
-- `pages/index/index` — counter, inlined `Header`, `Show`, keyed `For`,
-  `TodoItem` props;
+- `pages/index/index` — counter, inlined `Header`, `Show`, slots, custom events,
+  context, ref, nested `For`, keyed `For`, `TodoItem` props;
 - `pages/bench/index` — 1000 rows compiled from Solid, including reverse;
 - `pages/native/index` — the same 1000 rows in hand-written WXML.
 

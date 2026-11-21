@@ -80,15 +80,22 @@ array.
 Acceptance met: `pnpm build` writes a clean project; builder test passes; the
 counter e2e passes against the generated output.
 
-### M5 — component surface (in progress)
+### M5 — component surface (done, with scoped limits)
 
-- Children / default slot: supported on inlined components; named slots and
-  boundary slots are next.
-- Component custom events.
-- Context Provider.
-- refs and node query.
-- Nested `For` event lookup.
-- Structural list patches.
+- Default and named slots: inlined default slot plus boundary `<slot>` /
+  `<slot name>` with `multipleSlots`.
+- Component custom events: `onX` → `bind:x`, child `eventProps` → `triggerEvent`.
+- Context Provider: inline descendants only, via `withProvider`.
+- Refs: generated id plus `boundingClientRect` measurement facade.
+- Nested `For`: distinct item/index names, one index marker per level.
+- Structural list patches: append sends only new indices; other structural
+  changes still send the whole array.
+
+Acceptance met: unit tests cover every compile path; the counter e2e exercises
+inline default slot, boundary default slot, named slot, component event,
+context value, ref measurement, nested loop event, and list append.
+
+Known limits are listed in [compiler.md](compiler.md#known-gaps).
 
 ### M6 — Svelte 5
 

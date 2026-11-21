@@ -66,7 +66,8 @@ Each compiled component directory contains:
 
 - `index.wxml` — structure and bindings;
 - `index.js` — Solid setup and binding effects, bundled with esbuild;
-- `index.json` — `component: true` and `usingComponents`;
+- `index.json` — `component: true`, `usingComponents`, and `multipleSlots` when
+  the component declares named slots;
 - `index.wxss` — its own styles plus styles from inlined children.
 
 Only components actually reached from a page are emitted. A component that is

@@ -1,0 +1,16 @@
+.slot-card {
+  margin-top: 32rpx;
+  padding: 16rpx 24rpx;
+  border: 1rpx solid #e5e7eb;
+  border-radius: 16rpx;
+}
+
+.slot-header {
+  font-size: 24rpx;
+  color: #6b7280;
+}
+
+.slot-body {
+  font-size: 30rpx;
+  color: #111827;
+}

@@ -18,9 +18,21 @@ test('counter renders and updates through the compiled bindings', async (miniPro
   await expect(app).toMatchText('.count', '4')
   await expect(app).toMatchText('.hint', 'count is greater than 3')
   await expect(app).toMatchText('.card-title', 'Todos')
+  await expect(app).toMatchText('.slot-header', 'Slot header')
+  await expect(app).toMatchText('.slot-body', 'Slot body')
+  await expect(app).toMatchText('.theme-label', 'dark')
+
+  const refText = await (await app.$('.ref-width')).text()
+  await expect(Number(refText)).toBeGreaterThan(0)
+
+  const cells = await app.$$('.cell')
+  await expect(cells.length).toBe(4)
+  await cells[0].tap()
+  await expect(app).toMatchText('.cell', 'a!')
 
   let xml = await app.outerWxml()
   await expect(xml).toContain('done="true" title="Compile Solid to WXML"')
+  await expect(xml).toContain('done="true" title="Run in minidev"')
   await expect(xml).toContain('item-title done')
 
   const toggle = await app.$('.toggle')
@@ -29,6 +41,12 @@ test('counter renders and updates through the compiled bindings', async (miniPro
   xml = await app.outerWxml()
   await expect(xml).toContain('done="false" title="Compile Solid to WXML"')
   await expect(xml).toContain('<text class="item-title">Compile Solid to WXML</text>')
+
+  const append = await app.$('.append')
+  await append.tap()
+  await page.waitFor(500)
+  xml = await app.outerWxml()
+  await expect(xml).toContain('Appended')
 
   const removes = await app.$$('.remove')
   await removes[0].tap()

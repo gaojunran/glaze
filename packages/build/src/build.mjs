@@ -171,9 +171,13 @@ export async function buildProject(projectPath = process.cwd()) {
       const child = resolveSourceImport(file, component.source, sources)
       usingComponents[tag] = `/components/${names.get(child)}/index`
     }
+    const componentJson = { component: true, usingComponents }
+    if (result.namedSlots.length > 0) {
+      componentJson.options = { multipleSlots: true }
+    }
     await writeFile(
       path.join(outDir, 'index.json'),
-      `${JSON.stringify({ component: true, usingComponents }, null, 2)}\n`,
+      `${JSON.stringify(componentJson, null, 2)}\n`,
     )
 
     const inlineStyles = []

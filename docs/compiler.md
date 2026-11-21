@@ -82,8 +82,8 @@ list. The parent is compiled to a tag and the build script writes
 At runtime the child declares those names as mini-program `properties`, creates
 one Solid signal per prop, and exposes a getter-only `props` object. Property
 observers update the signals; the normal binding effects then update the child's
-own WXML. Prop names must be lowercase. Named slots and component events are not
-supported yet.
+own WXML. Prop names must be lowercase. Event props (`onToggle`, `onChange`, ...)
+are compiled as mini-program custom events instead of properties; see below.
 
 `glaze build` compiles every `.tsx` under `src/`, resolves relative component
 imports, and emits each reached component plus its `usingComponents` map. Local
@@ -98,8 +98,8 @@ A component imported from a relative file is inlined when all of these hold:
 - it is not inside a `For` (no loop scope);
 - its own imports come only from `solid-js`;
 - it has no module-level runtime statements (type aliases are fine);
-- it has no event props;
-- if it has children, it renders `props.children` exactly once (default slot).
+- if it has children, it renders `props.children` exactly once (default slot);
+- it does not contain `<slot>` elements (those need a real component boundary).
 
 The child's setup runs in a block inside the parent's Solid root, and its props
 become getters over the parent's expressions:
@@ -139,6 +139,113 @@ Consequences:
 Ineligible components are compiled as a mini-program component, exactly as
 before. This is a per-usage decision, not a per-file flag.
 
+### Component events
+
+An event prop on a component boundary is compiled to a custom event binding:
+
+```tsx
+<TodoItem title={todo.title} done={todo.done} onToggle={() => toggle(todo.id)} />
+```
+
+```xml
+<todo-item title="{{todo.title}}" done="{{todo.done}}" bind:toggle="e3" />
+```
+
+The child declares the event in its generated config:
+
+```js
+eventProps: { onToggle: "toggle" }
+```
+
+At runtime `props.onToggle(...)` calls `triggerEvent("toggle", detail)`, and the
+parent handler receives `event.detail` (one argument; multiple arguments arrive
+as an array). Inlined components skip this bridge: the event prop is a normal
+getter over the parent's function, so it is called directly.
+
+### Slots
+
+Three cases are supported:
+
+1. **Default slot on an inlined component.** The child renders
+   `{props.children}`; the parent's children are compiled in the parent scope and
+   substituted at that expression. The child must render it exactly once.
+2. **Default slot on a component boundary.** The child writes `<slot />`; the
+   parent's children become the element's children in WXML.
+3. **Named slots on a component boundary.** The child writes
+   `<slot name="header" />`; the parent marks children with `slot="header"`.
+   The builder sets `"options": { "multipleSlots": true }` on that component.
+
+A component whose source contains `<slot>` is never inlined, because a native
+slot must live in its own component tree. Named slots on an inlined component
+are not supported; use a component boundary for that case.
+
+### Context
+
+`<Theme.Provider value={...}>` is compiled for **inlined** descendants:
+
+```tsx
+const Theme = createContext('light')
+
+<Theme.Provider value="dark">
+  <ThemeLabel theme={Theme} />
+</Theme.Provider>
+```
+
+The compiler creates a provider block and emits:
+
+```js
+withProvider(Theme, ("dark"), () => {
+  {
+    const props = { get theme() { return (Theme); } };
+    const theme = useContext(props.theme);
+    ...
+  }
+})
+```
+
+`withProvider` calls the Solid provider directly and drains its memo, so the
+context is active while the compiled child blocks run. This only works for
+inlined descendants: a child rendered as a separate mini-program component has
+its own Solid root and does not inherit the provider.
+
+### Refs
+
+`ref` on a native element generates a stable id and a node query:
+
+```tsx
+<view ref={(node) => setWidth(node?.width ?? 0)}>
+  <text>{width()}</text>
+</view>
+```
+
+```xml
+<view id="glaze-r0">
+```
+
+After `attached`, the runtime runs
+`createSelectorQuery().select("#glaze-r0").boundingClientRect(...)` and calls the
+callback with `{ id, ...rect }` or `null`. This is a measurement facade, not a DOM
+node: it has no `focus`, `scrollIntoView`, or child traversal. An element with
+`ref` cannot also set `id`.
+
+### Nested loops
+
+Nested `For` elements must use distinct item and index names:
+
+```tsx
+<For each={grid()} key="id">
+  {(row, rowIndex) => (
+    <For each={row.cells} key="id">
+      {(cell, cellIndex) => <button onClick={...}>{cell.id}</button>}
+    </For>
+  )}
+</For>
+```
+
+Each level writes its own marker (`data-glaze-index`, `data-glaze-index1`, ...),
+and the generated handler reconstructs every enclosing item before calling the
+user handler.
+
 ### Lists, events and batching
 
 A `For` binding is recorded with its key:
@@ -155,9 +262,16 @@ fields:
 setData({ "b2[0].done": false })
 ```
 
-Structural changes (insert, remove, reorder, changed key, added/removed field)
-fall back to `setData({ b2: nextArray })`. Reorder is therefore native
-`wx:for` work, not a per-item patch.
+Appending rows while keeping the existing items by reference sends only the new
+indices:
+
+```js
+setData({ "b2[3]": nextItem })
+```
+
+Other structural changes (insert in the middle, remove, reorder, changed key,
+added/removed field) fall back to `setData({ b2: nextArray })`. Reorder is
+therefore native `wx:for` work, not a per-item patch.
 
 Events inside a loop get an index marker:
 
@@ -176,8 +290,7 @@ ctx.event(3, (event) => {
 })
 ```
 
-One loop level is supported for event item lookup; nested-loop event lookup is
-not part of this wave.
+Nested loops use one marker per level; the handler walks the whole scope chain.
 
 Binding writes are merged in a microtask: several signals updated in one event
 produce one `setData` call. The initial values still go through one synchronous
@@ -259,9 +372,10 @@ target/debug/minidev test \
   --browser ~/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell
 ```
 
-Result: `counter.test.js` passes (title, count, tap updates, `Show`, `For`,
-and a `TodoItem` child receiving and updating props; it also removes a row
-through a `For` event).
+Result: `counter.test.js` passes. It covers title/count updates, `Show`, keyed
+`For`, `TodoItem` props, inline default slot, boundary default slot, named slot,
+custom component event, context value, ref measurement, nested `For` event,
+append patch, and row removal.
 
 ## Benchmark
 
@@ -290,18 +404,23 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
 
 ## Known gaps
 
-1. **Only default slots on inlined components** are supported. Named slots and
-   slots on component boundaries are rejected.
-2. **Component events** are rejected. Only native DOM-like events are wired.
-3. **Inlined components** cannot have relative imports, module-level state, or
-   loop-scoped props. They also lose their own style isolation because their
-   WXML lands in the parent's scope.
-4. **List patches** only apply when key order and length are unchanged; reorder
-   and structural changes send the whole array.
-5. **Nested-loop event lookup** is not supported; only the innermost loop index
-   is wired.
-6. **Unsupported JSX** (`.map`, dynamic components, render props, `Portal`,
+1. **Inlined components** cannot have relative imports or module-level runtime
+   state. They lose their own style isolation because their WXML lands in the
+   parent's scope.
+2. **Named slots** require a component boundary. An inlined component can only
+   use the default `props.children` slot.
+3. **Context** only reaches inlined descendants. A separate mini-program
+   component does not inherit a provider, and the provider value is read at
+   mount rather than re-evaluated as a reactive expression.
+4. **Refs** expose a measurement object, not a DOM node. `focus`,
+   `scrollIntoView`, and child traversal are not available.
+5. **List patches** are fine-grained only when key order and length are
+   unchanged, or when rows are appended. Insert/remove/reorder send the whole
+   array.
+6. **Component event payloads** pass `event.detail` as one argument; multiple
+   arguments arrive as an array.
+7. **Unsupported JSX** (`.map`, dynamic components, render props, `Portal`,
    `Transition`) is a compile error.
-7. **Build integration** is a CLI (`glaze build`); there is no Vite plugin or
+8. **Build integration** is a CLI (`glaze build`); there is no Vite plugin or
    watch mode yet.
-8. **Svelte** has no compiler yet.
+9. **Svelte** has no compiler yet.

@@ -4,22 +4,54 @@ export type GlazeBinding = () => unknown
 export type GlazeEventHandler = (event?: unknown) => void
 export type GlazeProps = Record<string, unknown>
 
+export type GlazeContextProvider = (props: {
+  value: unknown
+  children: () => unknown
+}) => () => unknown
+
+/**
+ * Run inline child setup inside a Solid context provider.
+ *
+ * Solid's provider is a component that sets the context while its children
+ * accessor runs. Calling the provider directly and draining its memo keeps
+ * that window open for the compiled child blocks, which are ordinary
+ * statements rather than a JSX child tree.
+ */
+export function withProvider(
+  context: GlazeContextProvider,
+  value: unknown,
+  setup: () => void,
+): void {
+  const provider = context({
+    value,
+    children: () => {
+      setup()
+      return ''
+    },
+  })
+  provider()
+}
+
 export type GlazeContext = {
   bind(index: number, fn: GlazeBinding): void
   event(index: number, fn: GlazeEventHandler): void
+  ref(index: number, fn: (node: unknown) => void): void
 }
 
 export type GlazeComponentConfig = {
   data?: Record<string, unknown>
   properties?: string[]
+  eventProps?: Record<string, string>
   listBindings?: Record<string, string>
   handlerCount?: number
+  refCount?: number
   setup(ctx: GlazeContext, props: GlazeProps): void
 }
 
 type InstanceState = {
   bindings: GlazeBinding[]
   events: GlazeEventHandler[]
+  refs: { id: string; fn: (node: unknown) => void }[]
   initial: unknown[]
   previous: unknown[]
   pending: Record<string, unknown>
@@ -31,8 +63,20 @@ type InstanceState = {
 
 function listPatch(previous: unknown, next: unknown, key: string, binding: string) {
   if (!Array.isArray(previous) || !Array.isArray(next)) return null
-  if (previous.length !== next.length) return null
   if (key === '*this') return null
+
+  if (
+    next.length > previous.length &&
+    previous.every((item, index) => Object.is(item, next[index]))
+  ) {
+    const patch: Record<string, unknown> = {}
+    for (let index = previous.length; index < next.length; index += 1) {
+      patch[`${binding}[${index}]`] = next[index]
+    }
+    return patch
+  }
+
+  if (previous.length !== next.length) return null
 
   const previousIndex = new Map(previous.map((item, index) => [item?.[key], index]))
   const patch: Record<string, unknown> = {}
@@ -102,6 +146,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         const state: InstanceState = {
           bindings: [],
           events: [],
+          refs: [],
           initial: [],
           previous: [],
           pending: {},
@@ -115,10 +160,18 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         for (const name of propertyNames) {
           state.props[name] = createSignal(this.properties?.[name] ?? null)
         }
+        const eventProps = config.eventProps ?? {}
         const props = new Proxy(
           {},
           {
-            get: (_, key: string) => state.props[key]?.[0](),
+            get: (_, key: string) => {
+              const eventName = eventProps[key]
+              if (eventName) {
+                return (...args: unknown[]) =>
+                  this.triggerEvent(eventName, args.length <= 1 ? args[0] : args)
+              }
+              return state.props[key]?.[0]()
+            },
           },
         )
 
@@ -130,6 +183,9 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
               },
               event(index, fn) {
                 state.events[index] = fn
+              },
+              ref(index, fn) {
+                state.refs[index] = { id: `glaze-r${index}`, fn }
               },
             },
             props,
@@ -175,6 +231,17 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           }
           state.previous[index] = value
         }
+
+        const query =
+          this.createSelectorQuery?.() ??
+          (globalThis as unknown as { wx: any }).wx.createSelectorQuery().in(this)
+        for (const ref of state.refs) {
+          if (!ref) continue
+          query.select(`#${ref.id}`).boundingClientRect((rect: unknown) => {
+            ref.fn(rect ? { id: ref.id, ...rect } : null)
+          })
+        }
+        query.exec()
 
         runWithOwner(state.owner, () => {
           state.bindings.forEach((fn, index) => {
