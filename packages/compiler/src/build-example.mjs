@@ -42,13 +42,24 @@ function resolveComponent(fromFile, specifier) {
 await mkdir(tempDir, { recursive: true })
 
 const sourceFiles = await collectSources(sourceDir)
+const sources = new Map()
 const compiled = new Map()
 
 for (const sourceFile of sourceFiles) {
-  const source = await readFile(sourceFile, 'utf8')
+  sources.set(sourceFile, await readFile(sourceFile, 'utf8'))
+}
+
+for (const sourceFile of sourceFiles) {
+  const source = sources.get(sourceFile)
   compiled.set(sourceFile, {
     sourceFile,
-    result: compileComponent(source),
+    result: compileComponent(source, {
+      inline: true,
+      resolveComponent: (name, specifier) => {
+        const childFile = resolveComponent(sourceFile, specifier)
+        return sources.get(childFile) ?? null
+      },
+    }),
     outName: outputName(sourceFile),
   })
 }
@@ -81,9 +92,18 @@ for (const { sourceFile, result, outName } of compiled.values()) {
     path.dirname(sourceFile),
     `${path.basename(sourceFile, '.tsx')}.wxss`,
   )
+  const inlineStyles = []
+  for (const inline of result.inlineComponents) {
+    const childFile = resolveComponent(sourceFile, inline.source)
+    const childStyle = path.join(
+      path.dirname(childFile),
+      `${path.basename(childFile, '.tsx')}.wxss`,
+    )
+    if (existsSync(childStyle)) inlineStyles.push(await readFile(childStyle, 'utf8'))
+  }
   await writeFile(
     path.join(outDir, 'index.wxss'),
-    await readFile(styleFile, 'utf8').catch(() => ''),
+    [await readFile(styleFile, 'utf8').catch(() => ''), ...inlineStyles].join('\n'),
   )
 
   await build({

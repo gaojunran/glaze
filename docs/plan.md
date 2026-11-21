@@ -47,6 +47,15 @@ same harness; scalar update equal.
 Acceptance met: `Counter` renders three `TodoItem` children; toggling the first
 todo changes the child's `done` property and its class. E2E passes.
 
+### M2.5 — static component inlining (done)
+
+- Inline eligible child components into the parent's WXML and Solid root.
+- Props become getters, so no property bridge and no child component instance.
+- Keep a component boundary for `For`-scoped usages and unsupported children.
+
+Acceptance met: `Header` is inlined (`no <header>`, no `Header` import in the
+generated module), while `TodoItem` inside `For` stays a component. E2E passes.
+
 ### M3 — lists and events inside loops (done)
 
 - `For` item events with index payload (`data-glaze-index`); the generated

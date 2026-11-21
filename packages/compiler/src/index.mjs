@@ -84,7 +84,67 @@ const walkAst = (node, visit) => {
  * Everything else is a compile error on purpose. Silent fallback would hide
  * exactly the cases where the mini-program runtime diverges from Solid.
  */
-export function compileComponent(source) {
+export function compileComponent(source, options = {}) {
+  const parsed = parseComponent(source)
+  const { ast, statements, returnIndex, jsx, propsParam, props } = parsed
+
+  const ctx = {
+    bindings: [],
+    events: [],
+    components: [],
+    inlineComponents: [],
+    imports: collectImports(ast),
+    knownImports: new Set(
+      ast.program.body
+        .filter((node) => t.isImportDeclaration(node))
+        .flatMap((node) => node.specifiers.map((specifier) => specifier.local.name)),
+    ),
+    extraImports: [],
+    blocks: [
+      {
+        setup: statements.slice(0, returnIndex),
+        propsParam: null,
+        propGetters: [],
+      },
+    ],
+    currentBlock: 0,
+    inline: options.inline ?? false,
+    resolveComponent: options.resolveComponent ?? null,
+    addBinding(expression, listKey = null) {
+      const index = this.bindings.length
+      this.bindings.push({ code: codeOf(expression), listKey, block: this.currentBlock })
+      return index
+    },
+    addEvent(expression, scope = null) {
+      const index = this.events.length
+      this.events.push({ code: codeOf(expression), scope, block: this.currentBlock })
+      return index
+    },
+    addComponent(name, source) {
+      if (!this.components.some((item) => item.name === name)) {
+        this.components.push({ name, source })
+      }
+    },
+  }
+
+  const wxml = compileNode(jsx, ctx, null)
+  const js = emitModule(ast, statements.slice(0, returnIndex), ctx, {
+    propsParam: propsParam?.name ?? null,
+    props,
+  })
+
+  return {
+    wxml,
+    js,
+    props,
+    components: ctx.components,
+    inlineComponents: ctx.inlineComponents,
+    bindingCount: ctx.bindings.length,
+    handlerCount: ctx.events.length,
+  }
+}
+
+function parseComponent(source) {
   const ast = parse(source, {
     sourceType: 'module',
     plugins: ['typescript', 'jsx'],
@@ -113,42 +173,7 @@ export function compileComponent(source) {
     throw new Error('Component must return a JSX element')
   }
 
-  const ctx = {
-    bindings: [],
-    events: [],
-    components: [],
-    imports: collectImports(ast),
-    addBinding(expression, listKey = null) {
-      const index = this.bindings.length
-      this.bindings.push({ code: codeOf(expression), listKey })
-      return index
-    },
-    addEvent(expression, scope = null) {
-      const index = this.events.length
-      this.events.push({ code: codeOf(expression), scope })
-      return index
-    },
-    addComponent(name, source) {
-      if (!this.components.some((item) => item.name === name)) {
-        this.components.push({ name, source })
-      }
-    },
-  }
-
-  const wxml = compileNode(jsx, ctx, null)
-  const js = emitModule(ast, statements.slice(0, returnIndex), ctx, {
-    propsParam: propsParam?.name ?? null,
-    props,
-  })
-
-  return {
-    wxml,
-    js,
-    props,
-    components: ctx.components,
-    bindingCount: ctx.bindings.length,
-    handlerCount: ctx.events.length,
-  }
+  return { ast, fn, statements, returnIndex, jsx, propsParam, props }
 }
 
 function findComponentFunction(ast) {
@@ -201,16 +226,20 @@ function collectProps(paramName, body) {
 }
 
 function emitModule(ast, setupStatements, ctx, options) {
-  const componentNames = new Set(ctx.components.map((item) => item.name))
-  const imports = ast.program.body
-    .filter((node) => t.isImportDeclaration(node))
-    .filter((node) => {
-      const locals = node.specifiers.map((specifier) => specifier.local.name)
-      const onlyComponents = locals.length > 0 && locals.every((name) => componentNames.has(name))
-      return !(node.source.value.startsWith('.') && onlyComponents)
-    })
-    .map((node) => codeOf(node))
-    .join('\n')
+  const componentNames = new Set(
+    [...ctx.components, ...ctx.inlineComponents].map((item) => item.name),
+  )
+  const imports = [
+    ...ast.program.body
+      .filter((node) => t.isImportDeclaration(node))
+      .filter((node) => {
+        const locals = node.specifiers.map((specifier) => specifier.local.name)
+        const onlyComponents = locals.length > 0 && locals.every((name) => componentNames.has(name))
+        return !(node.source.value.startsWith('.') && onlyComponents)
+      })
+      .map((node) => codeOf(node)),
+    ...ctx.extraImports,
+  ].join('\n')
 
   const moduleStatements = ast.program.body
     .filter(
@@ -222,21 +251,6 @@ function emitModule(ast, setupStatements, ctx, options) {
     .map((node) => codeOf(node))
     .join('\n')
 
-  const setup = setupStatements.map((node) => codeOf(node)).join('\n')
-  const bindings = ctx.bindings
-    .map(({ code }, index) => `    ctx.bind(${index}, () => (${code}));`)
-    .join('\n')
-  const events = ctx.events
-    .map((event, index) => {
-      if (!event.scope) return `    ctx.event(${index}, ${event.code});`
-      const { item, index: indexName, source } = event.scope
-      return `    ctx.event(${index}, (event) => {
-      const ${indexName} = Number(event.currentTarget.dataset.glazeIndex);
-      const ${item} = (${source})[${indexName}];
-      return (${event.code})(event);
-    });`
-    })
-    .join('\n')
   const data = JSON.stringify(
     Object.fromEntries(ctx.bindings.map((_, index) => [`b${index}`, null])),
   )
@@ -251,6 +265,56 @@ function emitModule(ast, setupStatements, ctx, options) {
       : ''
   const setupParams = options.propsParam ? `, ${options.propsParam}` : ''
 
+  const renderBindings = (blockId) =>
+    ctx.bindings
+      .map((binding, index) =>
+        binding.block === blockId ? `    ctx.bind(${index}, () => (${binding.code}));` : '',
+      )
+      .filter(Boolean)
+      .join('\n')
+
+  const renderEvents = (blockId) =>
+    ctx.events
+      .map((event, index) => {
+        if (event.block !== blockId) return ''
+        if (!event.scope) return `    ctx.event(${index}, ${event.code});`
+        const { item, index: indexName, source } = event.scope
+        return `    ctx.event(${index}, (event) => {
+      const ${indexName} = Number(event.currentTarget.dataset.glazeIndex);
+      const ${item} = (${source})[${indexName}];
+      return (${event.code})(event);
+    });`
+      })
+      .filter(Boolean)
+      .join('\n')
+
+  const indent = (code, spaces) =>
+    code
+      .split('\n')
+      .map((line) => (line ? `${' '.repeat(spaces)}${line}` : line))
+      .join('\n')
+
+  const setup = ctx.blocks
+    .map((block, blockId) => {
+      const body = [
+        block.setup.map((node) => codeOf(node)).join('\n'),
+        renderBindings(blockId),
+        renderEvents(blockId),
+      ]
+        .filter(Boolean)
+        .join('\n')
+
+      if (blockId === 0) return body
+
+      const props = block.propsParam
+        ? `    const ${block.propsParam} = {\n${block.propGetters
+            .map((getter) => `      get ${getter.name}() { return (${getter.code}); },`)
+            .join('\n')}\n    };\n`
+        : ''
+      return `  {\n${props}${indent(body, 4)}\n  }`
+    })
+    .join('\n')
+
   return `${imports}
 import { defineGlazeComponent } from "@glaze/runtime/mini";
 
@@ -262,8 +326,6 @@ ${properties}  data: ${data},
   handlerCount: ${ctx.events.length},
   setup(ctx${setupParams}) {
 ${setup}
-${bindings}
-${events}
   },
 });
 `
@@ -360,6 +422,9 @@ function compileComponentElement(node, ctx, scope, extraAttrs = []) {
     throw new Error(`Component <${name}> does not support children or slots yet`)
   }
 
+  const inlined = inlineComponent(node, ctx, scope, name, source)
+  if (inlined != null) return inlined
+
   ctx.addComponent(name, source)
 
   const attrs = []
@@ -397,6 +462,74 @@ function compileComponentElement(node, ctx, scope, extraAttrs = []) {
   const allAttrs = [...attrs, ...extraAttrs]
   const attrText = allAttrs.length > 0 ? ` ${allAttrs.join(' ')}` : ''
   return `<${kebabCase(name)}${attrText} />`
+}
+
+function inlineComponent(node, ctx, scope, name, source) {
+  if (!ctx.inline || scope || !ctx.resolveComponent) return null
+
+  const childSource = ctx.resolveComponent(name, source)
+  if (!childSource) return null
+
+  const child = parseComponent(childSource)
+  const body = child.ast.program.body
+  for (const node of body) {
+    if (!t.isImportDeclaration(node)) continue
+    if (node.source.value !== 'solid-js') return null
+    for (const specifier of node.specifiers) {
+      const local = specifier.local.name
+      if (ctx.knownImports.has(local)) continue
+      ctx.knownImports.add(local)
+      if (t.isImportSpecifier(specifier)) {
+        const imported = specifier.imported.name ?? specifier.imported.value
+        const alias = imported === local ? '' : ` as ${local}`
+        ctx.extraImports.push(`import { ${imported}${alias} } from "solid-js";`)
+      } else if (t.isImportDefaultSpecifier(specifier)) {
+        ctx.extraImports.push(`import ${local} from "solid-js";`)
+      } else {
+        ctx.extraImports.push(`import * as ${local} from "solid-js";`)
+      }
+    }
+  }
+  if (
+    body.some(
+      (item) =>
+        t.isVariableDeclaration(item) ||
+        t.isFunctionDeclaration(item) ||
+        t.isExpressionStatement(item),
+    )
+  ) {
+    return null
+  }
+
+  const propGetters = []
+  for (const attr of node.openingElement.attributes) {
+    if (!t.isJSXAttribute(attr)) return null
+    const attrName = t.isJSXIdentifier(attr.name) ? attr.name.name : null
+    if (!attrName) return null
+    if (attrName === 'key') continue
+    if (attrName === 'ref' || /^on[A-Z]/.test(attrName)) return null
+    if (!/^[a-z][a-z0-9]*$/.test(attrName)) return null
+
+    const expression = getExpression(attr)
+    if (expression == null) continue
+    propGetters.push({ name: attrName, code: codeOf(expression) })
+  }
+
+  if (propGetters.length > 0 && !child.propsParam) return null
+
+  const blockId = ctx.blocks.length
+  ctx.blocks.push({
+    setup: child.statements.slice(0, child.returnIndex),
+    propsParam: child.propsParam?.name ?? null,
+    propGetters,
+  })
+
+  const previousBlock = ctx.currentBlock
+  ctx.currentBlock = blockId
+  const wxml = compileNode(child.jsx, ctx, null)
+  ctx.currentBlock = previousBlock
+  ctx.inlineComponents.push({ name, source })
+  return wxml
 }
 
 function compileChildren(children, ctx, scope) {

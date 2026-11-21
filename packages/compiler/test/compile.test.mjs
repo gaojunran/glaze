@@ -98,6 +98,96 @@ test('compiles events inside For with index lookup', () => {
   assert.match(result.js, /return \(\(\) => setCount\(item\.id\)\)\(event\)/)
 })
 
+test('inlines a stateless imported component outside For', () => {
+  const header = `
+    export default function Header(props) {
+      return <text class="title">{props.title}</text>
+    }
+  `
+  const result = compileComponent(
+    `
+      import Header from './Header'
+
+      export default function Page() {
+        return <view><Header title="Hello" /></view>
+      }
+    `,
+    {
+      inline: true,
+      resolveComponent: (name) => (name === 'Header' ? header : null),
+    },
+  )
+
+  assert.doesNotMatch(result.wxml, /<header/)
+  assert.match(result.wxml, /<text class="title">\{\{b0\}\}<\/text>/)
+  assert.match(result.js, /const props = \{/)
+  assert.match(result.js, /get title\(\) \{ return \("Hello"\); \}/)
+  assert.deepEqual(result.inlineComponents, [{ name: 'Header', source: './Header' }])
+})
+
+test('inlines a stateful imported component and merges solid-js imports', () => {
+  const child = `
+    import { createSignal } from 'solid-js'
+
+    export default function Child() {
+      const [n, setN] = createSignal(1)
+      return <button onClick={() => setN((value) => value + 1)}>{n()}</button>
+    }
+  `
+  const result = compileComponent(
+    `
+      import { createSignal } from 'solid-js'
+      import Child from './Child'
+
+      export default function Page() {
+        const [count] = createSignal(0)
+        return <view><Child /><text>{count()}</text></view>
+      }
+    `,
+    {
+      inline: true,
+      resolveComponent: (name) => (name === 'Child' ? child : null),
+    },
+  )
+
+  assert.doesNotMatch(result.wxml, /<child/)
+  assert.match(result.wxml, /<button bindtap="e0">\{\{b0\}\}<\/button>/)
+  const solidImports = result.js.match(/from ['\"]solid-js['\"]/g) ?? []
+  assert.equal(solidImports.length, 1)
+  assert.match(result.js, /const \[n, setN\] = createSignal\(1\)/)
+  assert.match(result.js, /ctx.event\(0, \(\) => setN/)
+})
+
+test('keeps a component boundary inside For', () => {
+  const item = `
+    export default function Item(props) {
+      return <text>{props.title}</text>
+    }
+  `
+  const result = compileComponent(
+    `
+      import Item from './Item'
+
+      export default function Page() {
+        const items = [{ title: 'a' }]
+        return (
+          <For each={items} key="title">
+            {(entry) => <Item title={entry.title} />}
+          </For>
+        )
+      }
+    `,
+    {
+      inline: true,
+      resolveComponent: (name) => (name === 'Item' ? item : null),
+    },
+  )
+
+  assert.match(result.wxml, /<item title="\{\{entry\.title\}\}" \/>/)
+  assert.deepEqual(result.components, [{ name: 'Item', source: './Item' }])
+  assert.deepEqual(result.inlineComponents, [])
+})
+
 test('rejects destructured props', () => {
   assert.throws(
     () =>

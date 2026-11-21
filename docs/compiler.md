@@ -53,6 +53,7 @@ First-wave support:
 | `<For each={...} key="id">` | `wx:for` + `wx:key` |
 | item/index expressions inside `For` | inline `{{item.x}}` |
 | imported component `<TodoItem title={...} />` | `<todo-item title="{{...}}" />` + `usingComponents` |
+| stateless component outside `For` | inlined into the parent's WXML and setup |
 | `props.name` in the child | a mini-program property + a child signal |
 
 Anything outside this subset is a compile error. Silent fallback would hide the
@@ -88,6 +89,40 @@ The build script compiles every `.tsx` under `src/`, resolves relative component
 imports, and emits each component plus its `usingComponents` map. Local
 component imports are removed from the generated parent module because the
 child is rendered by WXML, not by the parent's JS.
+
+### Static component inlining
+
+A component imported from a relative file is inlined when all of these hold:
+
+- it is not inside a `For` (no loop scope);
+- its own imports come only from `solid-js`;
+- it has no module-level runtime statements (type aliases are fine);
+- it has no children and no event props.
+
+The child's setup runs in a block inside the parent's Solid root, and its props
+become getters over the parent's expressions:
+
+```js
+{
+  const props = {
+    get title() { return ("Glaze + Solid"); },
+  };
+  ctx.bind(0, () => (props.title));
+}
+```
+
+Consequences:
+
+- props are ordinary Solid getters, so no property bridge and no extra
+  mini-program component;
+- the child shares the parent's owner, so `onCleanup` and context stay
+  continuous;
+- the child's WXML is emitted inside the parent's WXML, so the parent's WXSS
+  scope applies;
+- the child's `.wxss` is appended to the parent's stylesheet at build time.
+
+Ineligible components are compiled as a mini-program component, exactly as
+before. This is a per-usage decision, not a per-file flag.
 
 ### Lists, events and batching
 
@@ -240,12 +275,15 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
 1. **Component children and slots** are rejected. A component must be
    self-closing in this wave.
 2. **Component events** are rejected. Only native DOM-like events are wired.
-3. **List patches** only apply when key order and length are unchanged; reorder
+3. **Inlined components** cannot have relative imports, module-level state,
+   children, or loop-scoped props. They also lose their own style isolation
+   because their WXML lands in the parent's scope.
+4. **List patches** only apply when key order and length are unchanged; reorder
    and structural changes send the whole array.
-4. **Nested-loop event lookup** is not supported; only the innermost loop index
+5. **Nested-loop event lookup** is not supported; only the innermost loop index
    is wired.
-5. **Unsupported JSX** (`.map`, dynamic components, render props, `Portal`,
+6. **Unsupported JSX** (`.map`, dynamic components, render props, `Portal`,
    `Transition`) is a compile error.
-6. **Build integration** is a standalone script; a Vite plugin and per-component
+7. **Build integration** is a standalone script; a Vite plugin and per-component
    discovery are next.
-7. **Svelte** has no compiler yet.
+8. **Svelte** has no compiler yet.

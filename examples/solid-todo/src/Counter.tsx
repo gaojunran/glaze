@@ -1,4 +1,5 @@
 import { createSignal, For, Show } from 'solid-js'
+import Header from './Header'
 import TodoItem from './TodoItem'
 
 type Todo = {
@@ -17,7 +18,7 @@ export default function Counter() {
 
   return (
     <view class="page">
-      <text class="title">Glaze + Solid</text>
+      <Header title="Glaze + Solid" />
 
       <view class="counter">
         <button class="btn" onClick={() => setCount((value) => value - 1)}>-</button>
