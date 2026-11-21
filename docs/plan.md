@@ -105,6 +105,12 @@ Known limits are listed in [compiler.md](compiler.md#known-gaps).
 - Scoped CSS to WXSS.
 - Same e2e and benchmark suites.
 
+## Deferred performance work
+
+The component-dense benchmark and pure-component inlining ideas are tracked in
+[optimizations.md](optimizations.md). Feature coverage stays the current
+priority; performance work starts only after that benchmark exists.
+
 ## Validation rule
 
 Every milestone runs in the minidev simulator with a real page and records:

@@ -33,6 +33,7 @@ within a few percent of hand-written WXML in the same harness.
 - [Implementation plan](docs/plan.md)
 - [Build](docs/build.md)
 - [Running with minidev](docs/minidev.md)
+- [Performance backlog](docs/optimizations.md)
 - [Why external components do not work](docs/findings-external-component.md)
 
 ## License
