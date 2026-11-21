@@ -89,6 +89,50 @@ imports, and emits each component plus its `usingComponents` map. Local
 component imports are removed from the generated parent module because the
 child is rendered by WXML, not by the parent's JS.
 
+### Lists, events and batching
+
+A `For` binding is recorded with its key:
+
+```js
+listBindings: { 2: "id" }
+```
+
+When the source array changes, the runtime compares the previous and next
+arrays by key. If the length and key order are unchanged, it emits only changed
+fields:
+
+```js
+setData({ "b2[0].done": false })
+```
+
+Structural changes (insert, remove, reorder, changed key, added/removed field)
+fall back to `setData({ b2: nextArray })`. Reorder is therefore native
+`wx:for` work, not a per-item patch.
+
+Events inside a loop get an index marker:
+
+```xml
+<button class="remove" bindtap="e3" data-glaze-index="{{index}}">x</button>
+```
+
+The generated handler resolves the loop item from the same source expression
+before calling the user handler:
+
+```js
+ctx.event(3, (event) => {
+  const index = Number(event.currentTarget.dataset.glazeIndex)
+  const todo = todos()[index]
+  return (() => setTodos(...))(event)
+})
+```
+
+One loop level is supported for event item lookup; nested-loop event lookup is
+not part of this wave.
+
+Binding writes are merged in a microtask: several signals updated in one event
+produce one `setData` call. The initial values still go through one synchronous
+`setData` before the first paint.
+
 ### Generated runtime
 
 ```
@@ -163,7 +207,8 @@ target/debug/minidev test \
 ```
 
 Result: `counter.test.js` passes (title, count, tap updates, `Show`, `For`,
-and a `TodoItem` child receiving and updating props).
+and a `TodoItem` child receiving and updating props; it also removes a row
+through a `For` event).
 
 ## Benchmark
 
@@ -175,28 +220,30 @@ and a `TodoItem` child receiving and updating props).
 Measured through `minidev-automator` on minidev 0.18.0, base library 3.17.3,
 headless Chromium 1248, local Linux. First render is wall time from `reLaunch`
 to the 1000th `.row` becoming queryable; update is wall time from tapping
-`bump` to the `.tick` text changing. Automation overhead is included, so compare
-relative numbers only.
+`bump` to the `.tick` text changing; reverse is wall time from tapping
+`reverse` until the first row changes from `Item 0` to `Item 999`. Automation
+overhead is included, so compare relative numbers only. Absolute update numbers
+move with machine load; the two pages were measured in the same session.
 
-| Run | Glaze first render | Native first render | Glaze update | Native update |
-| --- | --- | --- | --- | --- |
-| 1 | 3267 ms | 3206 ms | 25 ms | 27 ms |
-| 2 | 3226 ms | 3210 ms | 24 ms | 25 ms |
-| 3 | 3223 ms | 3213 ms | 24 ms | 24 ms |
+| Run | Glaze first render | Native first render | Glaze update | Native update | Glaze reverse | Native reverse |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 3250 ms | 3208 ms | 96 ms | 93 ms | 71 ms | 68 ms |
+| 2 | 3205 ms | 3212 ms | 92 ms | 92 ms | 67 ms | 67 ms |
+| 3 | 3210 ms | 3196 ms | 93 ms | 93 ms | 65 ms | 68 ms |
 
-Within this harness, first render is within ~1–2% of native and a scalar update
-is the same. The 1000 rows are rendered by native `wx:for` in both cases; Solid
-does not build a virtual tree.
+Within this harness, first render is within ~1% of native, and scalar update
+and keyed reverse are the same within noise. The 1000 rows are rendered by
+native `wx:for` in both cases; Solid does not build a virtual tree.
 
 ## Known gaps
 
 1. **Component children and slots** are rejected. A component must be
    self-closing in this wave.
 2. **Component events** are rejected. Only native DOM-like events are wired.
-3. **List item updates** currently send the whole array when the `For` source
-   changes. Native WXML can send `items[0].title`; Glaze needs per-item paths.
-4. **Events inside `For`** cannot yet receive the item or index. A handler that
-   references the loop item is rejected.
+3. **List patches** only apply when key order and length are unchanged; reorder
+   and structural changes send the whole array.
+4. **Nested-loop event lookup** is not supported; only the innermost loop index
+   is wired.
 5. **Unsupported JSX** (`.map`, dynamic components, render props, `Portal`,
    `Transition`) is a compile error.
 6. **Build integration** is a standalone script; a Vite plugin and per-component

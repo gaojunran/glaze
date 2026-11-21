@@ -44,7 +44,17 @@ export default function Counter() {
 
       <view class="list">
         <For each={todos()} key="id">
-          {(todo) => <TodoItem title={todo.title} done={todo.done} />}
+          {(todo) => (
+            <view class="item-wrap">
+              <TodoItem title={todo.title} done={todo.done} />
+              <button
+                class="remove"
+                onClick={() => setTodos((items) => items.filter((item) => item.id !== todo.id))}
+              >
+                x
+              </button>
+            </view>
+          )}
         </For>
       </view>
 

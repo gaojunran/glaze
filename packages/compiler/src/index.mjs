@@ -118,14 +118,14 @@ export function compileComponent(source) {
     events: [],
     components: [],
     imports: collectImports(ast),
-    addBinding(expression) {
+    addBinding(expression, listKey = null) {
       const index = this.bindings.length
-      this.bindings.push(codeOf(expression))
+      this.bindings.push({ code: codeOf(expression), listKey })
       return index
     },
-    addEvent(expression) {
+    addEvent(expression, scope = null) {
       const index = this.events.length
-      this.events.push(codeOf(expression))
+      this.events.push({ code: codeOf(expression), scope })
       return index
     },
     addComponent(name, source) {
@@ -224,13 +224,26 @@ function emitModule(ast, setupStatements, ctx, options) {
 
   const setup = setupStatements.map((node) => codeOf(node)).join('\n')
   const bindings = ctx.bindings
-    .map((code, index) => `    ctx.bind(${index}, () => (${code}));`)
+    .map(({ code }, index) => `    ctx.bind(${index}, () => (${code}));`)
     .join('\n')
   const events = ctx.events
-    .map((code, index) => `    ctx.event(${index}, ${code});`)
+    .map((event, index) => {
+      if (!event.scope) return `    ctx.event(${index}, ${event.code});`
+      const { item, index: indexName, source } = event.scope
+      return `    ctx.event(${index}, (event) => {
+      const ${indexName} = Number(event.currentTarget.dataset.glazeIndex);
+      const ${item} = (${source})[${indexName}];
+      return (${event.code})(event);
+    });`
+    })
     .join('\n')
   const data = JSON.stringify(
     Object.fromEntries(ctx.bindings.map((_, index) => [`b${index}`, null])),
+  )
+  const listBindings = Object.fromEntries(
+    ctx.bindings
+      .map((binding, index) => [index, binding.listKey])
+      .filter(([, key]) => key),
   )
   const properties =
     options.props.length > 0
@@ -245,6 +258,7 @@ ${moduleStatements}
 
 export default defineGlazeComponent({
 ${properties}  data: ${data},
+  listBindings: ${JSON.stringify(listBindings)},
   handlerCount: ${ctx.events.length},
   setup(ctx${setupParams}) {
 ${setup}
@@ -293,9 +307,15 @@ function compileElement(node, ctx, scope, extraAttrs = []) {
     if (expression == null) continue
 
     if (EVENT_MAP[attrName] || /^on[A-Z]/.test(attrName)) {
+      if (scope?.parent) {
+        throw new Error('Events inside nested <For> are not supported yet')
+      }
       const eventName = EVENT_MAP[attrName] ?? `bind${attrName.slice(2).toLowerCase()}`
-      const index = ctx.addEvent(expression)
+      const index = ctx.addEvent(expression, scope)
       attrs.push(`${eventName}="e${index}"`)
+      if (scope && !attrs.includes(`data-glaze-index="{{${scope.index}}}"`)) {
+        attrs.push(`data-glaze-index="{{${scope.index}}}"`)
+      }
       continue
     }
 
@@ -443,7 +463,6 @@ function compileShow(node, ctx, scope) {
 function compileFor(node, ctx, scope) {
   const each = getExpression(getAttribute(node, 'each'))
   if (!each) throw new Error('<For> requires an each expression')
-  const eachExpr = scope ? inlineExpression(each, scope) : `b${ctx.addBinding(each)}`
 
   const keyAttr = getAttribute(node, 'key')
   let key = '*this'
@@ -451,6 +470,9 @@ function compileFor(node, ctx, scope) {
     if (keyAttr.value && t.isStringLiteral(keyAttr.value)) key = keyAttr.value.value
     else throw new Error('<For> key must be a string literal in the first compiler wave')
   }
+
+  const eachCode = scope ? inlineExpression(each, scope) : codeOf(each)
+  const eachExpr = scope ? eachCode : `b${ctx.addBinding(each, key)}`
 
   const child = node.children.find((item) => !isWhitespaceText(item))
   if (!child || !t.isJSXExpressionContainer(child)) {
@@ -474,7 +496,7 @@ function compileFor(node, ctx, scope) {
     throw new Error('<For> callback must return JSX')
   }
 
-  const itemScope = { item: itemName, index: indexName, parent: scope }
+  const itemScope = { item: itemName, index: indexName, source: eachCode, parent: scope }
   const children = compileNode(body, ctx, itemScope)
   return `<block wx:for="{{${eachExpr}}}" wx:for-item="${itemName}" wx:for-index="${indexName}" wx:key="${key}">${children}</block>`
 }

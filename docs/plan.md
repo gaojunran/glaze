@@ -47,15 +47,18 @@ same harness; scalar update equal.
 Acceptance met: `Counter` renders three `TodoItem` children; toggling the first
 todo changes the child's `done` property and its class. E2E passes.
 
-### M3 — lists and events inside loops (next)
+### M3 — lists and events inside loops (done)
 
-- `For` item events with index/key payload.
+- `For` item events with index payload (`data-glaze-index`); the generated
+  handler resolves the item from the loop source.
 - Per-item binding paths instead of whole-array `setData` for item updates.
 - Keyed reorder benchmark.
 - Batch consecutive binding writes into one `setData`.
 
-Acceptance: updating one row sends only that row's path; 1000-row reorder is
-within 1.5x native.
+Acceptance met: toggling one todo sends `b2[0].done` (observed in the appservice
+log), removing a row through a `For` event works in e2e, and 1000-row reverse is
+65–71 ms on Glaze versus 65–68 ms native. Structural changes still send the full
+array.
 
 ### M4 — build integration
 

@@ -45,12 +45,26 @@ async function measure(mp, route, isGlaze) {
     await wait(10)
   }
 
+  const firstRow = await root.$('.row-title')
+  const beforeReverse = await firstRow.text()
+  const reverseStart = Date.now()
+  await (await root.$('.reverse')).tap()
+  let afterReverse = beforeReverse
+  for (let i = 0; i < 400; i += 1) {
+    afterReverse = await (await root.$('.row-title')).text()
+    if (afterReverse !== beforeReverse) break
+    await wait(10)
+  }
+
   return {
     firstRender,
     update: Date.now() - updateStart,
+    reverse: Date.now() - reverseStart,
     rows: rows.length,
     before,
     after,
+    beforeReverse,
+    afterReverse,
   }
 }
 

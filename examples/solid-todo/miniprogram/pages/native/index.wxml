@@ -2,6 +2,7 @@
   <view class="bar">
     <text class="tick">{{tick}}</text>
     <button class="bump" bindtap="bump">bump</button>
+    <button class="reverse" bindtap="reverse">reverse</button>
   </view>
   <view class="list">
     <view wx:for="{{items}}" wx:key="id" class="row">

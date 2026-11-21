@@ -28,4 +28,11 @@ test('counter renders and updates through the compiled bindings', async (miniPro
   xml = await app.outerWxml()
   await expect(xml).toContain('done="false" title="Compile Solid to WXML"')
   await expect(xml).toContain('<text class="item-title">Compile Solid to WXML</text>')
+
+  const removes = await app.$$('.remove')
+  await removes[0].tap()
+  await page.waitFor(500)
+  xml = await app.outerWxml()
+  await expect(xml.includes('Compile Solid to WXML')).toBe(false)
+  await expect(xml).toContain('Run in minidev')
 })

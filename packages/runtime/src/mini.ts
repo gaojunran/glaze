@@ -1,7 +1,7 @@
 import { createEffect, createRoot, createSignal, getOwner, runWithOwner } from 'solid-js'
 
 export type GlazeBinding = () => unknown
-export type GlazeEventHandler = () => void
+export type GlazeEventHandler = (event?: unknown) => void
 export type GlazeProps = Record<string, unknown>
 
 export type GlazeContext = {
@@ -12,6 +12,7 @@ export type GlazeContext = {
 export type GlazeComponentConfig = {
   data?: Record<string, unknown>
   properties?: string[]
+  listBindings?: Record<string, string>
   handlerCount?: number
   setup(ctx: GlazeContext, props: GlazeProps): void
 }
@@ -20,9 +21,40 @@ type InstanceState = {
   bindings: GlazeBinding[]
   events: GlazeEventHandler[]
   initial: unknown[]
+  previous: unknown[]
+  pending: Record<string, unknown>
+  flushScheduled: boolean
   props: Record<string, [() => unknown, (value: unknown) => void]>
   owner: ReturnType<typeof getOwner>
   dispose: (() => void) | null
+}
+
+function listPatch(previous: unknown, next: unknown, key: string, binding: string) {
+  if (!Array.isArray(previous) || !Array.isArray(next)) return null
+  if (previous.length !== next.length) return null
+  if (key === '*this') return null
+
+  const previousIndex = new Map(previous.map((item, index) => [item?.[key], index]))
+  const patch: Record<string, unknown> = {}
+
+  for (let index = 0; index < next.length; index += 1) {
+    const item = next[index]
+    const beforeIndex = previousIndex.get(item?.[key])
+    if (beforeIndex !== index) return null
+
+    const before = previous[beforeIndex]
+    if (before === item) continue
+    for (const field of Object.keys(item)) {
+      if (before && Object.is(before[field], item[field])) continue
+      if (!before || !(field in before)) return null
+      patch[`${binding}[${index}].${field}`] = item[field]
+    }
+    for (const field of Object.keys(before ?? {})) {
+      if (!(field in item)) return null
+    }
+  }
+
+  return patch
 }
 
 declare const Component: (config: Record<string, unknown>) => unknown
@@ -41,8 +73,11 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   const handlerCount = config.handlerCount ?? 0
   for (let i = 0; i < handlerCount; i += 1) {
     const name = `e${i}`
-    methods[name] = function handleEvent(this: { __glaze?: InstanceState | null }) {
-      this.__glaze?.events[i]?.()
+    methods[name] = function handleEvent(
+      this: { __glaze?: InstanceState | null },
+      event?: unknown,
+    ) {
+      this.__glaze?.events[i]?.(event)
     }
   }
 
@@ -68,6 +103,9 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           bindings: [],
           events: [],
           initial: [],
+          previous: [],
+          pending: {},
+          flushScheduled: false,
           props: {},
           owner: null,
           dispose: null,
@@ -101,6 +139,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           const initial: Record<string, unknown> = {}
           state.bindings.forEach((fn, index) => {
             state.initial[index] = fn()
+            state.previous[index] = state.initial[index]
             initial[`b${index}`] = state.initial[index]
           })
           this.setData(initial)
@@ -112,6 +151,31 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         const state: InstanceState | undefined = this.__glaze
         if (!state?.owner) return
 
+        const schedule = (data: Record<string, unknown>) => {
+          Object.assign(state.pending, data)
+          if (state.flushScheduled) return
+          state.flushScheduled = true
+          const flush = () => {
+            state.flushScheduled = false
+            const pending = state.pending
+            state.pending = {}
+            if (Object.keys(pending).length > 0) this.setData(pending)
+          }
+          if (typeof queueMicrotask === 'function') queueMicrotask(flush)
+          else Promise.resolve().then(flush)
+        }
+
+        const applyBinding = (index: number, value: unknown) => {
+          const key = config.listBindings?.[index]
+          const patch = key ? listPatch(state.previous[index], value, key, `b${index}`) : null
+          if (patch) {
+            if (Object.keys(patch).length > 0) schedule(patch)
+          } else {
+            schedule({ [`b${index}`]: value })
+          }
+          state.previous[index] = value
+        }
+
         runWithOwner(state.owner, () => {
           state.bindings.forEach((fn, index) => {
             let first = true
@@ -120,7 +184,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
                 first = false
                 if (Object.is(value, state.initial[index])) return
               }
-              this.setData({ [`b${index}`]: value })
+              applyBinding(index, value)
             })
           })
         })

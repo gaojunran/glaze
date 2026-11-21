@@ -25,7 +25,7 @@ target/debug/minidev test --project ~/Projects/glaze/examples/solid-todo --brows
 Pages:
 
 - `pages/index/index` — counter, `Show`, keyed `For`, `TodoItem` props;
-- `pages/bench/index` — 1000 rows compiled from Solid;
+- `pages/bench/index` — 1000 rows compiled from Solid, including reverse;
 - `pages/native/index` — the same 1000 rows in hand-written WXML.
 
 ## Benchmark

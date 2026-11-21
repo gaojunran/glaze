@@ -75,6 +75,29 @@ test('compiles props and an imported component', () => {
   assert.match(result.js, /setup\(ctx, props\)/)
 })
 
+test('compiles events inside For with index lookup', () => {
+  const result = compileComponent(`
+    import { createSignal, For } from 'solid-js'
+
+    export default function List() {
+      const [count, setCount] = createSignal(0)
+      const items = [{ id: 1 }, { id: 2 }]
+      return (
+        <For each={items} key="id">
+          {(item, index) => (
+            <button onClick={() => setCount(item.id)}>{item.id}</button>
+          )}
+        </For>
+      )
+    }
+  `)
+
+  assert.match(result.wxml, /data-glaze-index="\{\{index\}\}"/)
+  assert.match(result.js, /const index = Number\(event\.currentTarget\.dataset\.glazeIndex\)/)
+  assert.match(result.js, /const item = \(items\)\[index\]/)
+  assert.match(result.js, /return \(\(\) => setCount\(item\.id\)\)\(event\)/)
+})
+
 test('rejects destructured props', () => {
   assert.throws(
     () =>

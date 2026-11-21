@@ -9,4 +9,7 @@ Page({
   bump() {
     this.setData({ tick: this.data.tick + 1 })
   },
+  reverse() {
+    this.setData({ items: this.data.items.slice().reverse() })
+  },
 })
