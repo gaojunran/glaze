@@ -1,0 +1,13 @@
+{
+  "pages": [
+    "pages/home/index",
+    "pages/blank/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "Vue Mini bench",
+    "navigationBarBackgroundColor": "#ffffff",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#ffffff"
+  },
+  "lazyCodeLoading": "requiredComponents"
+}

@@ -173,6 +173,7 @@ fallback rather than pretending the compiler can cover everything.
 - [Running with minidev](docs/minidev.md)
 - [Performance backlog](docs/optimizations.md)
 - [Why external components do not work](docs/findings-external-component.md)
+- [Framework comparison fixtures](bench/frameworks/README.md)
 
 ## License
 

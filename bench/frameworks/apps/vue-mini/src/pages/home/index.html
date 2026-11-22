@@ -1,0 +1,9 @@
+<view class="bench">
+  <text id="tick">{{ tick }}</text>
+  <text id="title">{{ rows[0].title }}</text>
+  <button id="update" class="update" bindtap="updateFirst">update</button>
+  <button id="reverse" class="reverse" bindtap="reverse">reverse</button>
+  <view wx:for="{{ rows }}" wx:key="id" class="row">
+    <text class="row-title">{{ item.title }}</text>
+  </view>
+</view>
