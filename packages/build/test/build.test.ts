@@ -648,3 +648,62 @@ export default function App() {
   )
   assert.match(generated, /bindingGroupSize:2/)
 })
+
+test('generates Tailwind app.wxss and escapes generated WXML classes', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      css: { tailwind: { input: 'src/tailwind.css', safelist: ['text-[40rpx]'] } },
+    },
+    files: {
+      'src/tailwind.css': `@import "tailwindcss" source(none);\n@source "./**/*.{tsx,ts}";\n`,
+      'src/App.tsx': `import { createSignal } from 'solid-js'
+export default function App() {
+  const [big] = createSignal(false)
+  return <view class="p-4 bg-red-500"><text class="text-[20rpx]">hello</text><text class={big() ? 'text-[30rpx]' : 'text-[20rpx]'}>dynamic</text></view>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await buildProject(project)
+
+  const appWxss = await readFile(path.join(project, 'miniprogram/app.wxss'), 'utf8')
+  assert.match(appWxss, /\.p-4\s*\{/)
+  assert.match(appWxss, /\.text-_b20rpx_B\s*\{/)
+  assert.match(appWxss, /\.text-_b40rpx_B\s*\{/)
+  assert.match(appWxss, /page\s*\{\s*background: #fff;/)
+
+  const wxml = await readFile(
+    path.join(project, 'miniprogram/components/glaze-app/index.wxml'),
+    'utf8',
+  )
+  assert.match(wxml, /class="p-4 bg-red-500"/)
+  assert.match(wxml, /text-_b20rpx_B/)
+  assert.doesNotMatch(wxml, /text-\[20rpx\]/)
+  const bundle = await readFile(
+    path.join(project, 'miniprogram/components/glaze-app/index.js'),
+    'utf8',
+  )
+  assert.match(bundle, /text-_b30rpx_B/)
+  assert.match(bundle, /text-_b20rpx_B/)
+})
+
+test('rejects Tailwind without an input stylesheet', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      css: { tailwind: { input: 'src/missing.css' } },
+    },
+    files: {
+      'src/App.tsx': 'export default function App() { return <view /> }\n',
+    },
+  })
+  await Promise.all(appShell(project))
+  await assert.rejects(buildProject(project), /Tailwind input stylesheet not found/)
+})

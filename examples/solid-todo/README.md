@@ -41,6 +41,7 @@ Pages:
 - `pages/bench/index` — 1000 rows compiled from Solid, including reverse;
 - `pages/bench-components/index` — 1000 pure + 1000 stateful row components;
 - `pages/reactive/index` — `createStore` nested objects/arrays, `createMemo`, object signals and keyed `For`;
+- `pages/tailwind/index` — Tailwind 4 utilities compiled into `app.wxss` (see `src/tailwind.css`);
 - `pages/native/index` — the same 1000 rows in hand-written WXML.
 
 ## Benchmark

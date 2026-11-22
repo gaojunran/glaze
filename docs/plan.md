@@ -117,6 +117,17 @@ loop, callback locals, keyed `Match`, camelCase props, and list append.
 
 Known limits are listed in [compiler.md](compiler.md#known-gaps).
 
+### M5.5 — Tailwind CSS
+
+- Optional `css.tailwind` config; `@glaze/build` stages and transforms after
+  compilation.
+- `weapp-tailwindcss/core` generates the Tailwind 4 target CSS and shares one
+  classNameSet with WXML/JS transforms.
+- Global `app.wxss`, preserved project `app.wxss`, escaped arbitrary values, and
+  literal-class discovery with `safelist` for runtime-only names.
+- Known limits: no subpackage roots, no `@apply` in component WXSS, variants
+  still need runtime verification.
+
 ### M6 — Svelte 5
 
 - Svelte compiler AST to the same WXML/binding IR.

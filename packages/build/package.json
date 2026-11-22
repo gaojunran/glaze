@@ -11,14 +11,30 @@
     "glaze": "./src/cli.ts"
   },
   "dependencies": {
-    "@glaze/shared": "workspace:*",
     "@glaze/compiler": "workspace:*",
     "@glaze/runtime": "workspace:*",
+    "@glaze/shared": "workspace:*",
     "esbuild": "^0.28.0",
     "solid-js": "^2.0.3"
   },
   "scripts": {
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "tailwindcss": "^4.3.5",
+    "weapp-tailwindcss": "^5.7.5"
+  },
+  "peerDependencies": {
+    "tailwindcss": "^4",
+    "weapp-tailwindcss": "^5"
+  },
+  "peerDependenciesMeta": {
+    "tailwindcss": {
+      "optional": true
+    },
+    "weapp-tailwindcss": {
+      "optional": true
+    }
   }
 }

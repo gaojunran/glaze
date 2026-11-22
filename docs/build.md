@@ -48,6 +48,8 @@ export default config
 | `staticPages` | routes already present in `static` and kept in `app.json` |
 | `clean` | replace the previous output after a successful build; defaults to `true` |
 | `runtime.bindingGroupSize` | scalar bindings per effect; a positive integer, default `8`, `1` disables grouping |
+| `css.tailwind.input` | optional Tailwind 4 stylesheet; enables the Tailwind stage |
+| `css.tailwind.safelist` | class names that do not appear as literal source text |
 
 Paths are validated before anything is written:
 
@@ -59,6 +61,8 @@ Paths are validated before anything is written:
 
 This protects the project from a config typo such as `output: 'src'` or
 `output: '.'` deleting source files or the project itself.
+
+Tailwind is documented separately in [tailwind.md](tailwind.md).
 
 ## Build pipeline
 
@@ -267,7 +271,7 @@ main counter/control-flow/list/event/context/ref probe, and the review-boundary
 probe for non-keyed `Show`, numeric props, class/style and the Solid 2
 `<Theme value>` context form.
 
-On the example project (`pnpm build`, 3 pages, 10 components) the shared module
+On the example project (`pnpm build`, 5 pages, 12 components) the shared module
 is 46,582 B and all generated component `index.js` files total 10,678 B. Before
 the shared runtime the six-component version was about 195 KB of component JS.
 

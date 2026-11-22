@@ -185,3 +185,28 @@ test('deep store state and object/array seams update through compiled bindings',
   await (await app.$('.age-profile')).tap()
   await expect(app).toMatchText('.profile-age', '2')
 })
+
+test('Tailwind utilities reach WXML and app.wxss', async (miniProgram) => {
+  await miniProgram.reLaunch('/pages/tailwind/index')
+  const page = await miniProgram.currentPage()
+  await page.waitFor(800)
+  const app = await page.$('#app')
+  if (!app) throw new Error('glaze-root not found')
+
+  await expect(app).toMatchText('.tw-title', 'Tailwind in Glaze')
+  const xml = await app.outerWxml()
+  await expect(xml).toContain('text-_b24rpx_B')
+  await expect(xml).toContain('h-_b20rpx_B')
+  await expect(xml).toContain('w-_b120rpx_B')
+
+  const title = await app.$('.tw-title')
+  const fontSize = await title.style('font-size')
+  if (fontSize !== '12px') {
+    throw new Error(`unexpected Tailwind font size: ${fontSize}`)
+  }
+  const padded = await app.$('.p-4')
+  const paddingTop = await padded.style('padding-top')
+  if (paddingTop !== '16px') {
+    throw new Error(`unexpected Tailwind padding: ${paddingTop}`)
+  }
+})

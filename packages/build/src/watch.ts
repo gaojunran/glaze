@@ -16,7 +16,7 @@ export async function watchProject(projectPath = process.cwd(), options: any = {
   const isIgnored = (name) => {
     if (name.includes('.tmp')) return true
     if (currentConfig.output && name.includes(currentConfig.output)) return true
-    return !/\.(tsx?|jsx?|mjs|json|wxml|wxss)$/.test(name)
+    return !/\.(tsx?|jsx?|mjs|json|wxml|wxss|css)$/.test(name)
   }
 
   const schedule = () => {
@@ -35,6 +35,10 @@ export async function watchProject(projectPath = process.cwd(), options: any = {
     desired.add(existsSync(sourceDir) ? sourceDir : project)
     const configFile = configFileFor(project)
     if (configFile) desired.add(configFile)
+    if (config.css?.tailwind?.input) {
+      const input = path.resolve(project, config.css.tailwind.input)
+      desired.add(existsSync(input) ? input : path.dirname(input))
+    }
 
     for (const [target, watcher] of watchers) {
       if (!desired.has(target)) {

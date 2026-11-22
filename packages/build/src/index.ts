@@ -6,4 +6,8 @@ export {
   validateProjectPaths,
 } from './paths.ts'
 export { loadConfig } from './config.ts'
-export type { GlazeConfig } from './config.ts'
+export type {
+  GlazeConfig,
+  GlazeCssConfig,
+  GlazeTailwindConfig,
+} from './config.ts'

@@ -692,16 +692,17 @@ bundle size) is documented in `docs/build.md`.
 
 Run on 2026-11-22 in the repository workspace:
 
-- `pnpm -r test` — compiler 63 passed, build 18 passed, runtime 20 passed.
-- `pnpm build` — `4 pages, 11 components`.
+- `pnpm -r test` — compiler 63 passed, build 20 passed, runtime 20 passed.
+- `pnpm build` — `5 pages, 12 components`.
 - `target/debug/minidev test --project examples/solid-todo --browser
   ~/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell`
-  — 4 cases passed, 0 failed (about 22–23 s). The counter e2e covers nested
+  — 5 cases passed, 0 failed (about 26 s). The counter e2e covers nested
   loops, component events, keyed/non-keyed control flow, context, refs and list
   insert/append/delete. The reactive e2e covers a Solid 2 `createStore` with
   nested objects and arrays, `createMemo`, object-signal replacement, keyed
   `For` over a store array, nested row fields and `Show` driven by a nested
-  store path.
+  store path. The Tailwind e2e covers escaped WXML classes and computed
+  `font-size`/`padding-top` on the real page.
 
 The simulator still prints `wx:key` performance warnings for the intentional
 `keyed={false}` and keyless object-list examples; they are warnings, not

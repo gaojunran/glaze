@@ -7,6 +7,15 @@ export type GlazeRuntimeConfig = {
   bindingGroupSize?: number
 }
 
+export type GlazeTailwindConfig = {
+  input: string
+  safelist?: string[]
+}
+
+export type GlazeCssConfig = {
+  tailwind?: GlazeTailwindConfig
+}
+
 export type GlazeConfig = {
   source: string
   output: string
@@ -15,6 +24,7 @@ export type GlazeConfig = {
   staticPages?: string[]
   clean?: boolean
   runtime?: GlazeRuntimeConfig
+  css?: GlazeCssConfig
 }
 
 export const DEFAULT_CONFIG: GlazeConfig = {

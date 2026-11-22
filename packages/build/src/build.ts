@@ -33,6 +33,7 @@ import {
   sharedSpecifierFor,
 } from './shared.ts'
 import { assertPortableWxss } from './styles.ts'
+import { applyTailwind, validateTailwindConfig } from './tailwind.ts'
 export { normalizeSourcePath, outputNameForRelative } from './paths.ts'
 
 async function replaceOutput(stagingDir: string, outputDir: string, clean: boolean) {
@@ -56,6 +57,7 @@ export async function buildProject(projectPath = process.cwd()) {
   ) {
     throw new Error('Config "runtime.bindingGroupSize" must be a positive integer')
   }
+  validateTailwindConfig(project, config)
   const sourceDir = path.resolve(project, config.source)
   const outputDir = path.resolve(project, config.output)
   const stagingBase = path.join(project, '.tmp', 'glaze-build')
@@ -142,7 +144,9 @@ export async function buildProject(projectPath = process.cwd()) {
   )
 
   const missingAppFiles = ['app.js', 'app.wxss'].filter(
-    (name) => !existsSync(path.join(sourceDir, name)),
+    (name) =>
+      !existsSync(path.join(sourceDir, name)) &&
+      !(name === 'app.wxss' && config.css?.tailwind),
   )
   for (const name of missingAppFiles) {
     console.warn(
@@ -331,6 +335,8 @@ export async function buildProject(projectPath = process.cwd()) {
     }
     appJson.pages = routeList
     await writeFile(appJsonFile, `${JSON.stringify(appJson, null, 2)}\n`)
+
+    await applyTailwind(project, sourceDir, stagingDir, config)
 
     await replaceOutput(stagingDir, outputDir, config.clean !== false)
   } catch (error) {

@@ -8,8 +8,10 @@ const config: GlazeConfig = {
     'pages/bench/index': 'Bench.tsx',
     'pages/bench-components/index': 'BenchComponents.tsx',
     'pages/reactive/index': 'ReactiveCases.tsx',
+    'pages/tailwind/index': 'TailwindCase.tsx',
   },
   static: ['static'],
+  css: { tailwind: { input: 'src/tailwind.css' } },
   staticPages: ['pages/native/index', 'pages/native-components/index'],
 }
 
