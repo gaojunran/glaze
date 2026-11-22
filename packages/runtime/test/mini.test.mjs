@@ -282,6 +282,32 @@ test('list bindings remember a shallow snapshot of the previous array', async ()
   assert.deepEqual(instance.ops, [{ path: ['b0'], index: 1, del: 0, inserts: [second] }])
 })
 
+test('groups scalar bindings across more than one batch without losing updates', async () => {
+  let setCount
+  const def = defineGlazeComponent({
+    data: Object.fromEntries(Array.from({ length: 9 }, (_, index) => [`b${index}`, null])),
+    setup(ctx) {
+      const [count, set] = createSignal(0)
+      setCount = set
+      for (let index = 0; index < 9; index += 1) {
+        ctx.bind(index, () => count() + index)
+      }
+    },
+  })
+
+  const instance = createInstance(def, {}, { paths: true })
+  def.lifetimes.attached.call(instance)
+
+  setCount(1)
+  await tick()
+  assert.equal(instance.calls.length, 1)
+  assert.equal(instance.pathCalls.length, 9)
+  assert.deepEqual(
+    instance.pathCalls.map(([path, value]) => [path[0], value]),
+    Array.from({ length: 9 }, (_, index) => [`b${index}`, 1 + index]),
+  )
+})
+
 test('a flush queued before detach does not call setData', async () => {
   let setCount
   const def = defineGlazeComponent({

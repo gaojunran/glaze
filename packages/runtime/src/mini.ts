@@ -186,6 +186,7 @@ const normalizePropValue = (value: unknown): unknown => (value === null ? undefi
  * same-named event prop.
  */
 const GLAZE_EVENT_OPTIONS = { bubbles: true, capturePhase: true }
+const SCALAR_BINDING_GROUP = 8
 
 // Mini-program `setData` rejects `undefined`; WXML renders `null` as empty.
 const normalizeDataValue = (value: unknown): unknown => (value === undefined ? null : value)
@@ -395,35 +396,94 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       query.exec()
     }
 
+    const createBindingEffect = (index: number) => {
+      const fn = state.bindings[index]
+      if (!fn) return
+      let first = true
+      try {
+        createEffect(fn, {
+          effect(value) {
+            if (first) {
+              first = false
+              if (Object.is(value, state.initial[index])) return
+            }
+            try {
+              applyBinding(index, value)
+            } catch (error) {
+              reportBindingError(index, error)
+            }
+          },
+          error(error) {
+            // A failed compute keeps the last applied value; later changes can
+            // recover, and other bindings keep their own effects running.
+            first = false
+            reportBindingError(index, error)
+          },
+        })
+      } catch (error) {
+        // Even a synchronous effect-creation failure must not stop the
+        // remaining bindings from being created.
+        reportBindingError(index, error)
+      }
+    }
+
+    // Scalar bindings are grouped so a component with many fields does not
+    // create one effect per field. Groups stay small so one change does not
+    // recompute a large page; list bindings keep their own effect because
+    // arrays can be expensive to diff.
+    const scalarIndexes: number[] = []
+    state.bindings.forEach((fn, index) => {
+      if (!fn || Object.hasOwn(listBindings, index)) return
+      scalarIndexes.push(index)
+    })
+    const scalarGroups: number[][] = []
+    for (let offset = 0; offset < scalarIndexes.length; offset += SCALAR_BINDING_GROUP) {
+      scalarGroups.push(scalarIndexes.slice(offset, offset + SCALAR_BINDING_GROUP))
+    }
+
     runWithOwner(state.owner, () => {
-      state.bindings.forEach((fn, index) => {
-        if (!fn) return
+      for (const group of scalarGroups) {
         let first = true
         try {
-          createEffect(fn, {
-            effect(value) {
-              if (first) {
+          createEffect(
+            () =>
+              group.map((index) => {
+                try {
+                  return { index, value: state.bindings[index]!() }
+                } catch (error) {
+                  reportBindingError(index, error)
+                  return { index, value: undefined }
+                }
+              }),
+            {
+              effect(values) {
+                if (first) {
+                  first = false
+                  const unchanged = values.every(
+                    (item) => item.value === undefined || Object.is(item.value, state.initial[item.index]),
+                  )
+                  if (unchanged) return
+                }
+                for (const item of values) {
+                  try {
+                    applyBinding(item.index, item.value)
+                  } catch (error) {
+                    reportBindingError(item.index, error)
+                  }
+                }
+              },
+              error(error) {
                 first = false
-                if (Object.is(value, state.initial[index])) return
-              }
-              try {
-                applyBinding(index, value)
-              } catch (error) {
-                reportBindingError(index, error)
-              }
+                reportBindingError(group[0] ?? 0, error)
+              },
             },
-            error(error) {
-              // A failed compute keeps the last applied value; later changes can
-              // recover, and other bindings keep their own effects running.
-              first = false
-              reportBindingError(index, error)
-            },
-          })
+          )
         } catch (error) {
-          // Even a synchronous effect-creation failure must not stop the
-          // remaining bindings from being created.
-          reportBindingError(index, error)
+          reportBindingError(group[0] ?? 0, error)
         }
+      }
+      state.bindings.forEach((fn, index) => {
+        if (fn && Object.hasOwn(listBindings, index)) createBindingEffect(index)
       })
     })
   }

@@ -24,9 +24,10 @@ generic template.
 
 - `created` runs the component's setup and computes the initial binding values
   before the first paint;
-- `attached` creates one `createEffect(compute, apply)` per binding and forwards
-  later values through a batched `groupUpdates` + `replaceDataOnPath` flush
-  (falling back to `setData` when those glass-easel primitives are missing);
+- `attached` groups scalar bindings into batches of eight (list bindings keep
+  one effect each) and forwards later values through a batched `groupUpdates` +
+  `replaceDataOnPath` flush (falling back to `setData` when those glass-easel
+  primitives are missing);
 - `detached` disposes the root.
 
 No virtual DOM, Taro DOM, or generic renderer exists at runtime. The only data

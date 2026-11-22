@@ -21,7 +21,7 @@ The runtime only forwards binding values:
 
 ```
 signal write
-  └── createEffect(compute, apply)
+  └── createEffect(compute, apply)   // scalar bindings in batches of 8
         └── microtask flush
               └── groupUpdates(replaceDataOnPath([...], value))
                     └── WXML binding update
@@ -509,10 +509,10 @@ defineGlazeComponent({
 2. creates one signal per declared property and a getter-only `props` object;
 3. runs `setup`, then evaluates every binding once and `setData`s the initial
    values before the first paint;
-4. in `attached`, creates one `createEffect(compute, apply)` per binding and
-   sends later values to a batched `replaceDataOnPath` flush (falling back to
-   `setData`); if a prop changed between `created` and `attached`, the first
-   effect run sends the corrected value;
+4. in `attached`, groups scalar bindings into batches of 8 (list bindings keep
+   one effect each), sends later values to a batched `replaceDataOnPath` flush
+   (falling back to `setData`); if a prop changed between `created` and
+   `attached`, the first effect run sends the corrected value;
 5. disposes the root in `detached`.
 
 ## Solid 2 note: burst events

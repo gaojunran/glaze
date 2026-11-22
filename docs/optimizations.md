@@ -88,19 +88,36 @@ Risks:
 
 ## P1 — Batch scalar bindings
 
-Today every binding gets its own `createEffect`, so a component with 50 scalar
-bindings creates 50 effects. Microtask batching merges the resulting `setData`
-calls, but effect creation and scheduling remain.
+Status: implemented.
 
-Options:
+Previously every binding got its own `createEffect`, so a component with 50
+scalar bindings created 50 effects. The runtime now groups consecutive scalar
+bindings in batches of 8 and creates one effect per batch:
 
-1. One effect for a group of scalar bindings, updating one payload.
-2. Group by dependency, when the compiler can prove it.
-3. Only group scalars; keep list bindings separate.
-4. Split groups above a threshold so one change does not recompute everything.
+```js
+createEffect(
+  () => group.map((index) => ({ index, value: state.bindings[index]() })),
+  { effect(values) { for (const item of values) applyBinding(item.index, item.value) } },
+)
+```
 
-Acceptance: same or lower `setData` count, fewer effects, no regression in
-single-field update latency.
+Trade-off: one change recomputes at most the other seven bindings in its batch.
+List bindings keep their own effect because diffing an array is more expensive
+than a scalar read. Initial values are still evaluated once per binding before
+the first paint, and the first effect run skips values unchanged since then.
+
+Acceptance was same or lower `setData` count, fewer effects, and no regression
+in single-field update latency. The effect count itself is not exposed by the
+runtime, so the wall-time result is the evidence rather than an effect-count
+assertion.
+
+Measured on the component-dense route after grouping: Glaze first render
+3616/3563/3605 ms (mean 3595), first-row update 33/29/28 ms (mean 30), state row
+click 25/24/24 ms, append 190/199/190 ms, delete 182/198/188 ms. The same-session
+native means were 3618 ms first render, 34 ms update, 24 ms state click, 194 ms
+append and 187 ms delete. This is within run spread; it is not claimed as a
+wall-time win. The concrete change is fewer effects per component, with a
+maximum of eight scalar bindings recomputed per change.
 
 ## P1 — Skip path parsing with `replaceDataOnPath`
 
