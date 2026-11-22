@@ -21,6 +21,8 @@ Source layout:
 - `src/Panel.tsx` — boundary component with default slot and event probe;
 - `src/SlotCard.tsx` — boundary component with named and default slots;
 - `src/ThemeLabel.tsx` — inlined context consumer;
+- `src/theme.ts` / `src/ContextBoundary.tsx` — imported context crossing a component boundary;
+- `src/AsyncPage.tsx` — root `Loading` / `Errored` boundaries;
 - `src/Header.tsx` — always inlined;
 - `src/static/pages/native` — hand-written comparison page.
 
@@ -42,6 +44,8 @@ Pages:
 - `pages/bench-components/index` — 1000 pure + 1000 stateful row components;
 - `pages/reactive/index` — `createStore` nested objects/arrays, `createMemo`, object signals and keyed `For`;
 - `pages/tailwind/index` — Tailwind 4 utilities compiled into `app.wxss` (see `src/tailwind.css`);
+- `pages/context/index` — imported context across a component boundary;
+- `pages/async/index` — async `Loading` / `Errored` boundaries;
 - `src/Card.scss` — component SCSS compiled into the parent component's `index.wxss`;
 - `pages/native/index` — the same 1000 rows in hand-written WXML.
 
