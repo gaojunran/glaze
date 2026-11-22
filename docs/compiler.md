@@ -49,6 +49,7 @@ First-wave support:
 | static text / attribute | static WXML |
 | `{expression}` text or attribute | `{{bN}}` + a binding |
 | `onClick` / `onTap` / `onInput` / ... | `bindtap` / `bindinput` + `eN` |
+| `onClickCatch` / `onClickCapture` / `onClickMutBind` / ... | `catchtap` / `capture-bind:tap` / `mut-bind:tap` + `eN` |
 | `<Show when={...}>` | `wx:if` |
 | `<Show fallback={...}>` | `wx:if` + `wx:else` |
 | `<Show keyed>{(value) => ...}</Show>` | one-item `wx:for` under a `wx:if` |
@@ -234,6 +235,45 @@ At runtime `props.onToggle(...)` calls `triggerEvent("toggle", detail)`, and the
 parent handler receives `event.detail` (one argument; multiple arguments arrive
 as an array). Inlined components skip this bridge: the event prop is a normal
 getter over the parent's function, so it is called directly.
+
+Event props accept the same binding suffixes as native events:
+
+| JSX prop | Component WXML |
+| --- | --- |
+| `onToggle` | `bind:toggle` |
+| `onToggleCatch` | `catch:toggle` |
+| `onToggleMutBind` | `mut-bind:toggle` |
+| `onToggleCapture` | `capture-bind:toggle` |
+| `onToggleCaptureCatch` | `capture-catch:toggle` |
+| `onToggleCaptureMutBind` | `capture-mut-bind:toggle` |
+
+The suffix is stripped from the event name: `onToggleCatch` maps to the
+`toggle` event. Custom events are triggered with `bubbles: true` and
+`capturePhase: true`, so `catch` and `capture` bindings work inside the same
+component tree. `composed` is intentionally false: a child event does not cross
+the component's shadow boundary and retrigger a same-named event prop of its
+parent. This behavior differs from the mini-program default (non-bubbling
+custom events); it is a Glaze-level contract for DOM-like event props.
+
+### Native event bindings
+
+Native elements accept all six glass-easel binding kinds through a suffix:
+
+| JSX prop | WXML |
+| --- | --- |
+| `onClick` | `bindtap` |
+| `onClickCatch` | `catchtap` |
+| `onClickMutBind` | `mut-bind:tap` |
+| `onClickCapture` | `capture-bind:tap` |
+| `onClickCaptureCatch` | `capture-catch:tap` |
+| `onClickCaptureMutBind` | `capture-mut-bind:tap` |
+
+The suffix is parsed before the event-name lookup, so `onClickCaptureCatch`
+resolves to `tap` with the `capture-catch` kind. The simulator e2e taps nested
+elements and verifies that `catch` suppresses the outer `bind`, `capture` runs
+before the target handler, and `mut-bind` suppresses the outer `mut-bind`. A
+component boundary probe verifies `catch:ping` and `capture-bind:ping` through
+the runtime's custom-event options.
 
 ### Slots
 

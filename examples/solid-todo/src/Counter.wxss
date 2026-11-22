@@ -241,3 +241,51 @@
 .prop-probe.active .prop-label {
   color: #2563eb;
 }
+
+.tap-outer,
+.capture-outer,
+.mut-outer {
+  display: block;
+  margin-top: 12rpx;
+  padding: 8rpx;
+  border: 1rpx solid #e5e7eb;
+}
+
+.tap-inner,
+.capture-inner,
+.mut-inner {
+  height: 56rpx;
+  line-height: 56rpx;
+  padding: 0 16rpx;
+  font-size: 24rpx;
+  border-radius: 28rpx;
+}
+
+.tap-log,
+.capture-log,
+.mut-log {
+  display: block;
+  margin-top: 4rpx;
+  color: #6b7280;
+  font-size: 24rpx;
+}
+
+.event-probe {
+  margin-top: 12rpx;
+}
+
+.event-caption,
+.event-log {
+  display: block;
+  font-size: 24rpx;
+  color: #6b7280;
+}
+
+.event-ping {
+  height: 56rpx;
+  line-height: 56rpx;
+  margin-top: 4rpx;
+  padding: 0 16rpx;
+  font-size: 24rpx;
+  border-radius: 28rpx;
+}

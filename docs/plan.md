@@ -85,7 +85,9 @@ counter e2e passes against the generated output.
 
 - Default and named slots: inlined default slot plus boundary `<slot>` /
   `<slot name>` with `multipleSlots`.
-- Component custom events: `onX` → `bind:x`, child `eventProps` → `triggerEvent`.
+- Component custom events: `onX` → `bind:x`, `onXCatch`/`onXCapture`/... →
+  `catch:x`/`capture-bind:x`/...; child `eventProps` → `triggerEvent` with
+  bubble and capture-phase options.
 - Context Provider: inline descendants only, via `withProvider`.
 - Refs: generated id plus `boundingClientRect` measurement facade.
 - Nested `For`: distinct item/index names, one index marker per level.

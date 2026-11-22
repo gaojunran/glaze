@@ -15,22 +15,63 @@ function single(value) { return [value]; }
 module.exports = { range: range, single: single };`
 
 const EVENT_MAP = {
-  onClick: 'bindtap',
-  onTap: 'bindtap',
-  onInput: 'bindinput',
-  onChange: 'bindchange',
-  onConfirm: 'bindconfirm',
-  onFocus: 'bindfocus',
-  onBlur: 'bindblur',
-  onSubmit: 'bindsubmit',
-  onReset: 'bindreset',
-  onLongPress: 'bindlongpress',
-  onLongTap: 'bindlongtap',
-  onTouchStart: 'bindtouchstart',
-  onTouchMove: 'bindtouchmove',
-  onTouchEnd: 'bindtouchend',
-  onTouchCancel: 'bindtouchcancel',
+  onClick: 'tap',
+  onTap: 'tap',
+  onInput: 'input',
+  onChange: 'change',
+  onConfirm: 'confirm',
+  onFocus: 'focus',
+  onBlur: 'blur',
+  onSubmit: 'submit',
+  onReset: 'reset',
+  onLongPress: 'longpress',
+  onLongTap: 'longtap',
+  onTouchStart: 'touchstart',
+  onTouchMove: 'touchmove',
+  onTouchEnd: 'touchend',
+  onTouchCancel: 'touchcancel',
 }
+
+// Longest suffixes first: onClickCaptureCatch must not be read as onClickCatch.
+const EVENT_BINDINGS = [
+  ['CaptureCatch', 'capture-catch'],
+  ['CaptureMutBind', 'capture-mut-bind'],
+  ['Capture', 'capture-bind'],
+  ['MutBind', 'mut-bind'],
+  ['Catch', 'catch'],
+  ['', 'bind'],
+]
+
+const COMPONENT_EVENT_PREFIX = {
+  bind: 'bind:',
+  catch: 'catch:',
+  'mut-bind': 'mut-bind:',
+  'capture-bind': 'capture-bind:',
+  'capture-catch': 'capture-catch:',
+  'capture-mut-bind': 'capture-mut-bind:',
+}
+
+const NATIVE_EVENT_PREFIX = {
+  bind: 'bind',
+  catch: 'catch',
+  'mut-bind': 'mut-bind:',
+  'capture-bind': 'capture-bind:',
+  'capture-catch': 'capture-catch:',
+  'capture-mut-bind': 'capture-mut-bind:',
+}
+
+const splitEventBinding = (prop) => {
+  for (const [suffix, kind] of EVENT_BINDINGS) {
+    if (suffix && !prop.endsWith(suffix)) continue
+    const base = suffix ? prop.slice(0, -suffix.length) : prop
+    if (!/^on[A-Z]/.test(base)) continue
+    return { base, kind }
+  }
+  return null
+}
+
+const eventAttrFor = (kind, eventName, custom) =>
+  `${(custom ? COMPONENT_EVENT_PREFIX : NATIVE_EVENT_PREFIX)[kind]}${eventName}`
 
 const escapeText = (value) =>
   value.replace(/[&<>{}]/g, (char) => {
@@ -279,7 +320,10 @@ export function compileComponent(source, options = {}) {
   const eventProps = Object.fromEntries(
     props
       .filter((name) => /^on[A-Z]/.test(name))
-      .map((name) => [name, eventNameFor(name)]),
+      .map((name) => {
+        const binding = splitEventBinding(name)
+        return [name, eventNameFor(binding?.base ?? name)]
+      }),
   )
   const plainProps = props.filter((name) => !eventProps[name])
   const propertyNames = plainProps.map((name) => name.toLowerCase())
@@ -701,16 +745,16 @@ function compileElement(node, ctx, scope, extraAttrs = []) {
     const expression = getExpression(attr)
     if (expression == null) continue
 
-    if (EVENT_MAP[attrName] || /^on[A-Z]/.test(attrName)) {
-      if (/^on[A-Z]/.test(attrName) && !EVENT_MAP[attrName]) {
+    if (/^on[A-Z]/.test(attrName)) {
+      const binding = splitEventBinding(attrName)
+      if (!binding || !EVENT_MAP[binding.base]) {
         throw new Error(`Unsupported event "${attrName}" on a native element`)
       }
       if (containsJsx(expression)) {
         throw new Error(`Event handler "${attrName}" cannot be JSX`)
       }
-      const eventName = EVENT_MAP[attrName]
       const index = ctx.addEvent(expression, scope)
-      attrs.push(`${eventName}="e${index}"`)
+      attrs.push(`${eventAttrFor(binding.kind, EVENT_MAP[binding.base], false)}="e${index}"`)
       pushScopeIndexAttrs(attrs, scope)
       continue
     }
@@ -778,8 +822,11 @@ function compileComponentElement(node, ctx, scope, extraAttrs = []) {
       if (containsJsx(expression)) {
         throw new Error(`Event handler "${attrName}" cannot be JSX`)
       }
+      const binding = splitEventBinding(attrName) ?? { base: attrName, kind: 'bind' }
       const index = ctx.addEvent(expression, scope, true)
-      attrs.push(`bind:${eventNameFor(attrName)}="e${index}"`)
+      attrs.push(
+        `${eventAttrFor(binding.kind, eventNameFor(binding.base), true)}="e${index}"`,
+      )
       pushScopeIndexAttrs(attrs, scope)
       continue
     }

@@ -27,8 +27,8 @@ function createInstance(def, properties = {}, { paths = false } = {}) {
     setData(data) {
       calls.push(data)
     },
-    triggerEvent(name, detail) {
-      events.push({ name, detail })
+    triggerEvent(name, detail, options) {
+      events.push({ name, detail, options })
     },
     groupUpdates(run) {
       run()
@@ -106,9 +106,19 @@ test('props proxy does not leak Object.prototype members', () => {
   assert.deepEqual(Object.keys(observed).sort(), ['onClick', 'title'])
 
   observed.onClick({ detail: 1 })
-  assert.deepEqual(instance.events, [{ name: 'tap', detail: { detail: 1 } }])
+  assert.deepEqual(instance.events, [
+    {
+      name: 'tap',
+      detail: { detail: 1 },
+      options: { bubbles: true, capturePhase: true },
+    },
+  ])
   observed.onClick(1, 2)
-  assert.deepEqual(instance.events.at(-1), { name: 'tap', detail: [1, 2] })
+  assert.deepEqual(instance.events.at(-1), {
+    name: 'tap',
+    detail: [1, 2],
+    options: { bubbles: true, capturePhase: true },
+  })
 })
 
 test('one failing initial binding does not stop the other bindings', () => {

@@ -179,6 +179,13 @@ export function listPatch(
 declare const Component: (config: Record<string, unknown>) => unknown
 
 const normalizePropValue = (value: unknown): unknown => (value === null ? undefined : value)
+/**
+ * Custom events from component boundaries bubble inside the component tree so
+ * `catch`/`capture` bindings can stop or intercept them. `composed` stays off:
+ * an event must not cross the shadow boundary and retrigger the parent's
+ * same-named event prop.
+ */
+const GLAZE_EVENT_OPTIONS = { bubbles: true, capturePhase: true }
 
 // Mini-program `setData` rejects `undefined`; WXML renders `null` as empty.
 const normalizeDataValue = (value: unknown): unknown => (value === undefined ? null : value)
@@ -461,7 +468,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
               if (Object.hasOwn(eventProps, key)) {
                 const eventName = eventProps[key]!
                 return (...args: unknown[]) =>
-                  this.triggerEvent(eventName, args.length <= 1 ? args[0] : args)
+                  this.triggerEvent(eventName, args.length <= 1 ? args[0] : args, GLAZE_EVENT_OPTIONS)
               }
               const mapped = Object.hasOwn(propMap, key) ? propMap[key]! : key
               return Object.hasOwn(state.props, mapped) ? state.props[mapped]![0]() : undefined

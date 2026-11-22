@@ -4,6 +4,7 @@ import Card from './Card'
 import Header from './Header'
 import Nested from './Nested'
 import Panel from './Panel'
+import EventProbe from './EventProbe'
 import RemoveButton from './RemoveButton'
 import PropProbe from './PropProbe'
 import SlotCard from './SlotCard'
@@ -31,6 +32,10 @@ export default function Counter() {
   const [picked] = createSignal({ name: 'picked' })
   const upper = (value: string) => value.toUpperCase()
   const [refWidth, setRefWidth] = createSignal(0)
+  const [tapLog, setTapLog] = createSignal('')
+  const [captureLog, setCaptureLog] = createSignal('')
+  const [mutLog, setMutLog] = createSignal('')
+  const [eventLog, setEventLog] = createSignal('')
 
   const [grid, setGrid] = createSignal([
     { id: 1, cells: [{ id: 'a' }, { id: 'b' }] },
@@ -229,6 +234,49 @@ export default function Counter() {
           )}
         </For>
       </view>
+
+      <view class="tap-outer" onClick={() => setTapLog('outer')}>
+        <button class="tap-inner" onClickCatch={() => setTapLog('inner')}>
+          inner catch
+        </button>
+      </view>
+      <text class="tap-log">{tapLog()}</text>
+
+      <view class="capture-outer" onClickCapture={() => setCaptureLog((value) => `${value}C`)}>
+        <button
+          class="capture-inner"
+          onClick={() => setCaptureLog((value) => `${value}T`)}
+        >
+          capture
+        </button>
+      </view>
+      <text class="capture-log">{captureLog()}</text>
+
+      <view class="mut-outer" onClickMutBind={() => setMutLog((value) => `${value}O`)}>
+        <button
+          class="mut-inner"
+          onClickMutBind={() => setMutLog((value) => `${value}I`)}
+        >
+          mutual
+        </button>
+      </view>
+      <text class="mut-log">{mutLog()}</text>
+
+      <EventProbe
+        class="event-catch-host"
+        name="catch"
+        onPingCatch={() => setEventLog((value) => `${value}c`)}
+      >
+        <text class="event-caption">component catch</text>
+      </EventProbe>
+      <EventProbe
+        class="event-capture-host"
+        name="capture"
+        onPingCapture={() => setEventLog((value) => `${value}p`)}
+      >
+        <text class="event-caption">component capture</text>
+      </EventProbe>
+      <text class="event-log">{eventLog()}</text>
 
       <text class="footer">tap + to update the count</text>
     </view>

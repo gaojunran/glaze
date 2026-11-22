@@ -199,6 +199,69 @@ test('inlines a stateful imported component and merges solid-js imports', () => 
   assert.match(result.js, /ctx\.event\(0, \(event\) => \(\(\) => setN/)
 })
 
+test('emits bind, catch, mut-bind and capture event variants', () => {
+  const result = compileComponent(`
+    export default function Page() {
+      return (
+        <view
+          onClick={() => {}}
+          onClickCatch={() => {}}
+          onClickMutBind={() => {}}
+          onClickCapture={() => {}}
+          onClickCaptureCatch={() => {}}
+          onClickCaptureMutBind={() => {}}
+        >tap</view>
+      )
+    }
+  `)
+
+  assert.match(result.wxml, /bindtap="e0"/)
+  assert.match(result.wxml, /catchtap="e1"/)
+  assert.match(result.wxml, /mut-bind:tap="e2"/)
+  assert.match(result.wxml, /capture-bind:tap="e3"/)
+  assert.match(result.wxml, /capture-catch:tap="e4"/)
+  assert.match(result.wxml, /capture-mut-bind:tap="e5"/)
+})
+
+test('emits event binding variants on component boundaries', () => {
+  const child = `
+    export default function Child(props) {
+      return <view><slot />{props.onToggle?.()}</view>
+    }
+  `
+  const result = compileComponent(
+    `
+      import Child from './Child'
+
+      export default function Page() {
+        return (
+          <Child
+            onToggle={() => {}}
+            onToggleCatch={() => {}}
+            onToggleCapture={() => {}}
+            onToggleCaptureCatch={() => {}}
+            onToggleMutBind={() => {}}
+            onToggleCaptureMutBind={() => {}}
+          >
+            <text>child</text>
+          </Child>
+        )
+      }
+    `,
+    {
+      inline: true,
+      resolveComponent: (name) => (name === 'Child' ? child : null),
+    },
+  )
+
+  assert.match(result.wxml, /bind:toggle="e0"/)
+  assert.match(result.wxml, /catch:toggle="e1"/)
+  assert.match(result.wxml, /capture-bind:toggle="e2"/)
+  assert.match(result.wxml, /capture-catch:toggle="e3"/)
+  assert.match(result.wxml, /mut-bind:toggle="e4"/)
+  assert.match(result.wxml, /capture-mut-bind:toggle="e5"/)
+})
+
 test('inlines a pure component inside For', () => {
   const item = `
     export default function Item(props) {

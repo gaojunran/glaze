@@ -110,3 +110,28 @@ test('review boundary probes render through the real page', async (miniProgram) 
   await expect(xml).toContain('style="margin-top: 2"')
   await expect(xml).toContain('class="active"')
 })
+
+test('honors catch, capture and mut-bind event semantics', async (miniProgram) => {
+  await miniProgram.reLaunch('/pages/index/index')
+  const page = await miniProgram.currentPage()
+  await page.waitFor(800)
+  const app = await page.$('#app')
+  if (!app) throw new Error('glaze-root not found')
+
+  await (await app.$('.tap-inner')).tap()
+  await expect(app).toMatchText('.tap-log', 'inner')
+
+  await (await app.$('.capture-inner')).tap()
+  await expect(app).toMatchText('.capture-log', 'CT')
+
+  await (await app.$('.mut-inner')).tap()
+  await expect(app).toMatchText('.mut-log', 'I')
+
+  const catchHost = await app.$('.event-catch-host')
+  await (await catchHost.$('.event-ping')).tap()
+  await expect(app).toMatchText('.event-log', 'c')
+
+  const captureHost = await app.$('.event-capture-host')
+  await (await captureHost.$('.event-ping')).tap()
+  await expect(app).toMatchText('.event-log', 'cp')
+})
