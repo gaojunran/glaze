@@ -4,8 +4,10 @@ import Card from './Card'
 import Header from './Header'
 import Nested from './Nested'
 import Panel from './Panel'
+import PropProbe from './PropProbe'
 import SlotCard from './SlotCard'
 import ThemeLabel from './ThemeLabel'
+import ThemeDirect from './ThemeDirect'
 import TodoItem from './TodoItem'
 
 type Todo = {
@@ -44,6 +46,8 @@ export default function Counter() {
       <Header title="Glaze + Solid" />
       <Nested title="Nested inline" />
       <CamelLabel userName={count() > 0 ? "positive" : "zero"} />
+
+      <PropProbe count={3} label="probe" class={{ active: count() > 0 }} style={{ marginTop: 2 }} />
 
       <view class="counter">
         <button class="btn" onClick={() => setCount((value) => value - 1)}>-</button>
@@ -161,6 +165,9 @@ export default function Counter() {
                   <Show when={todo().title} keyed>
                     {(value) => <text class="nested-show">{value}</text>}
                   </Show>
+                  <Show when={todo().title}>
+                    {(value) => <text class="nested-show-nonkeyed">{value()}</text>}
+                  </Show>
                   <button
                     class="remove"
                     onClick={() =>
@@ -179,6 +186,10 @@ export default function Counter() {
       <Theme.Provider value="dark">
         <ThemeLabel theme={Theme} />
       </Theme.Provider>
+
+      <Theme value="light">
+        <ThemeDirect theme={Theme} />
+      </Theme>
 
       <view
         class="ref-probe"

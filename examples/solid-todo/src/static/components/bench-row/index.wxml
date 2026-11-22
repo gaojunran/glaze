@@ -1,0 +1,4 @@
+<view class="bench-row">
+  <text class="pure-title">{{title}}</text>
+  <text class="pure-state {{done ? 'done' : ''}}">{{done ? 'done' : 'todo'}}</text>
+</view>

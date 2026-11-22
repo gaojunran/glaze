@@ -97,11 +97,23 @@ export default function App() {
   )
   assert.equal(componentJson.styleIsolation, 'apply-shared')
 
-  const bundle = await readFile(
-    path.join(project, 'miniprogram/components/glaze-app/index.js'),
-    'utf8',
-  )
-  assert.ok(bundle.length < 60 * 1024, `bundle should stay minified, got ${bundle.length}`)
+  const bundlePath = path.join(project, 'miniprogram/components/glaze-app/index.js')
+  const bundle = await readFile(bundlePath, 'utf8')
+  assert.ok(bundle.length < 12 * 1024, `bundle should stay minified, got ${bundle.length}`)
+
+  const sharedPath = path.join(project, 'miniprogram/glaze-runtime/index.js')
+  assert.equal(await exists(sharedPath), true)
+  const shared = await readFile(sharedPath, 'utf8')
+  assert.ok(shared.length > 1024, 'shared runtime should contain the framework')
+  const requires = [...bundle.matchAll(/require\("([^"]+)"\)/g)].map((match) => match[1])
+  assert.ok(requires.length > 0, 'component bundle should require the shared runtime')
+  for (const specifier of requires) {
+    assert.equal(
+      path.resolve(path.dirname(bundlePath), specifier),
+      sharedPath,
+      `unexpected shared path ${specifier}`,
+    )
+  }
 
   const appJson = JSON.parse(
     await readFile(path.join(project, 'miniprogram/app.json'), 'utf8'),
@@ -511,6 +523,54 @@ test('reloads a changed config on the next build', async () => {
   assert.equal(result.outputDir, path.join(project, 'dist'))
   assert.equal(await exists(path.join(project, 'dist/app.json')), true)
   assert.equal(await exists(path.join(project, 'miniprogram/app.json')), true)
+})
+
+test('rejects namespace imports from the shared runtime', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `import * as solid from 'solid-js'
+
+export default function App() {
+  return <view>{solid}</view>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await assert.rejects(
+    () => buildProject(project),
+    /Shared import from "solid-js" must use named imports/,
+  )
+})
+
+test('rejects a static file that collides with the shared runtime', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      static: ['static'],
+    },
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view>home</view>
+}
+`,
+      'src/static/glaze-runtime/index.js': 'module.exports = {}\n',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await assert.rejects(
+    () => buildProject(project),
+    /Output file collision: glaze-runtime\/index\.js/,
+  )
 })
 
 test('CLI prints help and rejects a missing or unknown command', () => {

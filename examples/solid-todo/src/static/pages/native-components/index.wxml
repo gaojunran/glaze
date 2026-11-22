@@ -1,0 +1,19 @@
+<view class="bench">
+  <view class="bar">
+    <button class="update-row" bindtap="updateRow">update</button>
+    <button class="append-row" bindtap="appendRow">append</button>
+    <button class="delete-row" bindtap="deleteRow">delete</button>
+  </view>
+  <view class="list">
+    <bench-row
+      class="pure-row"
+      wx:for="{{rows}}"
+      wx:key="id"
+      title="{{item.title}}"
+      done="{{item.done}}"
+    />
+  </view>
+  <view class="list">
+    <bench-state-row class="state-row" wx:for="{{stateRows}}" wx:key="id" />
+  </view>
+</view>

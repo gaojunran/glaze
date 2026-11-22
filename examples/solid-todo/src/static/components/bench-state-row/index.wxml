@@ -1,0 +1,5 @@
+<view class="bench-state-row">
+  <text class="state-title">Stateful row</text>
+  <text class="state-count">{{clicks}}</text>
+  <button class="state-bump" bindtap="bump">bump</button>
+</view>

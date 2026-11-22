@@ -1,0 +1,22 @@
+.bench {
+  padding: 24rpx;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  margin-bottom: 16rpx;
+}
+
+.update-row,
+.append-row,
+.delete-row {
+  height: 64rpx;
+  line-height: 64rpx;
+  padding: 0 24rpx;
+  font-size: 28rpx;
+  border-radius: 32rpx;
+  background: #f3f4f6;
+  color: #374151;
+}

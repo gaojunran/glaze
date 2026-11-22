@@ -37,6 +37,97 @@ const dedupeSolidPlugin = {
   },
 }
 
+const SHARED_SPECIFIERS = new Set([
+  'solid-js',
+  'solid-js/store',
+  '@glaze/runtime',
+  '@glaze/runtime/mini',
+])
+const SHARED_SPECIFIER_RE = /^(@glaze\/runtime(?:\/mini)?|solid-js(?:\/store)?)$/
+const SHARED_MODULE = 'glaze-runtime/index.js'
+
+/** Compute the literal require() path a component uses to reach the shared runtime. */
+const sharedSpecifierFor = (fromDir, sharedPath) => {
+  const relative = normalizeSourcePath(path.relative(fromDir, sharedPath))
+  return relative.startsWith('.') ? relative : `./${relative}`
+}
+
+const sharedRuntimePlugin = (specifier) => ({
+  name: 'glaze-shared-runtime',
+  setup(context) {
+    context.onResolve({ filter: SHARED_SPECIFIER_RE }, (args) => {
+      if (!SHARED_SPECIFIERS.has(args.path)) return
+      return { path: specifier, external: true }
+    })
+  },
+})
+
+/**
+ * Collect named imports from Glaze's shared specifiers.
+ *
+ * The shared module must re-export every name a generated bundle imports. A
+ * namespace or default import cannot be enumerated statically, so reject it
+ * instead of silently shipping an incomplete shim.
+ */
+const collectSharedImports = (sources) => {
+  const groups = new Map()
+  const importPattern = /import\s+([\s\S]*?)\s+from\s+["']([^"']+)["']/g
+  for (const source of sources) {
+    let match
+    while ((match = importPattern.exec(source))) {
+      const specifier = match[2]
+      if (!SHARED_SPECIFIERS.has(specifier)) continue
+      let clause = match[1].trim().replace(/^type\s+/, '')
+      if (!clause.startsWith('{')) {
+        throw new Error(
+          `Shared import from "${specifier}" must use named imports, got "${clause}"`,
+        )
+      }
+      const names = groups.get(specifier) ?? new Set()
+      for (const entry of clause.slice(1, -1).split(',')) {
+        const imported = entry
+          .trim()
+          .replace(/^type\s+/, '')
+          .split(/\s+as\s+/)[0]
+        if (!imported || imported === 'default') continue
+        names.add(imported)
+      }
+      groups.set(specifier, names)
+    }
+  }
+  return groups
+}
+
+const buildSharedModule = (groups, outfile) =>
+  esbuild({
+    stdin: {
+      contents: [...groups]
+        .map(([specifier, names]) => {
+          const list = [...names].sort().join(', ')
+          return list
+            ? `export { ${list} } from ${JSON.stringify(specifier)};`
+            : `import ${JSON.stringify(specifier)};`
+        })
+        .join('\n'),
+      resolveDir: packageRoot,
+      sourcefile: 'glaze-runtime.ts',
+      loader: 'ts',
+    },
+    bundle: true,
+    format: 'cjs',
+    platform: 'browser',
+    conditions: ['browser'],
+    target: 'es2020',
+    outfile,
+    nodePaths: [
+      path.join(packageRoot, 'node_modules'),
+      path.join(repoRoot, 'node_modules'),
+    ],
+    plugins: [dedupeSolidPlugin],
+    minify: true,
+    logLevel: 'warning',
+  })
+
 const DEFAULT_CONFIG = {
   source: 'src',
   output: 'miniprogram',
@@ -443,7 +534,15 @@ export async function buildProject(projectPath = process.cwd()) {
 
     const componentsDir = path.join(stagingDir, 'components')
     await mkdir(componentsDir, { recursive: true })
+    const sharedPath = path.join(stagingDir, SHARED_MODULE)
+    if (existsSync(sharedPath) || existsSync(path.dirname(sharedPath))) {
+      throw new Error(
+        `Output file collision: ${SHARED_MODULE} already exists in the staged output`,
+      )
+    }
 
+    const componentJs = new Map()
+    const sharedInputs = new Set()
     for (const file of used) {
       const { result } = compiled.get(file)
       const outName = names.get(file)
@@ -488,7 +587,7 @@ export async function buildProject(projectPath = process.cwd()) {
         [await readStyle(styleFor(file)), ...inlineStyles].join('\n'),
       )
 
-      await esbuild({
+      const bundle = await esbuild({
         stdin: {
           contents: result.js,
           resolveDir: path.dirname(file),
@@ -500,17 +599,42 @@ export async function buildProject(projectPath = process.cwd()) {
         platform: 'browser',
         conditions: ['browser'],
         target: 'es2020',
-        outfile: path.join(outDir, 'index.js'),
+        write: false,
+        metafile: true,
         nodePaths: [
           path.join(project, 'node_modules'),
           path.join(packageRoot, 'node_modules'),
           path.join(repoRoot, 'node_modules'),
         ],
         loader: { '.tsx': 'tsx', '.ts': 'ts' },
-        plugins: [dedupeSolidPlugin],
+        plugins: [
+          sharedRuntimePlugin(sharedSpecifierFor(outDir, sharedPath)),
+          dedupeSolidPlugin,
+        ],
         minify: true,
         logLevel: 'warning',
       })
+      componentJs.set(file, bundle.outputFiles[0].text)
+      for (const input of Object.keys(bundle.metafile.inputs)) {
+        if (input !== '<stdin>') sharedInputs.add(input)
+      }
+    }
+
+    const sharedTexts = [...used].map((file) => compiled.get(file).result.js)
+    for (const input of sharedInputs) {
+      try {
+        sharedTexts.push(await readFile(input, 'utf8'))
+      } catch {
+        // A virtual or generated input is already represented by result.js.
+      }
+    }
+    const sharedImports = collectSharedImports(sharedTexts)
+    if (sharedImports.size > 0) {
+      await mkdir(path.dirname(sharedPath), { recursive: true })
+      await buildSharedModule(sharedImports, sharedPath)
+    }
+    for (const [file, output] of componentJs) {
+      await writeFile(path.join(componentsDir, names.get(file), 'index.js'), output)
     }
 
     for (const [route, file] of pages) {

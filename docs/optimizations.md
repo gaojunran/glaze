@@ -1,7 +1,8 @@
 # Performance backlog
 
-These are glass-easel-specific optimizations for standard Solid code. They are
-recorded here so feature work can land first; none of them are implemented yet.
+These are glass-easel-specific optimizations for standard Solid code. The
+component-dense benchmark and the shared runtime module are implemented and
+measured below; the compiler optimizations (P0/P1) are not implemented yet.
 
 ## Why the current benchmark is not enough
 
@@ -182,6 +183,118 @@ Record per case:
 Acceptance for P0: no correctness or semantics regression in the existing e2e,
 and measurable improvement on the 1000-component cases. A flat-row improvement
 is not evidence for P0.
+
+Status: the component-dense baseline below implements the second and third rows
+of this table (`bench/components.cjs`). The P0 inlining experiment is still not
+implemented.
+
+## Component-dense baseline
+
+Measured 2026-11-22 on the local minidev checkout. This is the control for the
+P0 inlining work, not a test of it: pure rows stay real component boundaries
+because the compiler only inlines a component outside `<For>` (`inlineComponent`
+returns early when a loop scope exists).
+
+### Routes and shapes
+
+| Route | Pure rows | Stateful rows |
+| --- | --- | --- |
+| Glaze `pages/bench-components/index` | 1000 `BenchRow` components | 1000 `BenchStateRow` components |
+| Native `pages/native-components/index` | 1000 `bench-row` components | 1000 `bench-state-row` components |
+
+- Glaze pure row (`src/BenchRow.tsx`): props `title`/`done`, no signals, memo,
+  effects, lifecycle, context or refs. Renders `.pure-title` and `.pure-state`.
+- Glaze state row (`src/BenchStateRow.tsx`): local `createSignal(0)`, `.state-count`,
+  `.state-bump` button, `.state-title`.
+- Glaze page (`src/BenchComponents.tsx`): two keyed `<For>` loops. `.update-row`
+  toggles the first pure row's `done` through parent state; `.append-row` appends
+  one pure row; `.delete-row` removes the first pure row. The state row updates
+  itself.
+- Native pure row (`src/static/components/bench-row`): `Component` with `title`
+  and `done` properties, equivalent `.pure-title`/`.pure-state`.
+- Native state row (`src/static/components/bench-state-row`): local `clicks` data,
+  equivalent `.state-count`/`.state-bump`.
+- Native page updates the first pure row with a path setData
+  (`'rows[0].done'`), appends with a new array, and deletes with `slice(1)`.
+- Both native components set `styleIsolation: "apply-shared"` so page WXSS can
+  style the internals; component WXSS also carries the row layout.
+
+### Commands
+
+```bash
+cd ~/Projects/glaze
+pnpm build
+
+cd ~/Playground/minibuild
+target/debug/minidev sim build \
+  --project ~/Projects/glaze/examples/solid-todo \
+  --out ~/Projects/glaze/.tmp/sim
+target/debug/minidev sim serve \
+  --dist ~/Projects/glaze/.tmp/sim \
+  --browser ~/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell \
+  --port 9422
+
+# separate shell
+cd ~/Projects/glaze
+NODE_PATH=~/Playground/minibuild/sdk node examples/solid-todo/bench/components.cjs
+```
+
+Environment: minidev 0.18.0 (`400d69e`, 2026-11-22), Node v22.23.0, pnpm
+11.28.7, Linux 5.15.0-94-generic x86_64, minidev simulator runtime 3.17.3.
+Three runs per route, in one server session. The harness reLaunches a neutral
+page (`pages/index/index`) between runs and that reLaunch is not timed.
+
+### Results
+
+All values are milliseconds. `first render` runs from `reLaunch` until 1000
+pure hosts and 1000 state hosts exist and their first inner titles are readable.
+`update` taps `.update-row` until the first `.pure-state` changes; `state click`
+taps the first `.state-bump` until `.state-count` is `1`; `append`/`delete` wait
+for the `.pure-row` count to become 1001/1000.
+
+| Case | Glaze runs | Glaze mean | Native runs | Native mean |
+| --- | --- | --- | --- | --- |
+| First render (2000 components) | 3812, 3800, 3766 | 3793 | 3641, 3601, 3643 | 3628 |
+| First pure row update | 36, 24, 23 | 28 | 33, 33, 33 | 33 |
+| State row click | 24, 24, 24 | 24 | 26, 23, 25 | 25 |
+| Append one pure row | 202, 173, 188 | 188 | 185, 184, 192 | 187 |
+| Delete first pure row | 191, 173, 186 | 183 | 185, 191, 186 | 187 |
+
+Counts verified every run on both routes: 1000 pure rows, 1000 state rows,
+1001 after append, 1000 after delete; the first state count moved `0 -> 1` and
+the first pure state moved `todo -> done`.
+
+### Interpretation
+
+- First render costs about 4.5% more on Glaze (3793 ms vs 3628 ms mean, +165 ms).
+  Both pages create 2000 real custom-component instances, so the component
+  boundary itself is not an order-of-magnitude penalty in this shape.
+- Update, click, append and delete are all within the automator/CDP round-trip
+  floor plus polling granularity (10 ms for text, 50 ms for counts). The 24 ms
+  vs 34 ms update difference is about one poll interval and is not evidence of a
+  real routing difference. These cases still validate the paths and selectors;
+  they do not rank the two implementations.
+- The flat-row benchmark already showed a 1–2% delta. Moving from flat rows to
+  component rows raises the visible first-render gap to roughly 5%, which is the
+  scale P0 has to beat. A P0 result should be judged on this table's first-render
+  row, not on the flat-row page.
+
+### Measurement compromises
+
+- **Shadow roots are not pierced by page-level selectors.** `page.$$('.pure-title')`
+  returns 0 for both routes because each row lives in a custom component. The
+  harness marks hosts with classes (`.pure-row`, `.state-row`) passed from the
+  page, counts those hosts, then queries `.pure-title`, `.pure-state`,
+  `.state-count` and `.state-bump` from a host element. This measures the same
+  DOM nodes, but the raw page selector is not the one in the protocol text.
+- **A repeated Glaze run can surface a stale first row.** The harness can read
+  `done` on the first row after `reLaunch` before the new tree settles. It
+  re-queries hosts and normalizes the first row to `todo` outside the timed
+  update; append/delete counts also re-query hosts. The update measurement itself
+  is a real tap.
+- **Rows use the automator**, so every number contains CDP round-trips and
+  polling. No `setData` count or payload bytes are collected here; the runtime
+  does not expose them through the automator.
 
 ## Non-goals
 

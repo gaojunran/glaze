@@ -1,0 +1,6 @@
+{
+  "usingComponents": {
+    "bench-row": "/components/bench-row/index",
+    "bench-state-row": "/components/bench-state-row/index"
+  }
+}

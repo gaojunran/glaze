@@ -80,6 +80,7 @@ miniprogram/
   pages/<route>.wxml     <glaze-page id="app" />
   pages/<route>.wxss     empty
   components/glaze-*/    compiled Solid components
+  glaze-runtime/index.js shared Solid + Glaze runtime
   pages/native/...       static pages copied from static/
 ```
 
@@ -99,10 +100,36 @@ Each compiled component directory contains:
 Only components actually reached from a page are emitted. A component that is
 always inlined (`Header` in the example) does not get an output directory.
 
-Generated modules bundle with `minify: true` and always resolve `solid-js` from
-the builder's own copy. The runtime is still duplicated per component; a shared
-runtime chunk is a future improvement. A simple component currently produces a
-roughly 30 KB bundle instead of the previous 75–90 KB.
+Generated modules bundle with `minify: true` and resolve `solid-js` and
+`@glaze/runtime` through one shared `glaze-runtime/index.js` module. Components
+are 0.6–3.4 KB each; the shared module is about 47 KB, so total runtime size is
+roughly `47 KB + n × 1 KB` instead of `n × 30 KB`.
+
+## Shared runtime
+
+Every component bundle externalizes `solid-js`, `@glaze/runtime` and
+`@glaze/runtime/mini` to a relative `require()` of
+`glaze-runtime/index.js`. The shim is generated per build by collecting the
+named imports from the generated modules and their bundled helper files, then
+bundling `solid-js` and the Glaze runtime once with the builder's own copies.
+Sharing is semantic as well as a size optimization: `createRoot`, `getOwner`
+and `runWithOwner` must come from the same Solid module instance or effects
+lose their owner and never clean up.
+
+The builder rejects a namespace/default import from a shared specifier because
+it cannot enumerate the names to re-export, and rejects a `static` file that
+already occupies `glaze-runtime/index.js`. The shared file is referenced by
+relative path, never an absolute `/glaze-runtime/...` path.
+
+Limitations:
+
+- an independent subpackage cannot require main-package JavaScript, so Glaze
+  output does not support independent subpackages yet;
+- the shared module is emitted once at the output root; per-subpackage runtime
+  copies are a future extension;
+- `require()` paths are checked by the build tests and e2e, because the
+  platform build does not fail on a wrong relative path (it fails at runtime
+  with a blank page).
 
 ## Module resolution
 
@@ -207,9 +234,11 @@ pnpm --filter @glaze/build test
 
 They build temporary projects and cover: page wrappers and inlined children,
 helper/JSON/type-only imports, output path safety, preservation of previous
-output on failure, `clean: false` merging, reachability, output-name collisions, Windows separators,
-WXSS portability, `staticPages` deduplication, app shell warnings, config
-reloads, CLI help and generated `styleIsolation`.
+output on failure, `clean: false` merging, reachability, output-name collisions,
+Windows separators, WXSS portability, `staticPages` deduplication, app shell
+warnings, config reloads, CLI help, generated `styleIsolation`, the shared
+runtime file, relative `require()` resolution, namespace-import rejection and
+`static`/runtime collisions.
 
 Real simulator run:
 
@@ -224,7 +253,14 @@ target/debug/minidev test \
   --browser <chrome>
 ```
 
-Result: the counter e2e passes against the generated `miniprogram` directory.
+Result: two e2e cases pass against the generated `miniprogram` directory: the
+main counter/control-flow/list/event/context/ref probe, and the review-boundary
+probe for non-keyed `Show`, numeric props, class/style and the Solid 2
+`<Theme value>` context form.
+
+On the example project (`pnpm build`, 3 pages, 10 components) the shared module
+is 46,582 B and all generated component `index.js` files total 10,678 B. Before
+the shared runtime the six-component version was about 195 KB of component JS.
 
 ## Known gaps
 
@@ -238,8 +274,9 @@ Result: the counter e2e passes against the generated `miniprogram` directory.
 4. **No per-page config.** `app.json` window/navigation settings are shared.
 5. **Output ownership is all-or-nothing.** `clean: true` replaces the whole
    output directory; custom files must live in `static`.
-6. **Each component bundles its own runtime.** `solid-js` is deduplicated within
-   a bundle and minified, but not shared between component bundles yet.
+6. **Shared runtime is a single main-package module.** `glaze-runtime/index.js`
+   is referenced by relative `require()`. Independent subpackages are not
+   supported because they cannot require main-package JavaScript.
 7. **WXSS references need manual handling.** `@import` is rejected and relative
    `url()` must be rewritten before building.
 

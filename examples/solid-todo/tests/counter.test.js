@@ -86,3 +86,27 @@ test('counter renders and updates through the compiled bindings', async (miniPro
   xml = await app.outerWxml()
   await expect(xml).toContain('Prepended')
 })
+
+test('review boundary probes render through the real page', async (miniProgram) => {
+  await miniProgram.reLaunch('/pages/index/index')
+  const page = await miniProgram.currentPage()
+  await page.waitFor(800)
+  const app = await page.$('#app')
+  if (!app) throw new Error('glaze-root not found')
+
+  await expect(app).toMatchText('.nested-show-nonkeyed', 'Compile Solid to WXML')
+  await expect(app).toMatchText('.theme-direct', 'light')
+
+  // PropProbe intentionally keeps a component boundary (it renders a slot), so
+  // page-level selectors cannot see inside its shadow root. Check the host tag
+  // attributes in the page WXML instead.
+  const plus = await app.$$('.btn')
+  await plus[1].tap()
+  await page.waitFor(300)
+  const xml = await app.outerWxml()
+  await expect(xml).toContain('prop-probe')
+  await expect(xml).toContain('count="3"')
+  await expect(xml).toContain('label="probe"')
+  await expect(xml).toContain('style="margin-top: 2"')
+  await expect(xml).toContain('class="active"')
+})
