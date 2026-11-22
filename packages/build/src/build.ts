@@ -110,6 +110,26 @@ export async function buildProject(projectPath = process.cwd()) {
     }
   }
   if (pageEntries.length === 0) throw new Error('glaze.config.mjs does not declare any pages')
+  const knownRoutes = new Set([
+    ...routes,
+    ...(config.staticPages ?? []).map((route) => normalizeRoute(route)),
+  ])
+  for (const [route, pageConfig] of Object.entries(config.pageConfig ?? {})) {
+    if (!knownRoutes.has(normalizeRoute(route))) {
+      throw new Error(`Page config route "${route}" does not match any page`)
+    }
+    if (
+      pageConfig === null ||
+      typeof pageConfig !== 'object' ||
+      Array.isArray(pageConfig) ||
+      (pageConfig.usingComponents !== undefined &&
+        (typeof pageConfig.usingComponents !== 'object' ||
+          pageConfig.usingComponents === null ||
+          Array.isArray(pageConfig.usingComponents)))
+    ) {
+      throw new Error(`Page config for "${route}" must be an object`)
+    }
+  }
   const ownerOf = (file) => {
     const owner = [...subpackages]
       .sort((left, right) => right.root.length - left.root.length)
@@ -402,17 +422,14 @@ export async function buildProject(projectPath = process.cwd()) {
         path.join(pageDir, `${pageName}.js`),
         `Page({\n  data: {},\n})\n`,
       )
+      const pageConfig = config.pageConfig?.[route] ?? {}
+      const usingComponents = {
+        ...(pageConfig.usingComponents as Record<string, string> | undefined),
+        'glaze-page': outputFor(owner, file, outName),
+      }
       await writeFile(
         path.join(pageDir, `${pageName}.json`),
-        `${JSON.stringify(
-          {
-            usingComponents: {
-              'glaze-page': outputFor(owner, file, outName),
-            },
-          },
-          null,
-          2,
-        )}\n`,
+        `${JSON.stringify({ ...pageConfig, usingComponents }, null, 2)}\n`,
       )
       await writeFile(
         path.join(pageDir, `${pageName}.wxml`),

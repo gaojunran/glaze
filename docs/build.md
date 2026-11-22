@@ -37,6 +37,9 @@ const config: GlazeConfig = {
     { root: 'pkg', pages: { 'pages/sub/index': 'PkgPage.tsx' } },
     { root: 'isolated', pages: { 'pages/sub/index': 'IsoPage.tsx' }, independent: true },
   ],
+  pageConfig: {
+    'pages/index/index': { navigationBarTitleText: 'Counter' },
+  },
   runtime: { bindingGroupSize: 8 },
 }
 
@@ -51,6 +54,7 @@ export default config
 | `static` | directories whose contents are copied into the output root |
 | `staticPages` | routes already present in `static` and kept in `app.json` |
 | `subpackages` | subpackage roots, their page maps, and optional `independent: true` |
+| `pageConfig` | per-route page JSON merged into the generated page config |
 | `clean` | replace the previous output after a successful build; defaults to `true` |
 | `runtime.bindingGroupSize` | scalar bindings per effect; a positive integer, default `8`, `1` disables grouping |
 | `css.tailwind.input` | optional Tailwind 4 stylesheet; enables the Tailwind stage |
@@ -136,7 +140,10 @@ Each compiled component directory contains:
   slots;
 - `index.wxss` — its own styles plus styles from inlined children.
 
-Only components actually reached from a page are emitted. A component that is
+Page JSON starts from the generated `usingComponents` and merges
+`pageConfig[route]` over it; a page config may add components but `glaze-page`
+always points at the generated component. Only components actually reached from
+a page are emitted. A component that is
 always inlined (`Header` in the example) does not get an output directory.
 
 Generated modules bundle with `minify: true` and resolve `solid-js` and
@@ -343,13 +350,12 @@ the shared runtime the six-component version was about 195 KB of component JS.
    web preview renderer.
 3. **No asset pipeline.** Images and other assets are copied only through
    `static`.
-4. **No per-page config.** `app.json` window/navigation settings are shared.
-5. **Output ownership is all-or-nothing.** `clean: true` replaces the whole
+4. **Output ownership is all-or-nothing.** `clean: true` replaces the whole
    output directory; custom files must live in `static`.
-6. **Subpackage assets are not duplicated.** `static` and Tailwind styles are
+5. **Subpackage assets are not duplicated.** `static` and Tailwind styles are
    written once at the output root; an independent subpackage that needs them
    must copy or generate them itself.
-7. **WXSS references need manual handling.** `@import` is rejected and relative
+6. **WXSS references need manual handling.** `@import` is rejected and relative
    `url()` must be rewritten before building.
 
 ## Rejected alternatives

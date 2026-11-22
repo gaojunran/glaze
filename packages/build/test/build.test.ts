@@ -1018,3 +1018,43 @@ export default function Sub() {
     /reaches "Shared\.tsx" in another package/,
   )
 })
+
+test('merges page config into the generated page json', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx', 'pages/other/index': 'Other.tsx' },
+      pageConfig: {
+        'pages/home/index': {
+          navigationBarTitleText: 'Home',
+          usingComponents: { badge: '/components/badge/index' },
+        },
+      },
+    },
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view>home</view>
+}
+`,
+      'src/Other.tsx': `export default function Other() {
+  return <view>other</view>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await buildProject(project)
+  const pageJson = JSON.parse(
+    await readFile(path.join(project, 'miniprogram/pages/home/index.json'), 'utf8'),
+  )
+  assert.equal(pageJson.navigationBarTitleText, 'Home')
+  assert.equal(pageJson.usingComponents.badge, '/components/badge/index')
+  assert.equal(pageJson.usingComponents['glaze-page'], '/components/glaze-app/index')
+
+  const other = JSON.parse(
+    await readFile(path.join(project, 'miniprogram/pages/other/index.json'), 'utf8'),
+  )
+  assert.deepEqual(other.usingComponents, { 'glaze-page': '/components/glaze-other/index' })
+})

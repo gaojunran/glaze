@@ -127,6 +127,7 @@ Known limits are listed in [compiler.md](compiler.md#known-gaps).
   `independent`.
 - Each package gets its own `components/` and `glaze-runtime/index.js`; page
   wrappers and `usingComponents` use package-absolute paths.
+- `pageConfig` merges page-level JSON into generated wrappers.
 - Package ownership is validated: main cannot use subpackage components,
   independent subpackages cannot reach main-package components, and pages must
   live inside their declared package.

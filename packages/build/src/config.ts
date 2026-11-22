@@ -29,6 +29,7 @@ export type GlazeConfig = {
   static?: string[]
   staticPages?: string[]
   subpackages?: GlazeSubpackage[]
+  pageConfig?: Record<string, Record<string, unknown>>
   clean?: boolean
   runtime?: GlazeRuntimeConfig
   css?: GlazeCssConfig
