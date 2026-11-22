@@ -85,6 +85,7 @@ Tailwind should still use a `.css` entry. If a project uses both, the compiled
 it; do not put `@import "tailwindcss"` inside `.scss` / `.less`.
 
 Tailwind is documented separately in [tailwind.md](tailwind.md).
+Single-file snippet projects are described in [snippet.md](snippet.md).
 
 ## Build pipeline
 

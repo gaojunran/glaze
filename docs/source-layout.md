@@ -31,9 +31,11 @@ Large files were split by responsibility rather than by size alone:
 | | `paths.ts` | route/output naming and project path validation |
 | | `shared.ts` | shared runtime module and esbuild plugin setup |
 | | `styles.ts` | portable WXSS checks |
+| | `preprocess.ts` | SCSS/Less compilation for component and app styles |
+| | `snippet.ts` | single-file snippet config parsing and standalone project generation |
 | | `tailwind.ts` | optional Tailwind generator, WXML/JS classNameSet transforms |
 | | `watch.ts` | debounced watch loop |
-| | `cli.ts` | `glaze build` / `glaze watch` entry |
+| | `cli.ts` | `glaze build` / `glaze watch` / `glaze snippet` entry |
 | `@glaze/runtime` | `mini.ts` | mini-program component definition and lifecycle |
 | | `data.ts` | data paths, value normalization, binding error reporting |
 | | `list.ts` | keyed list diff/patch |

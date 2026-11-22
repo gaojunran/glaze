@@ -15,7 +15,8 @@
     "@glaze/runtime": "workspace:*",
     "@glaze/shared": "workspace:*",
     "esbuild": "^0.28.0",
-    "solid-js": "^2.0.3"
+    "solid-js": "^2.0.3",
+    "@babel/parser": "^7.28.0"
   },
   "scripts": {
     "test": "node --test test/*.test.ts",

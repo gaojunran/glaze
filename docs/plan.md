@@ -149,3 +149,16 @@ Every milestone runs in the minidev simulator with a real page and records:
 - pass/fail of `minidev test`;
 - first-render and update numbers against the native page;
 - any known gap that affects correctness or performance.
+
+
+### M7 — single-file snippets (done)
+
+- `glaze snippet <file.tsx>` reads a static `export const glaze` object,
+  generates the app shell and project config, runs the normal build, and copies
+  a standalone project to the output directory.
+- Tailwind is enabled from the same export; default output is
+  `<source-name>-snippet`.
+- Validated with build tests and a minidev run of the generated project.
+
+Sharing a DevTools code snippet remains a manual DevTools action; the command
+generates an importable mini-program project.

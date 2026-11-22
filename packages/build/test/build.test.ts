@@ -9,6 +9,7 @@ import {
   buildProject,
   outputNameForRelative,
 } from '../src/build.ts'
+import { buildSnippet, defaultSnippetOut, parseSnippetSource } from '../src/snippet.ts'
 
 const exists = async (file) => {
   try {
@@ -770,4 +771,122 @@ test('rejects Tailwind without an input stylesheet', async () => {
   })
   await Promise.all(appShell(project))
   await assert.rejects(buildProject(project), /Tailwind input stylesheet not found/)
+})
+
+
+test('parses snippet config and removes it from the component source', () => {
+  const parsed = parseSnippetSource(`import type { X } from './x'
+export const glaze = {
+  page: { route: '/pages/demo/index' },
+  app: { window: { navigationBarTitleText: 'Demo' } },
+  tailwind: { safelist: ['p-4'] },
+} satisfies { tailwind?: unknown }
+export default function Page() {
+  return <view class="p-4">demo</view>
+}
+`)
+
+  assert.deepEqual(parsed.config.page, { route: '/pages/demo/index' })
+  assert.deepEqual(parsed.config.tailwind, { safelist: ['p-4'] })
+  assert.doesNotMatch(parsed.code, /export const glaze/)
+  assert.match(parsed.code, /export default function Page/)
+})
+
+test('rejects snippet files without a static glaze export', () => {
+  assert.throws(
+    () => parseSnippetSource('export default function Page() { return <view /> }'),
+    /must export a static `glaze` object/,
+  )
+  assert.throws(
+    () =>
+      parseSnippetSource(
+        'export const glaze = makeConfig()\nexport default function Page() { return <view /> }',
+      ),
+    /static JSON value/,
+  )
+})
+
+test('builds a standalone project from one snippet TSX', async () => {
+  const project = await mkdtemp(path.join(tmpdir(), 'glaze-snippet-test-'))
+  const source = path.join(project, 'Page.tsx')
+  const out = path.join(project, 'out')
+  await writeFile(
+    source,
+    `import { createSignal } from 'solid-js'
+export const glaze = {
+  project: { appid: 'wx1234567890', projectname: 'Single file' },
+  app: { window: { navigationBarTitleText: 'Single file' } },
+  page: { route: 'pages/demo/index', config: { navigationBarTitleText: 'Demo title' } },
+  tailwind: true,
+}
+export default function Page() {
+  const [count] = createSignal(0)
+  return <view class="p-4"><text>{count()}</text></view>
+}
+`,
+  )
+
+  const result = await buildSnippet(source, { out })
+
+  assert.equal(result.outDir, out)
+  assert.equal(result.route, 'pages/demo/index')
+  assert.deepEqual(result.pages, ['pages/demo/index'])
+
+  const projectConfig = JSON.parse(
+    await readFile(path.join(out, 'project.config.json'), 'utf8'),
+  )
+  assert.equal(projectConfig.miniprogramRoot, 'miniprogram/')
+  assert.equal(projectConfig.compileType, 'miniprogram')
+  assert.equal(projectConfig.appid, 'wx1234567890')
+
+  const appJson = JSON.parse(await readFile(path.join(out, 'miniprogram/app.json'), 'utf8'))
+  assert.deepEqual(appJson.pages, ['pages/demo/index'])
+  assert.equal(appJson.componentFramework, 'glass-easel')
+  assert.equal(appJson.window.glassEaselWebview, true)
+  assert.equal(appJson.window.navigationBarTitleText, 'Single file')
+
+  const pageJson = JSON.parse(
+    await readFile(path.join(out, 'miniprogram/pages/demo/index.json'), 'utf8'),
+  )
+  assert.equal(pageJson.navigationBarTitleText, 'Demo title')
+
+  const appWxss = await readFile(path.join(out, 'miniprogram/app.wxss'), 'utf8')
+  assert.match(appWxss, /\.p-4\s*\{/)
+
+  assert.equal(
+    defaultSnippetOut('/tmp/HelloWorld.tsx'),
+    path.resolve(process.cwd(), 'hello-world-snippet'),
+  )
+})
+
+test('refuses to replace an existing snippet output without force', async () => {
+  const project = await mkdtemp(path.join(tmpdir(), 'glaze-snippet-test-'))
+  const source = path.join(project, 'Page.tsx')
+  const out = path.join(project, 'out')
+  await writeFile(
+    source,
+    `export const glaze = { page: { route: 'pages/index/index' } }
+export default function Page() { return <view>demo</view> }
+`,
+  )
+  await buildSnippet(source, { out })
+  await assert.rejects(() => buildSnippet(source, { out }), /Pass --force/)
+})
+
+test('CLI snippet defaults its output next to the current directory', async () => {
+  const project = await mkdtemp(path.join(tmpdir(), 'glaze-snippet-cli-'))
+  await writeFile(
+    path.join(project, 'Page.tsx'),
+    `export const glaze = { page: { route: 'pages/index/index' } }
+export default function Page() { return <view>cli</view> }
+`,
+  )
+  const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url))
+  const run = spawnSync(process.execPath, [cli, 'snippet', 'Page.tsx'], {
+    cwd: project,
+    encoding: 'utf8',
+  })
+  assert.equal(run.status, 0, run.stderr)
+  assert.match(run.stdout, /glaze snippet: 1 page, 1 components/)
+  assert.equal(await exists(path.join(project, 'page-snippet/project.config.json')), true)
 })

@@ -15,7 +15,7 @@ events, context, refs, nested `For`, `Switch`/`Match`, `For` fallback,
 `Repeat`, `For keyed` modes, `Show` callbacks, nested `Repeat`/`Show`, static
 spread, destructuring, class/style helpers, per-row patches and glass-easel
 splice updates, optional Tailwind 4 compilation, `glaze build` / `glaze watch` /
-a Vite build bridge, and a 1000-row benchmark in the minidev simulator. First render and keyed reverse
+`glaze snippet`, a Vite build bridge, and a 1000-row benchmark in the minidev simulator. First render and keyed reverse
 are within a few percent of hand-written WXML in the same harness.
 
 ## Packages
@@ -36,6 +36,7 @@ are within a few percent of hand-written WXML in the same harness.
 - [Compiler](docs/compiler.md)
 - [Implementation plan](docs/plan.md)
 - [Build](docs/build.md)
+- [Single-file snippets](docs/snippet.md)
 - [Tailwind CSS](docs/tailwind.md)
 - [Running with minidev](docs/minidev.md)
 - [Performance backlog](docs/optimizations.md)

@@ -1,4 +1,6 @@
 export { buildProject } from './build.ts'
+export { buildSnippet, defaultSnippetOut, parseSnippetSource } from './snippet.ts'
+export type { GlazeSnippetConfig, SnippetBuildResult } from './snippet.ts'
 export { watchProject } from './watch.ts'
 export {
   normalizeSourcePath,
