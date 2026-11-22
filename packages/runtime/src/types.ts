@@ -23,6 +23,7 @@ export type GlazeContext = {
 
 export type GlazeComponentConfig = {
   data?: Record<string, unknown>
+  bindingGroupSize?: number
   properties?: string[]
   propMap?: Record<string, string>
   eventProps?: Record<string, string>

@@ -165,7 +165,11 @@ import { ${runtimeImports} } from "@glaze/runtime/mini";
 ${moduleStatements}
 
 export default defineGlazeComponent({
-${properties}${propMap}${eventProps}  data: ${data},
+${properties}${propMap}${eventProps}${
+    options.bindingGroupSize === undefined
+      ? ''
+      : `  bindingGroupSize: ${options.bindingGroupSize},\n`
+  }  data: ${data},
   listBindings: ${JSON.stringify(listBindings)},
   handlerCount: ${ctx.events.length},
   refCount: ${ctx.refs.length},

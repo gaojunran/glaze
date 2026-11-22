@@ -92,7 +92,9 @@ Status: implemented.
 
 Previously every binding got its own `createEffect`, so a component with 50
 scalar bindings created 50 effects. The runtime now groups consecutive scalar
-bindings in batches of 8 and creates one effect per batch:
+bindings into batches and creates one effect per batch. The batch size is
+`bindingGroupSize` in `glaze.config`, defaulting to 8; `1` gives one effect per
+binding:
 
 ```js
 createEffect(
@@ -101,10 +103,25 @@ createEffect(
 )
 ```
 
-Trade-off: one change recomputes at most the other seven bindings in its batch.
-List bindings keep their own effect because diffing an array is more expensive
-than a scalar read. Initial values are still evaluated once per binding before
-the first paint, and the first effect run skips values unchanged since then.
+Trade-off: with size eight, one change recomputes at most the other seven
+bindings in its batch. `applyBinding` then skips unchanged scalars, so those
+recomputes do not become data paths. List bindings keep their own effect because
+diffing an array is more expensive than a scalar read. Initial values are still
+evaluated once per binding before the first paint, and the first effect run skips
+values unchanged since then.
+
+A dependency-set grouping would be more precise: the compiler knows the signal
+and prop reads of a simple expression, so it could emit a sorted dependency key
+per binding and the runtime could put equal keys in one effect. This is safe
+even when the analysis is incomplete: the effect still executes every binding,
+so Solid tracks every dependency that is actually read; a missed dependency only
+means the binding stays in a coarser group. It is also not free: bindings with
+unique dependency sets become one effect each, which loses the creation/memory
+saving for large forms; aliases, stores, context, prop proxies and user helper
+functions need analysis rules; and a superset/subset pair still wakes two
+effects on the shared signal. The fixed-size config is the current escape hatch
+and keeps the runtime independent of compiler analysis. Dependency grouping is
+left as a compiler-side optimization, not assumed to be a win.
 
 Acceptance was same or lower `setData` count, fewer effects, and no regression
 in single-field update latency. The effect count itself is not exposed by the

@@ -606,3 +606,45 @@ test('loads a TypeScript config file', async () => {
   assert.deepEqual(result.pages, ['pages/home/index'])
   assert.equal(await exists(path.join(project, 'miniprogram/app.json')), true)
 })
+
+test('rejects a non-positive binding group size', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      bindingGroupSize: 0,
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': 'export default function App() { return <view /> }\n',
+    },
+  })
+  await Promise.all(appShell(project))
+  await assert.rejects(buildProject(project), /bindingGroupSize/)
+})
+
+test('passes bindingGroupSize into the emitted component', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      bindingGroupSize: 2,
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `import { createSignal } from 'solid-js'
+export default function App() {
+  const [count] = createSignal(0)
+  return <text>{count()}</text>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+  await buildProject(project)
+  const generated = await readFile(
+    path.join(project, 'miniprogram/components/glaze-app/index.js'),
+    'utf8',
+  )
+  assert.match(generated, /bindingGroupSize:2/)
+})

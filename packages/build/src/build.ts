@@ -49,6 +49,12 @@ async function replaceOutput(stagingDir: string, outputDir: string, clean: boole
 export async function buildProject(projectPath = process.cwd()) {
   const project = path.resolve(projectPath)
   const config = await loadConfig(project)
+  if (
+    config.bindingGroupSize !== undefined &&
+    (!Number.isInteger(config.bindingGroupSize) || config.bindingGroupSize <= 0)
+  ) {
+    throw new Error('Config "bindingGroupSize" must be a positive integer')
+  }
   const sourceDir = path.resolve(project, config.source)
   const outputDir = path.resolve(project, config.output)
   const stagingBase = path.join(project, '.tmp', 'glaze-build')
@@ -84,6 +90,7 @@ export async function buildProject(projectPath = process.cwd()) {
       result: compileComponent(sources.get(file), {
         inline: true,
         sourceFile: file,
+        bindingGroupSize: config.bindingGroupSize,
         resolveComponent: (_name, specifier, fromFile = file) => {
           const child = resolveSourceImport(fromFile, specifier, sources)
           return child ? { source: sources.get(child), file: child } : null

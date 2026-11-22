@@ -313,9 +313,13 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       if (!fn || Object.hasOwn(listBindings, index)) return
       scalarIndexes.push(index)
     })
+    const groupSize =
+      Number.isInteger(config.bindingGroupSize) && config.bindingGroupSize! > 0
+        ? config.bindingGroupSize!
+        : SCALAR_BINDING_GROUP
     const scalarGroups: number[][] = []
-    for (let offset = 0; offset < scalarIndexes.length; offset += SCALAR_BINDING_GROUP) {
-      scalarGroups.push(scalarIndexes.slice(offset, offset + SCALAR_BINDING_GROUP))
+    for (let offset = 0; offset < scalarIndexes.length; offset += groupSize) {
+      scalarGroups.push(scalarIndexes.slice(offset, offset + groupSize))
     }
 
     runWithOwner(state.owner, () => {

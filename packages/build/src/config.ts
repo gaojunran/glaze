@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 
 export type GlazeConfig = {
   source: string
+  bindingGroupSize?: number
   output: string
   pages: Record<string, string>
   static?: string[]

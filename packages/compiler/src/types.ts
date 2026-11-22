@@ -3,6 +3,7 @@ export type AnyNode = any
 
 export type CompileOptions = {
   inline?: boolean
+  bindingGroupSize?: number
   sourceFile?: string
   resolveComponent?: (
     name: string,
@@ -55,6 +56,7 @@ export type CompileResult = {
   refCount: number
 }
 export type EmitOptions = {
+  bindingGroupSize?: number
   propsParam: string | null
   props: string[]
   propertyNames: string[]

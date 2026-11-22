@@ -158,6 +158,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     ? `<wxs module="glazeRange">${WXS_SOURCE}</wxs>${bodyWxml}`
     : bodyWxml
   const js = emitModule(ast, statements.slice(0, returnIndex), ctx, {
+    bindingGroupSize: options.bindingGroupSize,
     propsParam: propsParam?.name ?? null,
     props: plainProps,
     propertyNames,

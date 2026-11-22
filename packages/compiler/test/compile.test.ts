@@ -1289,3 +1289,11 @@ test('supports class and style objects on component tags', () => {
   assert.match(result.wxml, /style="margin-top: 4"/)
   assert.match(result.js, /className\(\{[\s\S]*active: props\.active[\s\S]*\}\)/)
 })
+
+test('emits an optional binding group size', () => {
+  const defaultResult = compileComponent(source)
+  assert.doesNotMatch(defaultResult.js, /bindingGroupSize/)
+
+  const grouped = compileComponent(source, { bindingGroupSize: 1 })
+  assert.match(grouped.js, /bindingGroupSize: 1,/)
+})
