@@ -8,13 +8,16 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@glaze/shared": "workspace:*",
     "@babel/generator": "^7.28.0",
     "@babel/parser": "^7.28.0",
-    "@babel/types": "^7.28.0"
+    "@babel/types": "^7.28.0",
+    "@glaze/shared": "workspace:*"
   },
   "scripts": {
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "glass-easel-template-compiler": "1.2.1"
   }
 }

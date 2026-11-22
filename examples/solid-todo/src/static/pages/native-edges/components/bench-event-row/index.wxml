@@ -1,0 +1,4 @@
+<view class="event-row">
+  <text class="event-count">{{clicks}}</text>
+  <button class="pick" bindtap="pick">pick</button>
+</view>

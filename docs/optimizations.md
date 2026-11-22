@@ -442,3 +442,142 @@ improvement.
   carry them.
 - Arbitrary dynamic components, render props, or HOCs.
 - Replacing WXML for every component; first render would regress.
+
+## Edge-case benchmarks
+
+The flat-list and component-dense benchmarks measure row throughput. These four
+cases target shapes that a compile-first framework can break on even when raw
+render speed is fine:
+
+| Case | Risk |
+| --- | --- |
+| Deep nesting | Recursive component references and a 100-instance tree; compile-time inlining could loop, flatten state, or lose a boundary. |
+| Form typing | Many independent scalar bindings and an `input` event that must round-trip through state without resetting the other fields. |
+| Slots / children | Slot content is authored in the page but rendered inside 100 component shadow trees. |
+| Custom events | A component event must reach the parent handler with its payload, once per click. |
+
+### Routes and shapes
+
+| Route | Implementation |
+| --- | --- |
+| Glaze `pages/bench-edges/index` | `src/BenchEdges.tsx` plus `BenchEdgeDeep.tsx`, `BenchEdgeSlotCard.tsx`, `BenchEdgeEventRow.tsx` |
+| Native `pages/native-edges/index` | `src/static/pages/native-edges/index.*` plus two local components under `src/static/pages/native-edges/components/` |
+
+- **Deep (Glaze).** `BenchEdgeDeep` imports itself under an alias. The page
+  renders 10 top-level chains; each instance renders exactly one child until
+  level 9, so the tree is 10 levels × 10 instances = 100 custom component
+  instances. Recursion goes through a `<For>` with `keyed={false}`, and the
+  component has a local `createSignal`, so the loop-purity rule keeps a real
+  component boundary at every level instead of inlining the next level. Every
+  node renders `.deep-node` and `.deep-label`; level 9 also renders `.deep-count`
+  and `.deep-bump`. The measured update bumps the first chain's leaf.
+- **Deep (native).** WXML has no recursive template, so the sanctioned fallback
+  is used: 10 chains of 10 explicitly nested `<view class="deep-node">` (100
+  plain views). Only the innermost view renders `.deep-count` and `.deep-bump`;
+  the handler writes one path, `chains[i].count`.
+- **Form.** Glaze holds 20 independent `createSignal('')` pairs; native holds
+  `fields[i].value`. Both render 20 `<input class="field-input">` and mirror the
+  last field into `.field-mirror`. The harness appends 10 characters to the last
+  input through 10 automator `input()` calls.
+- **Slots.** Glaze renders 100 `BenchEdgeSlotCard` components, each with default
+  slotted `<text class="card-text">`. Native renders 100 local
+  `bench-slot-card` components with `<slot />`. `.update-card` toggles the first
+  card's text through parent state.
+- **Custom events.** Glaze renders 100 `BenchEdgeEventRow` components with a
+  local click count; `.pick` calls `onPick(rowId)` and the page writes
+  `.picked` as `picked-<id>-<n>`. Native does the same with
+  `triggerEvent('pick', rowid)`. One first-row click is measured.
+- All selectors are stable classes and buttons; the harness drives both pages
+  through the automator without knowing which implementation is mounted.
+
+### Commands
+
+```bash
+cd ~/Projects/glaze
+pnpm build
+
+cd ~/Playground/minibuild
+target/debug/minidev sim build \
+  --project ~/Projects/glaze/examples/solid-todo \
+  --out ~/Projects/glaze/.tmp/sim
+target/debug/minidev sim serve \
+  --dist ~/Projects/glaze/.tmp/sim \
+  --browser ~/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell \
+  --port 9435
+
+# separate shell
+cd ~/Projects/glaze
+NODE_PATH=~/Playground/minibuild/sdk node examples/solid-todo/bench/edges.cts
+```
+
+`edges.cts` defaults to port `9422`; pass `GLAZE_PORT=9435` (or set the server
+port to match). Port 9435 was used here because other simulator servers were
+already running on the machine. `GLAZE_RUNS` defaults to 3.
+
+Environment: minidev 0.18.0 (`fd870b3`), Node v22.23.0, pnpm 11.28.7, Linux
+5.15.0-94-generic x86_64, simulator runtime 3.17.3. `pnpm build` reported
+`9 pages, 20 components`. Three runs per route in one server session; a
+neutral `pages/index/index` reLaunch runs between runs and is not timed.
+
+### Results
+
+Measured 2026-11-23 on the local minidev checkout. All values are milliseconds.
+
+| Case | Glaze runs | Glaze mean | Native runs | Native mean |
+| --- | --- | --- | --- | --- |
+| First render (all four cases) | 3295, 3277, 3267 | 3280 | 3211, 3197, 3220 | 3209 |
+| Deep leaf update | 23, 22, 22 | 22 | 22, 22, 22 | 22 |
+| Form: 10 chars into last input | 22, 26, 49 | 32 | 36, 37, 33 | 35 |
+| Slot: first card text update | 69, 70, 68 | 69 | 70, 74, 69 | 71 |
+| Custom event: one click round-trip | 24, 23, 23 | 23 | 22, 22, 22 | 22 |
+
+Verified on every run:
+
+- Deep: native rendered 100 `.deep-node`; Glaze rendered 10 top-level `.deep-host` chains and the
+  harness walked the first chain to level 9 (100 instances by construction). The leaf count moved on
+  the timed bump (`0 -> 1` on both routes).
+- 20 `.field-input` elements, `target.value()` and `.field-mirror` both ended
+  with the 10-character buffer.
+- 100 `.slot-card-host` hosts and the first `.card-text` changed on the timed
+  update.
+- 100 `.event-row-host` hosts, the first `.event-count` moved, and `.picked`
+  changed after one `.pick` tap.
+
+### Methodology caveats
+
+- **One page, one first-render number.** All four cases share a route, so
+  `firstRender` runs from `reLaunch` until the last case is ready; it is not a
+  per-case number. It includes routing, page creation and one automator poll
+  interval. For Glaze it also includes the harness walking nine `.deep-host`
+  levels to confirm the leaf exists. Reloading a 100-component page per case
+  made the automator session too slow to finish, so that variant was rejected.
+- **Updates are at the automator floor.** Every update number is one tap or 10
+  input calls plus CDP round-trips and 10 ms text polling. A 1–2 ms difference
+  between the routes is not evidence of a real routing difference; only the
+  order of magnitude is meaningful. The Glaze form run spread (22–49 ms) shows
+  how much a single run can vary.
+- **Form typing is not real key input.** `element.input(value)` sets
+  the whole value and fires one input event per call. Ten calls approximate ten
+  keystrokes, and each call re-sends the accumulated string. The automator and
+  the runtime do not expose `setData` counts, so the number of field updates is
+  not observable; 10 keystrokes is the upper bound, and the final value/mirror
+  check is the evidence.
+- **The simulator can surface stale DOM across `reLaunch`.** On the second
+  Glaze run the first card already read `Card 0 changed` before the timed update,
+  even though the previous run had changed it. The handler toggles between
+  `Card 0` and `Card 0 changed`, so each timed update is still a real parent
+  state change, but run 2 measures the changed -> initial direction. This is the
+  same class of staleness as the component benchmark's stale first row; it is
+  reported, not hidden. The form starts from the input's current value for the
+  same reason.
+- **Deep is not instance-for-instance identical.** Native WXML cannot recurse,
+  so the native side uses 100 plain nested views while Glaze uses 100 custom
+  component instances. The comparison answers "what does deep nesting cost on
+  each side", not "same instance type on both sides". The native leaf update is
+  one path `setData`; the Glaze leaf update is a local signal inside the deepest
+  component.
+- **The page/component budget is at the soft limit.** The two required routes
+  plus four cases add one page and three components. `glaze build` reports
+  `9 pages, 20 components`; `staticPages` adds two native route entries to
+  `app.json` (11 route entries total), but the build's page counter counts Glaze
+  page entries only.

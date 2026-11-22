@@ -28,6 +28,7 @@ export function parseComponent(source: string): ParsedComponent {
     throw new Error('Destructuring props is not reactive; use props.name instead')
   }
   const props = propsParam ? collectProps(propsParam.name, fn.body) : []
+  if (propsParam) rejectHostProps(propsParam.name, fn.body)
 
   const statements = functionStatements(fn)
   const returnIndex = statements.findIndex((node) => t.isReturnStatement(node))
@@ -93,6 +94,38 @@ export function collectImports(ast: AnyNode): Map<string, string> {
     }
   }
   return imports
+}
+
+function rejectHostProps(paramName: string, body: AnyNode): void {
+  const visit = (node: AnyNode): void => {
+    if (!node || typeof node.type !== 'string') return
+    // A nested function that redeclares the props parameter has its own props.
+    if (
+      t.isFunction(node) &&
+      node.params.some((param) => t.isIdentifier(param, { name: paramName }))
+    ) {
+      return
+    }
+    if (
+      t.isMemberExpression(node) &&
+      !node.computed &&
+      t.isIdentifier(node.object, { name: paramName }) &&
+      t.isIdentifier(node.property)
+    ) {
+      const member = node.property.name
+      if (member === 'class' || member === 'style') {
+        throw new Error(
+          `props.${member} is not delivered across Glaze component boundaries; style the component host or pass an explicit prop`,
+        )
+      }
+    }
+    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+      const value = node[key]
+      if (Array.isArray(value)) value.forEach(visit)
+      else visit(value)
+    }
+  }
+  visit(body)
 }
 
 export function collectProps(paramName: string, body: AnyNode): string[] {

@@ -9,6 +9,7 @@ import {
   buildProject,
   outputNameForRelative,
 } from '../src/build.ts'
+import { hotUpdateBuildOptions, isBuildSourceFile } from '../src/changes.ts'
 import { buildSnippet, defaultSnippetOut, parseSnippetSource } from '../src/snippet.ts'
 import { watchProject } from '../src/index.ts'
 
@@ -388,6 +389,18 @@ test('normalizes Windows separators in output names', () => {
   assert.equal(outputNameForRelative('foo-bar.tsx'), 'glaze-foo-bar')
 })
 
+test('maps Vite hot updates to rebuild inputs', () => {
+  assert.equal(isBuildSourceFile('src/App.tsx'), true)
+  assert.equal(isBuildSourceFile('src/App.wxss'), true)
+  assert.equal(isBuildSourceFile('src/data.json'), true)
+  assert.equal(isBuildSourceFile('glaze.config.mjs'), true)
+  assert.equal(isBuildSourceFile('README.md'), false)
+  assert.deepEqual(hotUpdateBuildOptions('/project/src/App.tsx'), {
+    changedFiles: ['/project/src/App.tsx'],
+  })
+  assert.equal(hotUpdateBuildOptions('/project/README.md'), null)
+})
+
 test('rejects WXSS @import and relative url() but accepts portable URLs', async () => {
   const project = await createProject({
     config: {
@@ -571,7 +584,115 @@ test('rejects a static file that collides with the shared runtime', async () => 
 
   await assert.rejects(
     () => buildProject(project),
-    /Output file collision: glaze-runtime\/index\.js/,
+    /Output path collision: "glaze-runtime\/index\.js".*static asset/,
+  )
+})
+
+test('rejects a page route that collides with a generated component', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'components/glaze-app/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': 'export default function App() { return <view /> }\n',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await assert.rejects(
+    () => buildProject(project),
+    (error) => {
+      assert.match(error.message, /Output path collision/)
+      assert.match(error.message, /components\/glaze-app\/index\.wxml/)
+      assert.match(error.message, /component "src\/App\.tsx"/)
+      assert.match(error.message, /page route "components\/glaze-app\/index"/)
+      return true
+    },
+  )
+})
+
+test('rejects a static file that collides with a generated component', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      static: ['static'],
+    },
+    files: {
+      'src/App.tsx': 'export default function App() { return <view /> }\n',
+      'src/static/components/glaze-app/index.wxml': '<view>static</view>\n',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await assert.rejects(
+    () => buildProject(project),
+    (error) => {
+      assert.match(error.message, /Output path collision/)
+      assert.match(error.message, /components\/glaze-app\/index\.wxml/)
+      assert.match(error.message, /component "src\/App\.tsx"/)
+      assert.match(error.message, /static asset "src\/static\/components\/glaze-app\/index\.wxml"/)
+      return true
+    },
+  )
+})
+
+test('rejects a static file that collides with a page wrapper', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      static: ['static'],
+    },
+    files: {
+      'src/App.tsx': 'export default function App() { return <view /> }\n',
+      'src/static/pages/home/index.wxml': '<view>static page</view>\n',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await assert.rejects(
+    () => buildProject(project),
+    (error) => {
+      assert.match(error.message, /Output path collision/)
+      assert.match(error.message, /pages\/home\/index\.wxml/)
+      assert.match(error.message, /page route "pages\/home\/index"/)
+      assert.match(error.message, /static asset "src\/static\/pages\/home\/index\.wxml"/)
+      return true
+    },
+  )
+})
+
+test('rejects a subpackage page that collides with its package component', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      subpackages: [
+        { root: 'pkg', pages: { 'components/glaze-pkg-sub/index': 'pkg/Sub.tsx' } },
+      ],
+    },
+    files: {
+      'src/App.tsx': 'export default function App() { return <view /> }\n',
+      'src/pkg/Sub.tsx': 'export default function Sub() { return <view /> }\n',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await assert.rejects(
+    () => buildProject(project),
+    (error) => {
+      assert.match(error.message, /Output path collision/)
+      assert.match(error.message, /pkg\/components\/glaze-pkg-sub\/index\.wxml/)
+      assert.match(error.message, /component "src\/pkg\/Sub\.tsx"/)
+      assert.match(error.message, /page route "pkg\/components\/glaze-pkg-sub\/index"/)
+      return true
+    },
   )
 })
 
@@ -959,6 +1080,60 @@ export default function Sub() {
   assert.match(bundle, /require\("\.\.\/\.\.\/glaze-runtime\/index\.js"\)/)
 })
 
+test('normalizes subpackage roots from leading, trailing and Windows forms', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      subpackages: [
+        { root: './pkg\\', pages: { 'pages/sub/index': 'pkg/Sub.tsx' } },
+      ],
+    },
+    files: {
+      'src/App.tsx': 'export default function App() { return <view /> }\n',
+      'src/pkg/Sub.tsx': 'export default function Sub() { return <view /> }\n',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await buildProject(project)
+
+  const appJson = JSON.parse(
+    await readFile(path.join(project, 'miniprogram/app.json'), 'utf8'),
+  )
+  assert.deepEqual(appJson.subPackages, [{ root: 'pkg', pages: ['pages/sub/index'] }])
+  assert.equal(
+    await exists(path.join(project, 'miniprogram/pkg/pages/sub/index.wxml')),
+    true,
+  )
+})
+
+test('rejects duplicate subpackage roots after normalization', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      subpackages: [
+        { root: './pkg/', pages: { 'pages/a/index': 'pkg/A.tsx' } },
+        { root: 'pkg\\', pages: { 'pages/b/index': 'pkg/B.tsx' } },
+      ],
+    },
+    files: {
+      'src/App.tsx': 'export default function App() { return <view /> }\n',
+      'src/pkg/A.tsx': 'export default function A() { return <view /> }\n',
+      'src/pkg/B.tsx': 'export default function B() { return <view /> }\n',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await assert.rejects(
+    () => buildProject(project),
+    /Duplicate subpackage root: pkg/,
+  )
+})
+
 test('rejects a main page that reaches a subpackage component', async () => {
   const project = await createProject({
     config: {
@@ -1128,6 +1303,26 @@ test('places static assets inside an independent subpackage', async () => {
   assert.match(wxss, /url\('\.\.\/\.\.\/assets\/bg\.png'\)/)
 })
 
+test('rejects a static entry whose source does not exist', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      static: ['missing'],
+    },
+    files: {
+      'src/App.tsx': 'export default function App() { return <view /> }\n',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await assert.rejects(
+    () => buildProject(project),
+    /Static asset source not found: missing \(resolved to src\/missing\)/,
+  )
+})
+
 test('incremental build recompiles a parent that inlines a changed child', async () => {
   const project = await createProject({
     config: {
@@ -1222,6 +1417,44 @@ export default function App() {
     }
     assert.equal(builds >= 2, true)
     assert.match(wxml, />two</)
+  } finally {
+    watcher.close()
+  }
+})
+
+test('watch rebuilds with a changed config', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': 'export default function App() { return <view>one</view> }\n',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  const outputDirs = []
+  const errors = []
+  const watcher = await watchProject(project, {
+    onBuild: (result) => outputDirs.push(result.outputDir),
+    onError: (error) => errors.push(error),
+  })
+  try {
+    await writeProjectFile(
+      project,
+      'glaze.config.mjs',
+      `export default { source: 'src', output: 'dist', pages: { 'pages/home/index': 'App.tsx' } }\n`,
+    )
+    const deadline = Date.now() + 5000
+    while (Date.now() < deadline) {
+      if (await exists(path.join(project, 'dist/app.json'))) break
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    assert.deepEqual(errors, [])
+    assert.ok(outputDirs.includes(path.join(project, 'dist')))
+    assert.equal(await exists(path.join(project, 'dist/app.json')), true)
   } finally {
     watcher.close()
   }
@@ -1438,6 +1671,52 @@ test('applies pageConfig written in a non-normalized route form', async () => {
     await readFile(path.join(project, 'miniprogram/pages/home/index.json'), 'utf8'),
   )
   assert.equal(json.navigationBarTitleText, 'Home')
+})
+
+test('rejects duplicate page routes after normalization', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: {
+        '/pages/home/index': 'App.tsx',
+        'pages/home/index': 'Other.tsx',
+      },
+    },
+    files: {
+      'src/App.tsx': 'export default function App() { return <view /> }\n',
+      'src/Other.tsx': 'export default function Other() { return <view /> }\n',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await assert.rejects(
+    () => buildProject(project),
+    /Duplicate page route: pages\/home\/index/,
+  )
+})
+
+test('rejects duplicate page config routes after normalization', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      pageConfig: {
+        'pages/home/index': { navigationBarTitleText: 'One' },
+        '/pages/home/index': { navigationBarTitleText: 'Two' },
+      },
+    },
+    files: {
+      'src/App.tsx': 'export default function App() { return <view /> }\n',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await assert.rejects(
+    () => buildProject(project),
+    /Duplicate page config route "pages\/home\/index"/,
+  )
 })
 
 test('rejects a page route that escapes the output directory', async () => {

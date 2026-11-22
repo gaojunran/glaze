@@ -558,20 +558,20 @@ test('compiles a context provider around an inlined consumer', () => {
   const result = compileComponent(
     `
       import { createContext } from 'solid-js'
-      import Label from './Label'
+      import Caption from './Caption'
 
       export default function Page() {
         const Theme = createContext('light')
         return (
           <Theme.Provider value="dark">
-            <Label theme={Theme} />
+            <Caption theme={Theme} />
           </Theme.Provider>
         )
       }
     `,
     {
       inline: true,
-      resolveComponent: (name) => (name === 'Label' ? label : null),
+      resolveComponent: (name) => (name === 'Caption' ? label : null),
     },
   )
 
@@ -1612,4 +1612,236 @@ test('rejects a dynamic named slot', () => {
       `),
     /slot requires a string literal/,
   )
+})
+
+test('rejects component event props that collide with native events', () => {
+  for (const prop of ['onChange', 'onTap', 'onInput', 'onScrollToLower']) {
+    assert.throws(
+      () =>
+        compileComponent(
+          `
+            import Child from './Child'
+            export default function Page() {
+              return <Child ${prop}={() => {}} />
+            }
+          `,
+          { inline: false },
+        ),
+      /collides with the native/,
+    )
+  }
+
+  const renamed = compileComponent(
+    `
+      import Child from './Child'
+      export default function Page() {
+        return <Child onPickChange={() => {}} />
+      }
+    `,
+    { inline: false },
+  )
+  assert.match(renamed.wxml, /bind:pickChange="e0"/)
+})
+
+test('rejects props.class and props.style inside a component body', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Bad(props) {
+          return <view class={props.class}>x</view>
+        }
+      `),
+    /not delivered across Glaze component boundaries/,
+  )
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Bad(props) {
+          const value = props.style
+          return <view style={value}>x</view>
+        }
+      `),
+    /not delivered across Glaze component boundaries/,
+  )
+})
+
+test('passes data-* and aria-* attributes through to a component host', () => {
+  const result = compileComponent(
+    `
+      import Child from './Child'
+      export default function Page() {
+        return <Child data-id="main" aria-label="Close" />
+      }
+    `,
+    { inline: false },
+  )
+  assert.match(result.wxml, /<child data-id="main" aria-label="Close" \/>/)
+  assert.deepEqual(result.props, [])
+  assert.deepEqual(result.eventProps, {})
+  assert.deepEqual(result.components, [{ name: 'Child', source: './Child' }])
+})
+
+test('expands the native event map while keeping binding suffixes', () => {
+  const result = compileComponent(`
+    export default function Page() {
+      return (
+        <view
+          onChange={() => {}}
+          onInput={() => {}}
+          onScrollToLower={() => {}}
+          onAnimationIteration={() => {}}
+          onTouchStartCapture={() => {}}
+        />
+      )
+    }
+  `)
+  assert.match(result.wxml, /bindchange="e0"/)
+  assert.match(result.wxml, /bindinput="e1"/)
+  assert.match(result.wxml, /bindscrolltolower="e2"/)
+  assert.match(result.wxml, /bindanimationiteration="e3"/)
+  assert.match(result.wxml, /capture-bind:touchstart="e4"/)
+})
+
+test('renders boolean expression children inside For through the WXS value helper', () => {
+  const result = compileComponent(`
+    import { For } from 'solid-js'
+    export default function Page(props) {
+      return (
+        <For each={props.rows} key="id">
+          {(row) => <text>{row.done && row.title}</text>}
+        </For>
+      )
+    }
+  `)
+  assert.match(result.wxml, /<wxs module="glazeValue">/)
+  assert.match(result.wxml, /\{\{glazeValue\.value\(row\.done && row\.title\)\}\}/)
+})
+
+test('rejects a component name that kebab-cases to a built-in tag', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        import View from './View'
+        export default function Page() {
+          return <View />
+        }
+      `),
+    /conflicts with the built-in WXML <view> tag/,
+  )
+})
+
+test('rejects an explicit children prop on a component tag', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        import Child from './Child'
+        export default function Page() {
+          return <Child children={<text>x</text>} />
+        }
+      `),
+    /Pass children to <Child> as JSX children/,
+  )
+})
+
+test('rejects ref together with an id supplied by a static spread', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Page() {
+          return <view {...{ id: 'x' }} ref={() => {}}>x</view>
+        }
+      `),
+    /cannot also set id/,
+  )
+})
+
+test('restores imports after an inlined component falls back to a boundary', () => {
+  const child = `
+    import { createSignal } from 'solid-js'
+    const helper = createSignal(1)
+    export default function Child() {
+      return <text>{helper}</text>
+    }
+  `
+  const result = compileComponent(
+    `
+      import Child from './Child'
+      export default function Page() {
+        return <view><Child /></view>
+      }
+    `,
+    {
+      inline: true,
+      resolveComponent: (name) => (name === 'Child' ? child : null),
+    },
+  )
+  assert.deepEqual(result.components, [{ name: 'Child', source: './Child' }])
+  assert.doesNotMatch(result.js, /createSignal/)
+})
+
+test('does not treat a local Show declaration as a Solid control-flow tag', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        function Show(props) {
+          return <view>{props.children}</view>
+        }
+        export default function Page() {
+          return <Show><text>x</text></Show>
+        }
+      `),
+    /Component <Show> must be imported from a relative file/,
+  )
+})
+
+test('converts camelCase native attributes to kebab-case', () => {
+  const result = compileComponent(`
+    export default function Page() {
+      return <view hoverClass="tapped" dataSet="row" ariaLabel="row" />
+    }
+  `)
+  assert.match(
+    result.wxml,
+    /<view hover-class="tapped" data-set="row" aria-label="row" \/>/,
+  )
+
+  const component = compileComponent(
+    `
+      import Child from './Child'
+      export default function Page() {
+        return <Child userName="Ada" />
+      }
+    `,
+    { inline: false },
+  )
+  assert.match(component.wxml, /<child username="Ada" \/>/)
+})
+
+test('rejects a nested For key that is not a single field', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        import { For } from 'solid-js'
+        export default function Page(props) {
+          return (
+            <For each={props.rows} key="row.id">
+              {(row) => <text>{row.id}</text>}
+            </For>
+          )
+        }
+      `),
+    /not a single field key/,
+  )
+
+  const result = compileComponent(`
+    import { For } from 'solid-js'
+    export default function Page(props) {
+      return (
+        <For each={props.rows} keyed={(row) => row.id}>
+          {(row) => <text>{row().id}</text>}
+        </For>
+      )
+    }
+  `)
+  assert.match(result.wxml, /wx:key="id"/)
 })

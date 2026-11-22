@@ -274,7 +274,15 @@ Native elements accept all six glass-easel binding kinds through a suffix:
 | `onClickCaptureMutBind` | `capture-mut-bind:tap` |
 
 The suffix is parsed before the event-name lookup, so `onClickCaptureCatch`
-resolves to `tap` with the `capture-catch` kind. The simulator e2e taps nested
+resolves to `tap` with the `capture-catch` kind. Besides `onClick`, `onTap`,
+`onInput`, `onChange`, `onConfirm`, `onFocus`, `onBlur`, `onSubmit`, `onReset`,
+`onLongPress`/`onLongTap` and the touch events, the map covers scroll
+(`onScroll`, `onScrollToLower`, `onScrollToUpper`), media (`onLoad`,
+`onError`, `onTimeUpdate`, `onEnded`, `onPlay`, `onPause`, `onProgress`),
+picker (`onColumnChange`, `onLineChange`, `onRegionChange`), map
+(`onMarkertap`, `onCalloutTap`, `onLabelTap`, `onControlTap`), animation
+(`onAnimationStart`, `onAnimationIteration`, `onAnimationEnd`) and
+`onTransitionEnd`. The simulator e2e taps nested
 elements and verifies that `catch` suppresses the outer `bind`, `capture` runs
 before the target handler, and `mut-bind` suppresses the outer `mut-bind`. A
 component boundary probe verifies `catch:ping` and `capture-bind:ping` through
@@ -783,13 +791,13 @@ bundle size) is documented in `docs/build.md`.
 
 ### Validation for this wave
 
-Run on 2026-11-22 in the repository workspace:
+Run on 2026-11-23 in the repository workspace:
 
-- `pnpm -r test` — compiler 63 passed, build 20 passed, runtime 20 passed.
-- `pnpm build` — `5 pages, 12 components`.
+- `pnpm -r test` — compiler 197 passed, build 120 passed, runtime 90 passed, shared 2 passed.
+- `pnpm build` — `9 pages, 20 components`.
 - `target/debug/minidev test --project examples/solid-todo --browser
   ~/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell`
-  — 5 cases passed, 0 failed (about 26 s). The counter e2e covers nested
+  — 9 cases passed, 0 failed (about 43 s). The counter e2e covers nested
   loops, component events, keyed/non-keyed control flow, context, refs and list
   insert/append/delete. The reactive e2e covers a Solid 2 `createStore` with
   nested objects and arrays, `createMemo`, object-signal replacement, keyed
@@ -825,3 +833,41 @@ rendering failures, and the reasoning is recorded above.
   `Show`/`Switch` import is compiled as a normal component.
 - JSX text normalization trims indentation on the first and last non-empty
   lines without removing intentional spaces around expressions.
+
+### Component and attribute edge restrictions
+
+These restrictions keep the generated WXML unambiguous; each one is a compile
+error or a documented rewrite rather than a silent fallback:
+
+- **Component events vs native events.** A component event prop whose name is
+  also a native event prop (`onChange`, `onTap`, `onInput`, `onScrollToLower`,
+  ...) is rejected, because a bubbling native event can hit the same handler.
+  Rename the custom event, e.g. `onPickChange`.
+- **`props.class` / `props.style`.** Reading either member inside a component
+  body is rejected. Class and style are not delivered across Glaze component
+  boundaries; style the component host or pass an explicit prop.
+- **`data-*` / `aria-*` on component tags.** These attributes pass through to
+  the component host element and never become props or custom events.
+- **Boolean text inside loops.** A booleanish expression child inside `For` /
+  `Show` / `Repeat` is rendered through the `glazeValue` WXS helper, which
+  returns `''` for `true` / `false`. Root-level bindings keep using the runtime
+  `textValue` helper for the same result.
+- **Built-in tag names.** A component whose kebab-case name equals a built-in
+  WXML tag (`View` → `view`, `Label` → `label`, `ScrollView` →
+  `scroll-view`, ...) is rejected; rename the component.
+- **`children` prop.** Passing an explicit `children` attribute on a component
+  tag is rejected. Pass children as JSX children instead.
+- **`ref` with `id`.** Static spread attributes are expanded before the check,
+  so `{...{ id: 'x' }}` together with `ref` is rejected with the same duplicate
+  id error as an explicit `id`.
+- **Local control names.** A local `function Show` / `const Show` declaration
+  (and the other control-flow names) is compiled as a component reference, not
+  as the Solid built-in. Only an import from `solid-js`, or an unresolved name
+  for backward compatibility, selects the built-in.
+- **Native attribute names.** CamelCase attributes on native elements are
+  converted to kebab-case (`hoverClass` → `hover-class`, `dataSet` →
+  `data-set`); already hyphenated names stay unchanged. Component props keep
+  their existing lowercase WXML property mapping.
+- **`<For key="...">`.** A string key must be a single field name. A dotted or
+  indexed path such as `key="row.id"` is rejected; use
+  `keyed={(item) => item.id}` for a stable key.

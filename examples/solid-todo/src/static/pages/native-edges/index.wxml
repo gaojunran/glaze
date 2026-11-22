@@ -1,0 +1,68 @@
+<view class="bench-edges">
+  <view class="deep-section">
+    <view class="deep-chain" wx:for="{{chains}}" wx:key="id">
+      <view class="deep-node" data-level="0">
+        <text class="deep-label">L0</text>
+        <view class="deep-node" data-level="1">
+          <text class="deep-label">L1</text>
+          <view class="deep-node" data-level="2">
+            <text class="deep-label">L2</text>
+            <view class="deep-node" data-level="3">
+              <text class="deep-label">L3</text>
+              <view class="deep-node" data-level="4">
+                <text class="deep-label">L4</text>
+                <view class="deep-node" data-level="5">
+                  <text class="deep-label">L5</text>
+                  <view class="deep-node" data-level="6">
+                    <text class="deep-label">L6</text>
+                    <view class="deep-node" data-level="7">
+                      <text class="deep-label">L7</text>
+                      <view class="deep-node" data-level="8">
+                        <text class="deep-label">L8</text>
+                        <view class="deep-node" data-level="9">
+                          <text class="deep-label">L9</text>
+                          <text class="deep-count">{{item.count}}</text>
+                          <button class="deep-bump" data-index="{{index}}" bindtap="bumpLeaf">bump</button>
+                        </view>
+                      </view>
+                    </view>
+                  </view>
+                </view>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="form-section">
+    <input
+      class="field-input"
+      wx:for="{{fields}}"
+      wx:key="id"
+      value="{{item.value}}"
+      data-index="{{index}}"
+      bindinput="onFieldInput"
+    />
+    <text class="field-mirror">{{fields[19].value}}</text>
+  </view>
+
+  <view class="slot-section">
+    <button class="update-card" bindtap="updateCard">update card</button>
+    <bench-slot-card class="slot-card-host" wx:for="{{cards}}" wx:key="id">
+      <text class="card-text">{{item.text}}</text>
+    </bench-slot-card>
+  </view>
+
+  <view class="event-section">
+    <text class="picked">{{picked}}</text>
+    <bench-event-row
+      class="event-row-host"
+      wx:for="{{eventRows}}"
+      wx:key="id"
+      rowid="{{item.id}}"
+      bindpick="onPick"
+    />
+  </view>
+</view>

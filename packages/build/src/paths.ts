@@ -12,7 +12,11 @@ export const normalizeRoute = (route) =>
     .replace(/\.(tsx|wxml)$/, '')
 
 export const normalizeSubpackageRoot = (root) =>
-  root.replace(/\\/g, '/').replace(/^\.?\//, '').replace(/^\/+|\/+$/g, '')
+  root
+    .replace(/\\/g, '/')
+    .replace(/\/+/g, '/')
+    .replace(/^(?:\.\/)+/, '')
+    .replace(/^\/+|\/+$/g, '')
 
 export const hasRouteTraversal = (route) =>
   route.split(/[\\/]/).some((segment) => segment === '..')

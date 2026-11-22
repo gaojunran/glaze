@@ -192,6 +192,15 @@ export function inlineComponent(node, ctx, scope, name, source) {
   const childFile = typeof resolved === 'object' ? resolved.file ?? ctx.currentFile : ctx.currentFile
   const identity = childFile ?? `${ctx.currentFile ?? ''}:${source}`
   if (ctx.inlineStack.includes(identity)) return null
+  // An inline attempt mutates module-level compiler state before it can fail
+  // (or decide to fall back to a component boundary). Keep a snapshot so a
+  // failed attempt never leaks imports or WXS usage into the parent.
+  const previousImports = new Map(ctx.imports)
+  const previousKnownImports = new Set(ctx.knownImports)
+  const previousExtraImports = ctx.extraImports.length
+  const previousWxs = ctx.usesWxs
+  const previousWxsValue = ctx.usesWxsValue
+  let committed = false
   ctx.inlineStack.push(identity)
   try {
   let child
@@ -295,7 +304,7 @@ export function inlineComponent(node, ctx, scope, name, source) {
   const childrenWxml = hasChildren ? compileChildren(node.children, ctx, scope) : ''
 
   if (inLoop) {
-    return inlineComponentInLoop(
+    const wxml = inlineComponentInLoop(
       ctx,
       scope,
       name,
@@ -306,6 +315,8 @@ export function inlineComponent(node, ctx, scope, name, source) {
       childrenWxml,
       hasChildren,
     )
+    committed = true
+    return wxml
   }
 
   const blockId = ctx.blocks.length
@@ -329,16 +340,21 @@ export function inlineComponent(node, ctx, scope, name, source) {
 
   const previousFile = ctx.currentFile
   ctx.currentFile = childFile
-  const wxml = compileNode(child.jsx, ctx, null)
-  const childrenUsed = ctx.inlineChildrenUsed
-  const childrenCount = ctx.inlineChildrenCount
-
-  ctx.currentBlock = previousBlock
-  ctx.currentFile = previousFile
-  ctx.inlineChildren = previousChildren
-  ctx.inlinePropsParam = previousPropsParam
-  ctx.inlineChildrenUsed = previousUsed
-  ctx.inlineChildrenCount = previousCount
+  let wxml
+  let childrenUsed = false
+  let childrenCount = 0
+  try {
+    wxml = compileNode(child.jsx, ctx, null)
+    childrenUsed = ctx.inlineChildrenUsed
+    childrenCount = ctx.inlineChildrenCount
+  } finally {
+    ctx.currentBlock = previousBlock
+    ctx.currentFile = previousFile
+    ctx.inlineChildren = previousChildren
+    ctx.inlinePropsParam = previousPropsParam
+    ctx.inlineChildrenUsed = previousUsed
+    ctx.inlineChildrenCount = previousCount
+  }
 
   if (hasChildren && !childrenUsed) {
     throw new Error(`<${name}> does not render props.children`)
@@ -348,8 +364,16 @@ export function inlineComponent(node, ctx, scope, name, source) {
   }
 
   ctx.inlineComponents.push({ name, source, ...(childFile ? { file: childFile } : {}) })
+  committed = true
   return wxml
   } finally {
     ctx.inlineStack.pop()
+    if (!committed) {
+      ctx.imports = previousImports
+      ctx.knownImports = previousKnownImports
+      ctx.extraImports.length = previousExtraImports
+      ctx.usesWxs = previousWxs
+      ctx.usesWxsValue = previousWxsValue
+    }
   }
 }

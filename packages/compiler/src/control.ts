@@ -354,6 +354,11 @@ export function compileFor(node, ctx, scope) {
   if (keyAttr) {
     if (keyAttr.value && t.isStringLiteral(keyAttr.value)) key = keyAttr.value.value
     else throw new Error('<For> key must be a string literal in the first compiler wave')
+    if (key !== '*this' && (key.includes('.') || key.includes('[') || key.includes(']'))) {
+      throw new Error(
+        `"${key}" is not a single field key; use keyed={(item) => item.id} instead`,
+      )
+    }
   } else if (keyed === false) {
     key = null
   } else if (keyedField) {

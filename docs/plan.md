@@ -66,8 +66,7 @@ generated module), while `TodoItem` inside `For` stays a component. E2E passes.
 
 Acceptance met: toggling one todo sends `b2[0].done` (observed in the appservice
 log), removing a row through a `For` event works in e2e, and 1000-row reverse is
-65–71 ms on Glaze versus 65–68 ms native. Structural changes still send the full
-array.
+65–71 ms on Glaze versus 65–68 ms native. Structural changes now go through `spliceArrayDataOnPath` or a single middle-segment splice; the old "full array" note is superseded by `docs/optimizations.md`.
 
 ### M4 — build integration (done)
 

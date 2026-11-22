@@ -39,8 +39,10 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   const propertyNames = config.properties ?? []
   const isNotReady = (error: unknown) =>
     error instanceof NotReadyError || (error as { name?: string } | null)?.name === 'NotReadyError'
-  const reportError = (index: number, error: unknown) => {
-    if (!config.errorBoundary) logBindingError(index, error)
+  // Only a binding with an async boundary surfaces its failure through the
+  // Errored state; anything else has no channel and must still reach the log.
+  const reportError = (state: InstanceState, index: number, error: unknown) => {
+    if (state.bindingBoundaries[index] == null) logBindingError(index, error)
   }
   const BINDING_ERROR = Symbol('glaze.bindingError')
   type BindingResult = { value: unknown } | { [BINDING_ERROR]: unknown }
@@ -308,13 +310,16 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           const value = fn()
           state.initial[index] = value
           state.previous[index] = snapshotValue(index, value)
+          // The initial pass already committed a value, so the boundary status
+          // effect below may probe `isPending` for a later refetch.
+          if (state.bindingBoundaries[index] != null) state.settled[index] = true
           initial[`b${index}`] = normalizeDataValue(value)
         } catch (error) {
           // One async or broken binding must not prevent the component from
           // rendering the remaining values.
           if (!isNotReady(error)) state.error = error
           markAsync(state, index, error)
-          reportError(index, error)
+          reportError(state, index, error)
         }
       })
       // Components with async boundaries get one memo per binding. The memo
@@ -564,7 +569,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
             } catch (error) {
               if (!isNotReady(error)) state.error = error
               markAsync(state, index, error)
-              reportError(index, error)
+              reportError(state, index, error)
             }
           },
           error(error) {
@@ -573,13 +578,13 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
             first = false
             if (!isNotReady(error)) state.error = error
             markAsync(state, index, error)
-            reportError(index, error)
+            reportError(state, index, error)
           },
         })
       } catch (error) {
         // Even a synchronous effect-creation failure must not stop the
         // remaining bindings from being created.
-        reportError(index, error)
+        reportError(state, index, error)
       }
     }
 
@@ -614,7 +619,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
                 } catch (error) {
                   if (!isNotReady(error)) state.error = error
                   markAsync(state, index, error)
-                  reportError(index, error)
+                  reportError(state, index, error)
                   return { index, value: undefined, failed: true }
                 }
               }),
@@ -635,7 +640,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
                   try {
                     applyBinding(item.index, item.value)
                   } catch (error) {
-                    reportError(item.index, error)
+                    reportError(state, item.index, error)
                   }
                 }
               },
@@ -643,12 +648,12 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
                 first = false
                 if (!isNotReady(error)) state.error = error
                 for (const index of group) markAsync(state, index, error)
-                reportError(group[0] ?? 0, error)
+                reportError(state, group[0] ?? 0, error)
               },
             },
           )
         } catch (error) {
-          reportError(group[0] ?? 0, error)
+          reportError(state, group[0] ?? 0, error)
         }
       }
       state.bindings.forEach((fn, index) => {

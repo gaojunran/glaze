@@ -5,10 +5,17 @@ export type ListOp = { index: number; del: number; inserts: unknown[] }
 const keyOf = (item: unknown, key: string) =>
   (item as Record<string, unknown> | null | undefined)?.[key]
 
+const isObjectItem = (item: unknown) => item !== null && typeof item === 'object'
+
 /** Internal helper, exported for unit tests. */
 export function listOps(previous: unknown, next: unknown, key: string): ListOp[] | null {
   if (!Array.isArray(previous) || !Array.isArray(next)) return null
   if (key === '*this') return null
+  // Primitive rows have no key to align on; splice ops would be ambiguous, so
+  // let the caller replace the whole array instead.
+  if (previous.some((item) => !isObjectItem(item)) || next.some((item) => !isObjectItem(item))) {
+    return null
+  }
 
   let prefix = 0
   while (

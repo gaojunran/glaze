@@ -7,6 +7,7 @@ const config: GlazeConfig = {
     'pages/index/index': 'Counter.tsx',
     'pages/bench/index': 'Bench.tsx',
     'pages/bench-components/index': 'BenchComponents.tsx',
+    'pages/bench-edges/index': 'BenchEdges.tsx',
     'pages/reactive/index': 'ReactiveCases.tsx',
     'pages/tailwind/index': 'TailwindCase.tsx',
     'pages/context/index': 'ContextPage.tsx',
@@ -17,7 +18,11 @@ const config: GlazeConfig = {
   ],
   static: ['static', { from: 'assets/static-logo.png', to: 'assets/static-logo.png' }],
   css: { tailwind: { input: 'src/tailwind.css' } },
-  staticPages: ['pages/native/index', 'pages/native-components/index'],
+  staticPages: [
+    'pages/native/index',
+    'pages/native-components/index',
+    'pages/native-edges/index',
+  ],
 }
 
 export default config

@@ -1,0 +1,26 @@
+.bench-edges {
+  padding: 24rpx;
+}
+
+.deep-node {
+  padding-left: 8rpx;
+}
+
+.form-section,
+.slot-section,
+.event-section {
+  margin-top: 24rpx;
+}
+
+.field-input {
+  height: 64rpx;
+  margin-bottom: 8rpx;
+  border: 1rpx solid #d1d5db;
+}
+
+.card-text,
+.event-count,
+.picked {
+  font-size: 24rpx;
+  color: #374151;
+}

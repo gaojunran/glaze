@@ -1,0 +1,6 @@
+{
+  "usingComponents": {
+    "bench-slot-card": "./components/bench-slot-card/index",
+    "bench-event-row": "./components/bench-event-row/index"
+  }
+}

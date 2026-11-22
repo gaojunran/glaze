@@ -1,5 +1,6 @@
 import { existsSync, statSync, watch } from 'node:fs'
 import path from 'node:path'
+import { isBuildSourceFile } from './changes.ts'
 import { configFileFor, loadConfig } from './config.ts'
 import { buildProject } from './build.ts'
 
@@ -19,7 +20,7 @@ export async function watchProject(projectPath = process.cwd(), options: any = {
     const output = currentConfig.output ? path.resolve(project, currentConfig.output) : null
     if (full === output || (output && full.startsWith(`${output}${path.sep}`))) return true
     if (full.split(path.sep).includes('.tmp')) return true
-    return !/\.(tsx?|jsx?|mjs|mts|cts|json|wxml|wxss|scss|less|css)$/.test(name.toString())
+    return !isBuildSourceFile(name.toString())
   }
 
   const schedule = (filename?: string, base = project) => {

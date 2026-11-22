@@ -1,7 +1,7 @@
 import path from 'node:path'
 import * as t from '@babel/types'
 import { codeOf, containsJsx, walkAst } from './ast.ts'
-import { WXS_SOURCE } from './constants.ts'
+import { WXS_SOURCE, WXS_VALUE_SOURCE } from './constants.ts'
 import { emitModule } from './emit.ts'
 import { eventNameFor, splitEventBinding } from './events.ts'
 import { parseComponent, collectImports } from './parse.ts'
@@ -28,6 +28,28 @@ import type {
 export function compileComponent(source: string, options: CompileOptions = {}): CompileResult {
   const parsed = parseComponent(source)
   const { ast, statements, returnIndex, jsx, propsParam, props } = parsed
+
+  // Top-level declarations shadow the Solid control-flow names. A local
+  // `function Show` must compile as a component reference, not as <Show>.
+  const localNames = new Set<string>()
+  for (const node of ast.program.body) {
+    if ((t.isFunctionDeclaration(node) || t.isClassDeclaration(node)) && node.id) {
+      localNames.add(node.id.name)
+    }
+    if (t.isVariableDeclaration(node)) {
+      for (const declarator of node.declarations) {
+        if (t.isIdentifier(declarator.id)) localNames.add(declarator.id.name)
+      }
+    }
+  }
+  for (const node of statements.slice(0, returnIndex)) {
+    if (t.isFunctionDeclaration(node) && node.id) localNames.add(node.id.name)
+    if (t.isVariableDeclaration(node)) {
+      for (const declarator of node.declarations) {
+        if (t.isIdentifier(declarator.id)) localNames.add(declarator.id.name)
+      }
+    }
+  }
 
   const contextNames = new Set<string>()
   const contextKeys = new Map<string, { key: string; imported: boolean }>()
@@ -101,6 +123,8 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     asyncStatus: [],
     namedSlots: new Set<string>(),
     usesWxs: false,
+    usesWxsValue: false,
+    localNames,
     blocks: [
       {
         setup: statements.slice(0, returnIndex),
@@ -172,6 +196,9 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     addWxs() {
       this.usesWxs = true
     },
+    addWxsValue() {
+      this.usesWxsValue = true
+    },
     addRef(expression) {
       const index = this.refs.length
       this.refs.push({ code: codeOf(expression), block: this.currentBlock })
@@ -224,9 +251,11 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
   const propMap = Object.fromEntries(plainProps.map((name, index) => [name, propertyNames[index]]))
 
   const bodyWxml = compileNode(jsx, ctx, null)
-  const wxml = ctx.usesWxs
-    ? `<wxs module="glazeRange">${WXS_SOURCE}</wxs>${bodyWxml}`
-    : bodyWxml
+  const wxs = [
+    ctx.usesWxs ? `<wxs module="glazeRange">${WXS_SOURCE}</wxs>` : '',
+    ctx.usesWxsValue ? `<wxs module="glazeValue">${WXS_VALUE_SOURCE}</wxs>` : '',
+  ].join('')
+  const wxml = `${wxs}${bodyWxml}`
   const effectivePropsParam =
     propsParam?.name ?? (ctx.boundaryContexts.length > 0 ? '__glazeProps' : null)
   const js = emitModule(ast, statements.slice(0, returnIndex), ctx, {

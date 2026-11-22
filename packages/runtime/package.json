@@ -15,5 +15,8 @@
   "scripts": {
     "test": "node --conditions=browser --test test/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "glass-easel-template-compiler": "1.2.1"
   }
 }

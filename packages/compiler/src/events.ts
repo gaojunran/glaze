@@ -9,13 +9,39 @@ export const EVENT_MAP: Record<string, string> = {
   onBlur: 'blur',
   onSubmit: 'submit',
   onReset: 'reset',
+  onScroll: 'scroll',
+  onScrollToLower: 'scrolltolower',
+  onScrollToUpper: 'scrolltoupper',
+  onLoad: 'load',
+  onError: 'error',
+  onTimeUpdate: 'timeupdate',
+  onEnded: 'ended',
+  onPlay: 'play',
+  onPause: 'pause',
+  onProgress: 'progress',
+  onColumnChange: 'columnchange',
+  onLineChange: 'linechange',
+  onRegionChange: 'regionchange',
+  onMarkertap: 'markertap',
+  onCalloutTap: 'callouttap',
+  onLabelTap: 'labeltap',
+  onControlTap: 'controltap',
   onLongPress: 'longpress',
   onLongTap: 'longtap',
   onTouchStart: 'touchstart',
   onTouchMove: 'touchmove',
   onTouchEnd: 'touchend',
   onTouchCancel: 'touchcancel',
+  onAnimationStart: 'animationstart',
+  onAnimationIteration: 'animationiteration',
+  onAnimationEnd: 'animationend',
+  onTransitionEnd: 'transitionend',
 }
+
+// Base prop names that a native element can bind. A custom component event
+// with one of these names would be ambiguous with a bubbling native event, so
+// component tags reject them instead of silently sharing a handler.
+export const NATIVE_EVENT_PROPS: ReadonlySet<string> = new Set(Object.keys(EVENT_MAP))
 
 // Longest suffixes first: onClickCaptureCatch must not be read as onClickCatch.
 const EVENT_BINDINGS: Array<[string, string]> = [

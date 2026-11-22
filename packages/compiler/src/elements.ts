@@ -22,7 +22,14 @@ import {
   compileShow,
   compileSwitch,
 } from './control.ts'
-import { EVENT_MAP, eventAttrFor, eventNameFor, splitEventBinding } from './events.ts'
+import { BUILTIN_TAGS } from './constants.ts'
+import {
+  EVENT_MAP,
+  NATIVE_EVENT_PROPS,
+  eventAttrFor,
+  eventNameFor,
+  splitEventBinding,
+} from './events.ts'
 import { inlineComponent } from './inline.ts'
 import { inlineExpression } from './scope.ts'
 import type { AnyNode, CompilerContext, Scope } from './types.ts'
@@ -100,7 +107,10 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
   }
   const controlSource = ctx.imports.get(name)
   const isControl =
-    controlSource === 'solid-js' || (controlSource === undefined && !ctx.knownImports.has(name))
+    controlSource === 'solid-js' ||
+    (controlSource === undefined &&
+      !ctx.knownImports.has(name) &&
+      !ctx.localNames.has(name))
   if (isControl) {
     if (name === 'Show') return wrapDirectives(compileShow(node, ctx, scope), extraAttrs)
     if (name === 'For') return wrapDirectives(compileFor(node, ctx, scope), extraAttrs)
@@ -125,12 +135,17 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
     return compileComponentElement(node, ctx, scope, extraAttrs)
   }
 
+  const attributes = expandAttributes(node.openingElement.attributes)
   const attrs = []
-  for (const attr of expandAttributes(node.openingElement.attributes)) {
+  for (const attr of attributes) {
     if (!t.isJSXAttribute(attr)) {
       throw new Error('JSX spread attributes are not supported')
     }
-    const attrName = t.isJSXIdentifier(attr.name) ? attr.name.name : null
+    const attrName = t.isJSXIdentifier(attr.name)
+      ? attr.name.name
+      : t.isJSXNamespacedName(attr.name)
+        ? `${attr.name.namespace.name}:${attr.name.name.name}`
+        : null
     if (!attrName) throw new Error('Unsupported JSX attribute name')
     if (attrName === 'key') continue
     if (attrName === 'ref') {
@@ -138,7 +153,7 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
         throw new Error('ref inside <For>, <Show> or <Match> is not supported yet')
       }
       if (
-        node.openingElement.attributes.some(
+        attributes.some(
           (item) => t.isJSXAttribute(item) && t.isJSXIdentifier(item.name, { name: 'id' }),
         )
       ) {
@@ -172,7 +187,9 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
     if (attrName === 'innerHTML' || attrName === 'textContent') {
       throw new Error(`"${attrName}" is not supported; render child nodes instead`)
     }
-    const propName = attrName === 'className' ? 'class' : attrName
+    // Native WXML attributes are kebab-case. Event names were handled above;
+    // component props keep their own lowercasing rule below.
+    const propName = attrName === 'className' ? 'class' : kebabCase(attrName)
     if (t.isStringLiteral(expression) || t.isNumericLiteral(expression)) {
       const value = String(expression.value)
       const asset = t.isStringLiteral(expression) ? staticAssetAttr(propName, value, ctx) : null
@@ -205,6 +222,11 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
 
 export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
   const name = tagName(node.openingElement.name)
+  if (BUILTIN_TAGS.has(kebabCase(name))) {
+    throw new Error(
+      `Component <${name}> conflicts with the built-in WXML <${kebabCase(name)}> tag; rename the component`,
+    )
+  }
   const source = ctx.imports.get(name)
   if (!source) {
     throw new Error(`Component <${name}> must be imported from a relative file`)
@@ -241,18 +263,44 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
     if (attrName === 'ref') {
       throw new Error('ref on a component is not supported yet')
     }
+    if (attrName === 'children') {
+      throw new Error(`Pass children to <${name}> as JSX children, not as a "children" prop`)
+    }
     if (/^on[A-Z]/.test(attrName)) {
+      const binding = splitEventBinding(attrName) ?? { base: attrName, kind: 'bind' }
+      if (NATIVE_EVENT_PROPS.has(binding.base)) {
+        throw new Error(
+          `Component event "${attrName}" collides with the native "${EVENT_MAP[binding.base]}" event; rename the custom event, e.g. "onPick${binding.base.slice(2)}"`,
+        )
+      }
       const expression = getExpression(attr)
       if (expression == null) continue
       if (containsJsx(expression)) {
         throw new Error(`Event handler "${attrName}" cannot be JSX`)
       }
-      const binding = splitEventBinding(attrName) ?? { base: attrName, kind: 'bind' }
       const index = ctx.addEvent(expression, scope, true)
       attrs.push(
         `${eventAttrFor(binding.kind, eventNameFor(binding.base), true)}="e${index}"`,
       )
       pushScopeIndexAttrs(attrs, scope)
+      continue
+    }
+    // data-* and aria-* pass through to the component host element. They are
+    // not props or events, so the child never declares or observes them.
+    if (/^(data|aria)-[A-Za-z0-9_-]+$/.test(attrName)) {
+      const expression = getExpression(attr)
+      if (expression == null) continue
+      if (containsJsx(expression)) {
+        throw new Error(`Attribute "${attrName}" cannot be JSX`)
+      }
+      if (t.isStringLiteral(expression) || t.isNumericLiteral(expression)) {
+        attrs.push(`${attrName}="${escapeAttr(String(expression.value))}"`)
+      } else if (scope) {
+        attrs.push(`${attrName}="{{${inlineExpression(expression, scope, ctx)}}}"`)
+      } else {
+        const index = ctx.addBinding(expression)
+        attrs.push(`${attrName}="{{b${index}}}"`)
+      }
       continue
     }
     if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(attrName)) {
@@ -424,7 +472,6 @@ export function compileExpressionChild(expression, ctx, scope) {
   if (containsJsx(expression)) {
     throw new Error('JSX values are not supported in expressions; use a JSX branch or child')
   }
-  if (scope) return `{{${inlineExpression(expression, scope, ctx)}}}`
   // Solid renders nothing for boolean children; WXML would render the strings
   // "true"/"false" from a raw binding. Only expressions that can evaluate to a
   // boolean need the wrapper; a plain numeric/string binding keeps its shape.
@@ -434,6 +481,13 @@ export function compileExpressionChild(expression, ctx, scope) {
     (t.isUnaryExpression(expression) && expression.operator === '!') ||
     (t.isBinaryExpression(expression) &&
       ['==', '===', '!=', '!==', '<', '<=', '>', '>='].includes(expression.operator))
+  if (scope) {
+    if (booleanish) {
+      ctx.addWxsValue()
+      return `{{glazeValue.value(${inlineExpression(expression, scope, ctx)})}}`
+    }
+    return `{{${inlineExpression(expression, scope, ctx)}}}`
+  }
   if (booleanish) {
     ctx.addHelper('textValue')
     const index = ctx.addBindingCode(`textValue(${codeOf(expression)})`)

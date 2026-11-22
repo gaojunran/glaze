@@ -154,8 +154,11 @@ async function buildProjectInternal(
     ...routes,
     ...(config.staticPages ?? []).map((route) => normalizeRoute(route)),
   ])
+  const pageConfigForRoute = new Map()
+  const pageConfigSource = new Map()
   for (const [route, pageConfig] of Object.entries(config.pageConfig ?? {})) {
-    if (!knownRoutes.has(normalizeRoute(route))) {
+    const normalized = normalizeRoute(route)
+    if (!knownRoutes.has(normalized)) {
       throw new Error(`Page config route "${route}" does not match any page`)
     }
     if (
@@ -169,10 +172,15 @@ async function buildProjectInternal(
     ) {
       throw new Error(`Page config for "${route}" must be an object`)
     }
+    const previous = pageConfigSource.get(normalized)
+    if (previous !== undefined) {
+      throw new Error(
+        `Duplicate page config route "${normalized}": "${previous}" and "${route}" normalize to the same route`,
+      )
+    }
+    pageConfigSource.set(normalized, route)
+    pageConfigForRoute.set(normalized, pageConfig)
   }
-  const pageConfigForRoute = new Map(
-    Object.entries(config.pageConfig ?? {}).map(([route, value]) => [normalizeRoute(route), value]),
-  )
   const ownerOf = (file) => {
     const owner = [...subpackages]
       .sort((left, right) => right.root.length - left.root.length)
@@ -354,6 +362,56 @@ async function buildProjectInternal(
     )
   }
 
+  // Reserve every generated output path before copying static files so a
+  // static entry or a page wrapper cannot silently overwrite generated code.
+  const outputClaims = new Map()
+  const claimOutput = (relative, writer) => {
+    const target = normalizeSourcePath(relative)
+    const previous = outputClaims.get(target)
+    if (previous) {
+      throw new Error(
+        `Output path collision: "${target}" is written by ${previous} and ${writer}`,
+      )
+    }
+    outputClaims.set(target, writer)
+  }
+  const projectPathOf = (file) => normalizeSourcePath(path.relative(project, file))
+  for (const file of used) {
+    const owner = ownerOf(file)
+    const target = `${owner ? `${owner.root}/` : ''}components/${names.get(file)}/index`
+    for (const extension of ['wxml', 'json', 'wxss', 'js']) {
+      claimOutput(
+        `${target}.${extension}`,
+        `component "${projectPathOf(file)}" -> "${target}.${extension}"`,
+      )
+    }
+  }
+  const runtimeGroups = new Set()
+  for (const file of used) {
+    const owner = ownerOf(file)
+    if (owner && !owner.independent) continue
+    runtimeGroups.add(owner ? owner.root : '')
+  }
+  for (const root of runtimeGroups) {
+    const target = root ? `${root}/${SHARED_MODULE}` : SHARED_MODULE
+    claimOutput(
+      target,
+      `${root ? `subpackage "${root}"` : 'main package'} runtime -> "${target}"`,
+    )
+  }
+  for (const entry of pageEntries) {
+    if (staticRoutes.has(entry.route)) continue
+    for (const extension of ['wxml', 'json', 'wxss', 'js']) {
+      const target = `${entry.route}.${extension}`
+      claimOutput(target, `page route "${entry.route}" -> "${target}"`)
+    }
+  }
+  claimOutput('app.json', 'generated "app.json"')
+  if (existsSync(path.join(sourceDir, 'app.js'))) claimOutput('app.js', 'copied "app.js"')
+  if (hasAppStyle || config.css?.tailwind) {
+    claimOutput('app.wxss', 'generated "app.wxss"')
+  }
+
   await mkdir(stagingBase, { recursive: true })
   const stagingDir = await mkdtemp(path.join(stagingBase, 'out-'))
 
@@ -366,6 +424,13 @@ async function buildProjectInternal(
       }
       return entry
     }
+    const claimStatic = (source, target) => {
+      const targetPath = normalizeSourcePath(path.relative(stagingDir, target))
+      claimOutput(
+        targetPath,
+        `static asset "${projectPathOf(source)}" -> "${targetPath}"`,
+      )
+    }
     const copyTree = async (source, target) => {
       await mkdir(target, { recursive: true })
       for (const item of await readdir(source, { withFileTypes: true })) {
@@ -374,6 +439,7 @@ async function buildProjectInternal(
         if (item.isDirectory()) {
           await copyTree(from, to)
         } else {
+          claimStatic(from, to)
           await copyFile(from, to)
           assets.set(from, normalizeSourcePath(path.relative(stagingDir, to)))
         }
@@ -395,13 +461,18 @@ async function buildProjectInternal(
       if (!isInside(sourceDir, from)) {
         throw new Error(`Static asset source must be inside "source": ${entry.from}`)
       }
-      if (!existsSync(from)) continue
-      const root = entry.subpackage
-        ? path.join(stagingDir, entry.subpackage)
-        : stagingDir
-      if (entry.subpackage && !subpackages.some((item) => item.root === entry.subpackage)) {
+      if (!existsSync(from)) {
+        throw new Error(
+          `Static asset source not found: ${entry.from} (resolved to ${projectPathOf(from)})`,
+        )
+      }
+      const subpackageRoot = entry.subpackage
+        ? normalizeSubpackageRoot(entry.subpackage)
+        : null
+      if (subpackageRoot && !subpackages.some((item) => item.root === subpackageRoot)) {
         throw new Error(`Static asset subpackage does not exist: ${entry.subpackage}`)
       }
+      const root = subpackageRoot ? path.join(stagingDir, subpackageRoot) : stagingDir
       if (
         entry.to &&
         (path.isAbsolute(entry.to) ||
@@ -418,6 +489,7 @@ async function buildProjectInternal(
       if (sourceStat.isDirectory()) {
         await copyTree(from, target)
       } else {
+        claimStatic(from, target)
         await mkdir(path.dirname(target), { recursive: true })
         await copyFile(from, target)
         assets.set(from, normalizeSourcePath(path.relative(stagingDir, target)))
@@ -475,11 +547,6 @@ async function buildProjectInternal(
       const sharedOwner = owner && owner.independent ? owner : null
       const sharedBase = sharedOwner ? path.join(stagingDir, sharedOwner.root) : stagingDir
       const sharedPath = path.join(sharedBase, SHARED_MODULE)
-      if (existsSync(sharedPath) || existsSync(path.dirname(sharedPath))) {
-        throw new Error(
-          `Output file collision: ${SHARED_MODULE} already exists in the staged output`,
-        )
-      }
       group = {
         dir: path.join(base, 'components'),
         sharedPath,

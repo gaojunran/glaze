@@ -758,6 +758,127 @@ test('a context-consuming component rebuilds its root when re-attached', async (
   assert.equal(merged().b1, 4)
 })
 
+test('logs a failing binding that has no async boundary even with errorBoundary', () => {
+  const log = captureConsoleError()
+  try {
+    const def = defineGlazeComponent({
+      errorBoundary: true,
+      data: { b0: null, b1: null },
+      setup(ctx) {
+        ctx.bind(0, () => {
+          throw new Error('boundary failure')
+        }, 0)
+        ctx.bind(1, () => {
+          throw new Error('plain failure')
+        })
+      },
+    })
+
+    createInstance(def)
+
+    assert.equal(log.errors.length, 1)
+    assert.match(String(log.errors[0][0]), /binding b1 failed/)
+  } finally {
+    log.restore()
+  }
+})
+
+test('a manual NotReadyError after a commit toggles Loading', async () => {
+  let setPhase
+  const def = defineGlazeComponent({
+    errorBoundary: true,
+    asyncStatus: [{ index: 1, kind: 'loading', boundary: 0 }],
+    data: { b0: null, b1: null },
+    setup(ctx) {
+      const [phase, set] = createSignal(0)
+      setPhase = set
+      ctx.bind(0, () => {
+        const value = phase()
+        if (value === 1) throw new NotReadyError()
+        return `v${value}`
+      }, 0)
+      ctx.bind(1, () => ctx.loading(0))
+    },
+  })
+
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  assert.equal(instance.calls.at(-1).b0, 'v0')
+  assert.equal(instance.calls.at(-1).b1, false)
+
+  setPhase(1)
+  await tick()
+  assert.equal(instance.calls.at(-1).b1, true)
+
+  setPhase(2)
+  await tick()
+  assert.equal(instance.calls.at(-1).b0, 'v2')
+  assert.equal(instance.calls.at(-1).b1, false)
+})
+
+test('bindings sharing an error source update one Errored entry', async () => {
+  let setMessage
+  const def = defineGlazeComponent({
+    errorBoundary: true,
+    asyncStatus: [{ index: 3, kind: 'error', boundary: 0 }],
+    data: { b0: null, b1: null, b2: null, b3: null, b4: null },
+    setup(ctx) {
+      const [message, set] = createSignal('first')
+      setMessage = set
+      const fail = () => {
+        const error = new Error(message())
+        ;(error as { source?: string }).source = 'shared'
+        throw error
+      }
+      ctx.bind(0, fail, 0)
+      ctx.bind(1, fail, 0)
+      ctx.bind(2, () => ctx.errorArray(0).length)
+      ctx.bind(3, () => ctx.errored(0))
+      ctx.bind(4, () => (ctx.error(0) as Error | null)?.message)
+    },
+  })
+
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  const merged = () => Object.assign({}, ...instance.calls)
+  assert.equal(merged().b2, 1)
+  assert.equal(merged().b3, true)
+  assert.equal(merged().b4, 'first')
+
+  setMessage('second')
+  await tick()
+  assert.equal(merged().b2, 1)
+  assert.equal(merged().b4, 'second')
+})
+
+test('primitive list items replace the whole array', async () => {
+  assert.equal(listOps([1, 2], [1, 3], 'x'), null)
+  assert.equal(listOps([1, 2], [2, 1], 'x'), null)
+  assert.equal(listPatch([1, 2], [1, 3], 'x', 'b0'), null)
+  assert.equal(listPatch([1, 2], [2, 1], 'x', 'b0'), null)
+  assert.equal(listOps([{ id: 1 }], [{ id: 1, tag: 2 }], '*this'), null)
+  assert.equal(listPatch([{ id: 1 }], [{ id: 1, tag: 2 }], '*this', 'b0'), null)
+
+  let setNums
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'x' },
+    setup(ctx) {
+      const [nums, set] = createSignal([1, 2])
+      setNums = set
+      ctx.bind(0, () => nums())
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+
+  setNums([2, 1])
+  await tick()
+  assert.deepEqual(instance.calls.at(-1), { b0: [2, 1] })
+})
+
 test('keyed lists of primitive items still reach the data layer', async () => {
   let setNums
   const def = defineGlazeComponent({

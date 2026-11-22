@@ -71,6 +71,12 @@ Paths are validated before anything is written:
 This protects the project from a config typo such as `output: 'src'` or
 `output: '.'` deleting source files or the project itself.
 
+Routes and subpackage roots are normalized before they are validated (leading
+`./`, trailing slashes and Windows backslashes). Two subpackage roots or two
+page config keys that normalize to the same value are rejected instead of the
+last one silently winning. The same applies to two page routes that normalize
+to the same route.
+
 ## SCSS and Less
 
 SCSS and Less are compiled inside `@glaze/build`, not by the WeChat DevTools
@@ -143,9 +149,37 @@ Each compiled component directory contains:
 
 Page JSON starts from the generated `usingComponents` and merges
 `pageConfig[route]` over it; a page config may add components but `glaze-page`
-always points at the generated component. Only components actually reached from
-a page are emitted. A component that is
+always points at the generated component. `pageConfig` keys are normalized too,
+and two keys that normalize to the same route are a build error. Only components
+actually reached from a page are emitted. A component that is
 always inlined (`Header` in the example) does not get an output directory.
+
+### Output collisions
+
+The builder reserves every generated path before it copies static files or
+writes page wrappers: component `index.*` files, the shared
+`glaze-runtime/index.js`, page wrapper files, and the app shell files it is
+going to write. A later writer that lands on a reserved path fails the build
+with an `Output path collision` error naming both writers and the shared path.
+
+This catches:
+
+- a page route such as `components/glaze-app/index` that would overwrite the
+  generated component for `App.tsx` (also inside a subpackage);
+- a `static` file such as `static/components/glaze-app/index.wxml` or
+  `static/glaze-runtime/index.js` that would overwrite generated code;
+- a `static` file that would overwrite a generated page wrapper;
+- two `static` entries that target the same output file.
+
+Failures happen in the staging directory, so the previous `output` is left
+intact.
+
+An alternative was to let the last writer win or to check only static files
+that look like generated paths. A single claim registry was chosen because it
+covers page wrappers, per-package runtime copies and config-dependent app files
+with one check, and because it runs before the staged write. Static-to-static
+duplicates are rejected for the same reason: a silent last-wins copy hides a
+config error.
 
 Generated modules bundle with `minify: true` and resolve `solid-js` and
 `@glaze/runtime` through one shared `glaze-runtime/index.js` module. Components
@@ -173,8 +207,10 @@ relative path, never an absolute `/glaze-runtime/...` path.
 
 ### Subpackages
 
-`subpackages` entries generate `app.json.subPackages`. Each page route is
-`<root>/<page>`; the page source path remains relative to `source`:
+`subpackages` entries generate `app.json.subPackages`. Roots are normalized
+before validation: `./pkg/`, `pkg/` and `pkg\` all mean `pkg`, and duplicate
+normalized roots are a build error. Each page route is `<root>/<page>`; the page
+source path remains relative to `source`:
 
 ```ts
 subpackages: [
@@ -252,7 +288,10 @@ static: [
 
 An object entry copies a directory's contents into `to` (relative to the output
 root or the named subpackage). A single file is copied to `to` or to the target
-directory.
+directory. `subpackage` is normalized like a subpackage root.
+
+Every `static` source must exist. A typo in `from` is a build error naming the
+missing path; it is not skipped silently.
 
 ### Imported assets
 
@@ -371,8 +410,10 @@ incremental.
 
 ## Vite plugin
 
-`@glaze/vite-plugin` runs `buildProject` from `buildStart` and rebuilds on a
-`.ts`/`.tsx` hot update:
+`@glaze/vite-plugin` runs `buildProject` from `buildStart` and rebuilds on
+hot updates to TypeScript/JavaScript, styles (`.wxss`, `.scss`, `.less`, `.css`),
+JSON and config files. The changed file is passed to `buildProject` as
+`changedFiles`, so the incremental compile cache can skip unaffected TSX files:
 
 ```js
 import glaze from '@glaze/vite-plugin'
@@ -395,16 +436,26 @@ pnpm --filter @glaze/build test
 
 They build temporary projects and cover: page wrappers and inlined children,
 incremental compilation with dependency propagation, `watch` rebuilding a
-changed inlined child, static asset copying and WXSS URL rewriting,
-helper/JSON/type-only imports, output path safety, preservation of previous
-output on failure, `clean: false` merging, reachability, output-name collisions,
-Windows separators, WXSS portability, `staticPages` deduplication, app shell
-warnings, config reloads, CLI help, generated `styleIsolation`, the shared
-runtime file, relative `require()` resolution, namespace-import rejection,
-subpackage ownership and runtime placement, page config merging, route
-validation, and `static`/runtime collisions. The current suite has 48 builder
-tests; compiler has 82, runtime 26, shared 2. The runtime also covers first-pending, refetch
+changed inlined child and reloading a changed config, static asset copying and
+WXSS URL rewriting, helper/JSON/type-only imports, output path safety,
+preservation of previous output on failure, `clean: false` merging,
+reachability, output-name collisions, output path collisions between page
+wrappers, static files, components and the runtime, Windows separators, WXSS
+portability, `staticPages` deduplication, app shell warnings, config reloads,
+CLI help, generated `styleIsolation`, the shared runtime file, relative
+`require()` resolution, namespace-import rejection, subpackage root
+normalization and duplicate rejection, subpackage ownership and runtime
+placement, page config merging and duplicate rejection, route validation, and
+the Vite hot-update options. `build.test.ts` now has 59 builder tests and `edge-cases.test.ts` adds
+61; compiler has 197 (including 96 independent edge cases and 7 glass-easel WXML
+compilation cases), runtime has 90 (including 6 glass-easel lifecycle tests, 6 real WXML render
+tests and 48 independent edge cases), shared 2. The runtime also covers first-pending, refetch
 pending, and error recovery for a memoized async binding.
+
+`pnpm --filter @glaze/build test` and `pnpm --filter @glaze/build typecheck`
+are green on Node 22. The collision tests assert that the error names both
+writers; the watch test asserts that changing `glaze.config.mjs` rebuilds into
+the new output directory.
 
 Real simulator run (nine cases, including asset loading through
 `wx.getImageInfo`):
@@ -427,7 +478,7 @@ queries, async boundaries and an independent subpackage. The counter case also
 asserts the imported asset URL and loads it with `wx.getImageInfo`, then checks
 the static `src` literal the same way.
 
-On the example project (`pnpm build`, 8 pages, 16 components) the shared module
+On the example project (`pnpm build`, 9 pages, 20 components) the shared module
 is 46,582 B and all generated component `index.js` files total 10,678 B. Before
 the shared runtime the six-component version was about 195 KB of component JS.
 

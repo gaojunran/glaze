@@ -12,6 +12,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
+    "glass-easel-template-compiler": "1.2.1",
     "typescript": "^5.9.3"
   }
 }

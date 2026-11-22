@@ -108,6 +108,8 @@ export type CompilerContext = {
   asyncStatus: { index: number; kind: 'loading' | 'error'; boundary: number }[]
   namedSlots: Set<string>
   usesWxs: boolean
+  usesWxsValue: boolean
+  localNames: Set<string>
   blocks: Block[]
   currentBlock: number
   currentFile: string | null
@@ -124,6 +126,7 @@ export type CompilerContext = {
   withRefForbidden<T>(fn: () => T): T
   addHelper(name: string): void
   addWxs(): void
+  addWxsValue(): void
   addRef(expression: AnyNode): number
   addComponent(name: string, source: string, fromFile?: string | null): void
 }

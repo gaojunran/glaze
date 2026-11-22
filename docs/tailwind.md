@@ -155,7 +155,7 @@ Example project (`examples/solid-todo`, Tailwind page plus existing pages):
 
 ```bash
 pnpm --filter @glaze/example-solid-todo exec glaze build
-# glaze build: 5 pages, 12 components
+# glaze build: 9 pages, 20 components
 # miniprogram/app.wxss: 1,752 bytes (generated CSS plus the project app.wxss)
 ```
 

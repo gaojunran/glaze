@@ -11,6 +11,9 @@ importers:
       '@types/node':
         specifier: ^22.20.5
         version: 22.20.5
+      glass-easel-template-compiler:
+        specifier: 1.2.1
+        version: 1.2.1
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -69,6 +72,10 @@ importers:
       '@glaze/shared':
         specifier: workspace:*
         version: link:../shared
+    devDependencies:
+      glass-easel-template-compiler:
+        specifier: 1.2.1
+        version: 1.2.1
 
   packages/runtime:
     dependencies:
@@ -78,6 +85,10 @@ importers:
       solid-js:
         specifier: ^2.0.3
         version: 2.0.3
+    devDependencies:
+      glass-easel-template-compiler:
+        specifier: 1.2.1
+        version: 1.2.1
 
   packages/shared: {}
 
@@ -1469,6 +1480,9 @@ packages:
 
   get-value@4.1.0:
     resolution: {integrity: sha512-mKjrL73VxCUixi0Qe9OuerDVkm+475FeNwM5zZpjK6TK/a7fqv/dGI7vkRgvWkyw1xQ9Fl+wKuOUgPkE6aYB3w==}
+
+  glass-easel-template-compiler@1.2.1:
+    resolution: {integrity: sha512-93JoqFGESFOu9N7lAalc3H2HvVjSIafMw6CfLiIgYgCfOYSaVD9ihmOJelH3iCLL1fIrULFTkGsGMCFOAF8BdQ==}
 
   glass-easel@1.2.1:
     resolution: {integrity: sha512-N40kOgKD3Tw45R0e1TEOYrhepxNAXmGsanv+ZXpl+92/GjSCuMGd9xOb0e45d5BXccU5MKjabFSCp/rlRtQ3QQ==}
@@ -3252,6 +3266,8 @@ snapshots:
     optional: true
 
   get-value@4.1.0: {}
+
+  glass-easel-template-compiler@1.2.1: {}
 
   glass-easel@1.2.1: {}
 

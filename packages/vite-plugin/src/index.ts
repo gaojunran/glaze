@@ -1,4 +1,4 @@
-import { buildProject } from '@glaze/build'
+import { buildProject, hotUpdateBuildOptions } from '@glaze/build'
 
 /**
  * Vite integration for Glaze.
@@ -21,8 +21,10 @@ export default function glaze(options: { project?: string; build?: boolean } = {
       if (enabled) await buildProject(project)
     },
     async handleHotUpdate(context) {
-      if (!enabled || !/\.[jt]sx?$/.test(context.file)) return
-      await buildProject(project)
+      if (!enabled) return
+      const buildOptions = hotUpdateBuildOptions(context.file)
+      if (!buildOptions) return
+      await buildProject(project, buildOptions)
     },
   }
 }
