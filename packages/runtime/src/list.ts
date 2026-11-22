@@ -1,3 +1,5 @@
+import type { DataChange } from './types.ts'
+
 export type ListOp = { index: number; del: number; inserts: unknown[] }
 
 const keyOf = (item: unknown, key: string) =>
@@ -51,32 +53,27 @@ export function listPatch(
   next: unknown,
   key: string,
   binding: string,
-): Record<string, unknown> | null {
+): DataChange[] | null {
   if (!Array.isArray(previous) || !Array.isArray(next)) return null
   if (key === '*this') return null
   if (previous.length !== next.length) return null
 
-  const previousIndex = new Map(previous.map((item, index) => [item?.[key], index]))
-  const patch: Record<string, unknown> = {}
-
+  const patch: DataChange[] = []
   for (let index = 0; index < next.length; index += 1) {
     const item = next[index]
-    const beforeIndex = previousIndex.get(item?.[key])
-    if (beforeIndex !== index) return null
+    const before = previous[index]
+    if (!before || !Object.is(keyOf(before, key), keyOf(item, key))) return null
 
-    const before = previous[beforeIndex]
     if (before === item) continue
     for (const field of Object.keys(item)) {
-      if (before && Object.is(before[field], item[field])) continue
-      if (!before || !(field in before)) return null
-      patch[`${binding}[${index}].${field}`] = item[field]
+      if (Object.is(before[field], item[field])) continue
+      if (!(field in before)) return null
+      patch.push({ path: [binding, index, field], value: item[field] })
     }
-    for (const field of Object.keys(before ?? {})) {
+    for (const field of Object.keys(before)) {
       if (!(field in item)) return null
     }
   }
 
   return patch
 }
-
-declare const Component: (config: Record<string, unknown>) => unknown

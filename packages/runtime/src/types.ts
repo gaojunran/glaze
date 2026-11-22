@@ -3,6 +3,10 @@ import type { getOwner } from 'solid-js'
 export type GlazeBinding = () => unknown
 export type GlazeEventHandler = (event?: unknown) => void
 export type GlazeProps = Record<string, unknown>
+export type DataPath = (string | number)[]
+export type DataChange =
+  | { path: DataPath; value: unknown; splice?: never }
+  | { path: DataPath; splice: { index: number; del: number; inserts: unknown[] }; value?: never }
 
 
 export type GlazeContextProvider = (props: {
@@ -34,7 +38,7 @@ export type InstanceState = {
   refs: { id: string; fn: (node: unknown) => void }[]
   initial: unknown[]
   previous: unknown[]
-  pending: Record<string, unknown>
+  pending: DataChange[]
   flushScheduled: boolean
   props: Record<string, [() => unknown, (value: unknown) => void]>
   propsProxy: GlazeProps | null

@@ -2,6 +2,8 @@
   <view class="bar">
     <button class="update-row" bindtap="updateRow">update</button>
     <button class="append-row" bindtap="appendRow">append</button>
+    <button class="toggle-all" bindtap="toggleAll">toggle all</button>
+    <button class="reverse-rows" bindtap="reverseRows">reverse</button>
     <button class="delete-row" bindtap="deleteRow">delete</button>
   </view>
   <view class="list">

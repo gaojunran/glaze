@@ -2,8 +2,8 @@
 
 These are glass-easel-specific optimizations for standard Solid code. The
 component-dense benchmark, the shared runtime module, P0 pure-component
-inlining and the `replaceDataOnPath` flush are implemented and measured below;
-binding-effect batching is not.
+inlining, binding-effect batching and the structured data-change queue are
+implemented and measured below.
 
 ## Why the current benchmark is not enough
 
@@ -119,34 +119,87 @@ append and 187 ms delete. This is within run spread; it is not claimed as a
 wall-time win. The concrete change is fewer effects per component, with a
 maximum of eight scalar bindings recomputed per change.
 
-## P1 — Skip path parsing with `replaceDataOnPath`
+## P1 — Structured data-change queue
 
-Status: implemented.
+Status: implemented. This supersedes the earlier pending key/value map and the
+`dataPath()` parser.
 
-The compiler already knows every data path. `setData` parses each string path at
-runtime (`parseSinglePath`); `replaceDataOnPath(pathArray, value)` plus
-`groupUpdates` avoids that. The runtime now keeps a pending key/value map and,
-when both methods exist, flushes it as:
+The compiler and the list diff already know every path as an array. The runtime
+now keeps that shape from the binding to glass-easel:
 
-```js
-this.groupUpdates(() => {
-  this.replaceDataOnPath(["b0"], value0)
-  this.replaceDataOnPath(["b3", 0, "done"], value1)
-})
+```ts
+type DataChange =
+  | { path: (string | number)[]; value: unknown }
+  | { path: (string | number)[]; splice: { index: number; del: number; inserts: unknown[] } }
 ```
 
-`dataPath()` converts the generated keys (`b0`, `b3[0].done`) into path arrays.
-If either primitive is missing, the runtime falls back to the old
-`setData(pending)` path. This does not batch effects; that remains the other P1
-item above.
+A microtask flush appends those entries to the component's `DataGroup` queue:
 
-Measured on the component-dense route after the change: Glaze first render
-3635/3625/3612 ms (mean 3624), first-row update 31/28/28 ms (mean 29), append
-190/195/193 ms, delete 184/188/198 ms. The same-session native means were 3597
-ms first render, 33 ms update, 179 ms append and 182 ms delete. These are within
-the run-to-run spread of the P0 table, so this change is not claimed as a
-wall-time win; it removes `parseSinglePath` work deterministically and keeps the
-old `setData` fallback.
+```js
+const group = Component.getDataProxy(component)
+group.setChanges([
+  ...group.getChanges(),
+  [['b0'], 1, undefined, undefined],
+  [['b2'], [nextItem], 7, 1],
+])
+group.applyDataUpdates()
+```
+
+`getDataProxy` and `DataGroup.getChanges` / `setChanges` / `applyDataUpdates`
+are public glass-easel APIs. Keeping a previous queue entry matters: another
+writer may have queued a change between flushes, and replacing the queue would
+drop it. The tuple order is glass-easel's own `DataReplace` / `DataSplice`
+format, so replace and splice changes share one template update and no path
+string is parsed again.
+
+Two fallbacks remain, in this order:
+
+1. `groupUpdates` + `replaceDataOnPath` / `spliceArrayDataOnPath`;
+2. one `setData` built with `dataKey()` (`b3[0].done`).
+
+`dataKey()` is only used by the last fallback; the old `dataPath()` string parser
+was removed.
+
+Two smaller changes ride with the queue:
+
+- **Unchanged scalar bindings are skipped.** Scalar bindings share one effect per
+  group of eight. The effect recomputes all eight, but `applyBinding` now returns
+  early when `Object.is(value, state.previous[index])` holds. A form with eight
+  independent signals therefore writes one data path, not eight. List bindings
+  still always diff, because array identity and field diffs are their job.
+These are deterministic reductions in work and payload. They did **not** produce
+a clear wall-time change over the previous `replaceDataOnPath` flush in the
+component-dense benchmark; the wall-time wins below come from the list data-path
+design (field patches and one splice) plus pure-row inlining, not from the queue
+itself.
+
+### Results after the data-change queue
+
+Three runs per route in one server session, on the component-dense routes. The
+harness now also exercises two list-wide actions added for this measurement:
+
+- `.toggle-all` maps every pure row to `done` and waits for the **last** row;
+- `.reverse-rows` reverses the whole pure-row list and waits for the **first and
+  last** titles to swap;
+- append waits for the new row's title (`Appended 1000`);
+- delete waits for the first row's title to change.
+
+| Case | Glaze runs | Glaze mean | Native runs | Native mean |
+| --- | --- | --- | --- | --- |
+| First render (2000 rows) | 3605, 3582, 3564 | 3584 | 3665, 3548, 3571 | 3595 |
+| First pure row field update | 31, 30, 30 | 30 | 32, 33, 32 | 32 |
+| Toggle all 1000 rows | 58, 57, 58 | 58 | 74, 75, 71 | 73 |
+| State row click | 24, 28, 24 | 25 | 26, 27, 25 | 26 |
+| Append one pure row | 286, 267, 254 | 269 | 293, 235, 230 | 253 |
+| Delete first pure row | 201, 185, 188 | 191 | 183, 179, 177 | 180 |
+| Reverse 1000 rows (full) | 438, 400, 413 | 417 | 436, 426, 490 | 451 |
+
+Current status versus native: first render and a state-row click are tied;
+single-row field updates, toggle-all and full reverse are faster on the Glaze
+route; append/delete stay the weak spot (+16 ms / +11 ms mean), where one
+inline row has to be materialized or removed while the native side can satisfy a
+host count earlier. Do not claim append/delete as a win until a tighter harness
+removes the selector/poll bias.
 
 ## P2 — LIS list moves through `spliceArrayDataOnPath`
 
@@ -235,15 +288,17 @@ because the compiler only inlined a component outside `<For>`.
 - Glaze state row (`src/BenchStateRow.tsx`): local `createSignal(0)`, `.state-count`,
   `.state-bump` button, `.state-title`.
 - Glaze page (`src/BenchComponents.tsx`): two keyed `<For>` loops. `.update-row`
-  toggles the first pure row's `done` through parent state; `.append-row` appends
-  one pure row; `.delete-row` removes the first pure row. The state row updates
-  itself.
+  toggles the first pure row's `done` through parent state; `.toggle-all` maps
+  every row to the opposite `done`; `.reverse-rows` reverses the list;
+  `.append-row` appends one pure row; `.delete-row` removes the first pure row.
+  The state row updates itself.
 - Native pure row (`src/static/components/bench-row`): `Component` with `title`
   and `done` properties, equivalent `.pure-title`/`.pure-state`.
 - Native state row (`src/static/components/bench-state-row`): local `clicks` data,
   equivalent `.state-count`/`.state-bump`.
 - Native page updates the first pure row with a path setData
-  (`'rows[0].done'`), appends with a new array, and deletes with `slice(1)`.
+  (`'rows[0].done'`), toggles all with one mapped array, reverses with
+  `slice().reverse()`, appends with a new array, and deletes with `slice(1)`.
 - Both native components set `styleIsolation: "apply-shared"` so page WXSS can
   style the internals; component WXSS also carries the row layout.
 

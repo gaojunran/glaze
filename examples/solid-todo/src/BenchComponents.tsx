@@ -21,6 +21,11 @@ export default function BenchComponents() {
       ),
     )
 
+  const toggleAll = () =>
+    setRows((items) => items.map((item) => ({ ...item, done: !item.done })))
+
+  const reverseRows = () => setRows((items) => [...items].reverse())
+
   const appendRow = () =>
     setRows((items) => [
       ...items,
@@ -35,6 +40,12 @@ export default function BenchComponents() {
         </button>
         <button class="append-row" onClick={appendRow}>
           append
+        </button>
+        <button class="toggle-all" onClick={toggleAll}>
+          toggle all
+        </button>
+        <button class="reverse-rows" onClick={reverseRows}>
+          reverse
         </button>
         <button class="delete-row" onClick={() => setRows((items) => items.slice(1))}>
           delete

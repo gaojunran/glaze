@@ -23,9 +23,14 @@ The runtime only forwards binding values:
 signal write
   └── createEffect(compute, apply)   // scalar bindings in batches of 8
         └── microtask flush
-              └── groupUpdates(replaceDataOnPath([...], value))
-                    └── WXML binding update
+              └── DataGroup.setChanges([path, value /* or splice */, ...])
+                    └── applyDataUpdates()
+                          └── WXML binding update
 ```
+
+The runtime builds `DataChange` path arrays from the start; it does not parse the
+`b3[0].done` strings again. See `docs/optimizations.md` for the queue and the
+`replaceDataOnPath` / `spliceArrayDataOnPath` fallback.
 
 ## Why not external components
 
@@ -372,25 +377,21 @@ arrays by key. If the length and key order are unchanged, it emits only changed
 fields:
 
 ```js
-this.groupUpdates(() => {
-  this.replaceDataOnPath(["b2", 0, "done"], false)
-})
+{ path: ["b2", 0, "done"], value: false }
 ```
 
 When the key structure changes, the runtime does not send the whole array. It
 uses glass-easel's component primitive:
 
 ```js
-this.groupUpdates(() => {
-  this.spliceArrayDataOnPath(["b2"], index, deleteCount, inserts)
-})
+{ path: ["b2"], splice: { index, del: deleteCount, inserts } }
 ```
 
-`spliceArrayDataOnPath` is a `glass-easel` `Component` method (not the standard
-mini-program `setData` API). It records a splice `DataChange`; `groupUpdates`
-applies it once. The compiler's binding array is therefore still the source of
-truth, but the data bridge receives an insert/delete operation instead of a new
-array.
+The splice entry is glass-easel's `DataChange` tuple, not the standard
+mini-program `setData` shape. The flush appends replace and splice entries to one
+`DataGroup` queue and applies it once. The compiler's binding array is therefore
+still the source of truth, but the data bridge receives an insert/delete
+operation instead of a new array.
 
 The runtime picks the smallest prefix/suffix change:
 
@@ -400,11 +401,15 @@ The runtime picks the smallest prefix/suffix change:
 - reorder or replace a middle range: one splice that deletes the old middle and
   inserts the new middle.
 
-Same-length updates with unchanged key order still use field paths, now via
-`replaceDataOnPath(["b2", 0, "done"], false)` inside `groupUpdates`. If
-`replaceDataOnPath`/`groupUpdates` are unavailable, the runtime falls back to
-`setData({ "b2[0].done": false })`; if `spliceArrayDataOnPath` is unavailable,
-it falls back to `setData({ b2: nextArray })`.
+Same-length updates with unchanged key order still become field changes, now
+as `{ path: ["b2", 0, "done"], value: false }` entries in the same flush as
+other bindings. The primary flush calls the public
+`Component.getDataProxy(component)` and appends these entries to the glass-easel
+`DataGroup` queue (`getChanges` / `setChanges` / `applyDataUpdates`), so replace
+and splice changes share one template update. If that API is unavailable the
+runtime falls back to `groupUpdates` + `replaceDataOnPath` /
+`spliceArrayDataOnPath`, and finally to `setData` (`{"b2[0].done": false}` or
+`{ b2: nextArray }`).
 
 Events inside a loop get an index marker:
 
@@ -482,10 +487,12 @@ Component `props` is a Proxy with `ownKeys`, `has`, and
 it. `splitProps` was removed in Solid 2; use `omit` for the rest object.
 
 Binding writes are merged in a microtask: several signals updated in one event
-produce one flush. The flush uses one `groupUpdates` with a
-`replaceDataOnPath` call per changed path, or one `setData` when those
-glass-easel primitives are unavailable. The initial values still go through one
-synchronous `setData` before the first paint.
+produce one flush. The flush appends `DataChange` path arrays to
+`Component.getDataProxy(component)` and calls `applyDataUpdates()`, so replace
+and splice changes share one template update; unchanged scalar bindings are
+skipped. When that API is unavailable it falls back to `groupUpdates` +
+`replaceDataOnPath` / `spliceArrayDataOnPath`, then to one `setData`. The initial
+values still go through one synchronous `setData` before the first paint.
 
 ### Generated runtime
 
@@ -510,9 +517,11 @@ defineGlazeComponent({
 3. runs `setup`, then evaluates every binding once and `setData`s the initial
    values before the first paint;
 4. in `attached`, groups scalar bindings into batches of 8 (list bindings keep
-   one effect each), sends later values to a batched `replaceDataOnPath` flush
-   (falling back to `setData`); if a prop changed between `created` and
-   `attached`, the first effect run sends the corrected value;
+   one effect each), skips scalars equal to their previous value, and appends
+   later changes to one `DataGroup` queue (`getDataProxy` + `setChanges` +
+   `applyDataUpdates`; falling back to `groupUpdates`/`replaceDataOnPath`, then
+   `setData`); if a prop changed between `created` and `attached`, the first
+   effect run sends the corrected value;
 5. disposes the root in `detached`.
 
 ## Solid 2 note: burst events
@@ -611,10 +620,10 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
    mount rather than re-evaluated as a reactive expression.
 4. **Refs** expose a measurement object, not a DOM node. `focus`,
    `scrollIntoView`, and child traversal are not available.
-5. **List structure** uses `spliceArrayDataOnPath` for insert, delete, and
-   middle replacement. A pure move is expressed as delete+insert over the
-   changed middle; there is no LIS move scheduler yet, so a full reverse still
-   sends one large middle chunk.
+5. **List structure** is a `DataChange` splice for insert, delete, and middle
+   replacement (`spliceArrayDataOnPath` in the fallback path). A pure move is
+   expressed as delete+insert over the changed middle; there is no LIS move
+   scheduler yet, so a full reverse still sends one large middle chunk.
 6. **Component event payloads** pass `event.detail` as one argument; multiple
    arguments arrive as an array.
 7. **Unsupported JSX** (`.map`, dynamic components, render props, `Portal`,

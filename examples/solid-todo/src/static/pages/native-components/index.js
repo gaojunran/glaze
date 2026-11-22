@@ -17,6 +17,14 @@ Page({
   updateRow() {
     this.setData({ 'rows[0].done': !this.data.rows[0].done })
   },
+  toggleAll() {
+    this.setData({
+      rows: this.data.rows.map((row) => ({ ...row, done: !row.done })),
+    })
+  },
+  reverseRows() {
+    this.setData({ rows: this.data.rows.slice().reverse() })
+  },
   appendRow() {
     const rows = this.data.rows.concat({
       id: this.nextId,

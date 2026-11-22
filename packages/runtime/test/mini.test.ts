@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test, { after } from 'node:test'
 import { createSignal } from 'solid-js'
-import { dataPath, defineGlazeComponent, listOps, listPatch } from '../src/mini.ts'
+import { defineGlazeComponent, listOps, listPatch } from '../src/mini.ts'
 
 const originalComponent = globalThis.Component
 globalThis.Component = (config) => config
@@ -202,12 +202,6 @@ test('effect compute errors stay isolated to their binding', async () => {
   }
 })
 
-test('parses generated data paths into replaceDataOnPath segments', () => {
-  assert.deepEqual(dataPath('b0'), ['b0'])
-  assert.deepEqual(dataPath('b3[0].done'), ['b3', 0, 'done'])
-  assert.deepEqual(dataPath('b3[12]'), ['b3', 12])
-})
-
 test('batches scalar updates through replaceDataOnPath when available', async () => {
   let setCount
   const def = defineGlazeComponent({
@@ -392,11 +386,122 @@ test('listOps and listPatch describe structural changes', () => {
     { index: 1, del: 0, inserts: [second] },
   ])
   assert.equal(listOps([first], [first], 'id'), null)
-  assert.deepEqual(listPatch([{ id: 1, done: false }], [{ id: 1, done: true }], 'id', 'b0'), {
-    'b0[0].done': true,
-  })
+  assert.deepEqual(listPatch([{ id: 1, done: false }], [{ id: 1, done: true }], 'id', 'b0'), [
+    { path: ['b0', 0, 'done'], value: true },
+  ])
   assert.equal(
     listPatch([{ id: 1 }, { id: 2 }], [{ id: 2 }, { id: 1 }], 'id', 'b0'),
     null,
   )
+})
+
+test('flushes structured DataChange tuples through the glass-easel data proxy', async () => {
+  let setCount
+  const def = defineGlazeComponent({
+    data: { b0: null, b1: null },
+    setup(ctx) {
+      const [count, set] = createSignal(0)
+      setCount = set
+      ctx.bind(0, () => count())
+      ctx.bind(1, () => count() + 1)
+    },
+  })
+
+  const instance = createInstance(def)
+  const queue = []
+  let applied = 0
+  instance._$dataGroup = {
+    getChanges: () => queue,
+    setChanges: (changes) => {
+      queue.splice(0, queue.length, ...changes)
+    },
+    applyDataUpdates: () => {
+      applied += 1
+    },
+  }
+  def.lifetimes.attached.call(instance)
+
+  setCount(2)
+  await tick()
+
+  assert.equal(applied, 1)
+  assert.deepEqual(queue, [
+    [['b0'], 2, undefined, undefined],
+    [['b1'], 3, undefined, undefined],
+  ])
+})
+
+test('keeps splices in the same data proxy batch', async () => {
+  let setItems
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    setup(ctx) {
+      const [items, set] = createSignal([{ id: 1 }, { id: 2 }, { id: 3 }])
+      setItems = set
+      ctx.bind(0, () => items())
+    },
+  })
+
+  const instance = createInstance(def)
+  const queue = []
+  instance._$dataGroup = {
+    getChanges: () => queue,
+    setChanges: (changes) => {
+      queue.splice(0, queue.length, ...changes)
+    },
+    applyDataUpdates: () => {},
+  }
+  def.lifetimes.attached.call(instance)
+
+  setItems([{ id: 1 }, { id: 9 }, { id: 3 }])
+  await tick()
+
+  assert.deepEqual(queue, [[['b0'], [{ id: 9 }], 1, 1]])
+})
+
+test('a grouped scalar effect only schedules the bindings that changed', async () => {
+  let setA
+  let setB
+  const def = defineGlazeComponent({
+    data: { b0: null, b1: null },
+    setup(ctx) {
+      const [a, updateA] = createSignal(0)
+      const [b, updateB] = createSignal(0)
+      setA = updateA
+      setB = updateB
+      ctx.bind(0, () => a())
+      ctx.bind(1, () => b())
+    },
+  })
+
+  const instance = createInstance(def, {}, { paths: true })
+  def.lifetimes.attached.call(instance)
+
+  setA(1)
+  await tick()
+  assert.deepEqual(instance.pathCalls, [[['b0'], 1]])
+
+  instance.pathCalls.length = 0
+  setB(2)
+  await tick()
+  assert.deepEqual(instance.pathCalls, [[['b1'], 2]])
+})
+
+test('the first effect run does not rewrite values already sent by mount', async () => {
+  const def = defineGlazeComponent({
+    data: { b0: null, b1: null },
+    setup(ctx) {
+      const [count] = createSignal(0)
+      ctx.bind(0, () => count())
+      ctx.bind(1, () => count() + 1)
+    },
+  })
+
+  const instance = createInstance(def, {}, { paths: true })
+  def.lifetimes.attached.call(instance)
+  await tick()
+
+  assert.equal(instance.pathCalls.length, 0)
+  assert.equal(instance.calls.length, 1)
 })

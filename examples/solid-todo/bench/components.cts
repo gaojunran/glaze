@@ -67,6 +67,10 @@ async function measure(mp, route, isGlaze) {
   await waitForCount(root, STATE_ROW, ROWS, 120000)
   const pureHost = await root.$(PURE_ROW)
   const stateHost = await root.$(STATE_ROW)
+  const titleOf = async (hostRoot, index) => {
+    const hosts = await hostRoot.$$(PURE_ROW)
+    return (await hosts[index].$('.pure-title')).text()
+  }
   const pureTitle = await waitFor('first pure title', async () => pureHost.$('.pure-title'), 10000)
   const stateTitle = await waitFor('first state title', async () => stateHost.$('.state-title'), 10000)
   await waitForText(pureTitle, () => true, 10000, 'first pure title text')
@@ -101,6 +105,19 @@ async function measure(mp, route, isGlaze) {
   )
   const update = Date.now() - updateStart
 
+  const lastPureHost = (await root.$$(PURE_ROW)).at(-1)
+  const lastPureState = await lastPureHost.$('.pure-state')
+  const lastBeforeToggle = await lastPureState.text()
+  const toggleStart = Date.now()
+  await (await root.$('.toggle-all')).tap()
+  await waitForText(
+    lastPureState,
+    (text) => text !== lastBeforeToggle,
+    30000,
+    'toggled last row',
+  )
+  const toggleAll = Date.now() - toggleStart
+
   const stateCount = await stateHost.$('.state-count')
   const beforeClicks = await waitForText(stateCount, () => true, 10000, 'initial click count')
   const stateStart = Date.now()
@@ -111,16 +128,40 @@ async function measure(mp, route, isGlaze) {
   const appendStart = Date.now()
   await (await root.$('.append-row')).tap()
   await waitForCount(root, PURE_ROW, ROWS + 1, 30000)
+  await waitFor('appended row content', async () => {
+    const hosts = await root.$$(PURE_ROW)
+    const title = await (await hosts.at(-1).$('.pure-title')).text()
+    return title === `Appended ${ROWS}` ? title : false
+  }, 30000)
   const append = Date.now() - appendStart
 
+  const firstTitleBeforeDelete = await (await (await root.$(PURE_ROW)).$('.pure-title')).text()
   const deleteStart = Date.now()
   await (await root.$('.delete-row')).tap()
   await waitForCount(root, PURE_ROW, ROWS, 30000)
+  await waitFor('deleted first row', async () => {
+    const title = await (await (await root.$(PURE_ROW)).$('.pure-title')).text()
+    return title !== firstTitleBeforeDelete ? title : false
+  }, 30000)
   const remove = Date.now() - deleteStart
+
+  const firstBeforeReverse = await titleOf(root, 0)
+  const lastBeforeReverse = await titleOf(root, ROWS - 1)
+  const reverseStart = Date.now()
+  await (await root.$('.reverse-rows')).tap()
+  await waitFor('reversed rows', async () => {
+    const first = await titleOf(root, 0)
+    const last = await titleOf(root, ROWS - 1)
+    return first === lastBeforeReverse && last === firstBeforeReverse ? first : false
+  }, 30000)
+  const reverse = Date.now() - reverseStart
+
 
   return {
     firstRender,
     update,
+    toggleAll,
+    reverse,
     stateClick,
     append,
     delete: remove,

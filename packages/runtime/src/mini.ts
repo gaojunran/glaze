@@ -5,7 +5,14 @@ import {
   getOwner,
   runWithOwner,
 } from 'solid-js'
-import { dataPath, normalizeDataValue, normalizePropValue, GLAZE_EVENT_OPTIONS, reportBindingError, SCALAR_BINDING_GROUP } from './data.ts'
+import {
+  dataKey,
+  normalizeDataValue,
+  normalizePropValue,
+  GLAZE_EVENT_OPTIONS,
+  reportBindingError,
+  SCALAR_BINDING_GROUP,
+} from './data.ts'
 import { listOps, listPatch } from './list.ts'
 import { withProvider } from './provider.ts'
 declare const Component: (options: Record<string, unknown>) => unknown
@@ -13,6 +20,7 @@ declare const Component: (options: Record<string, unknown>) => unknown
 import type {
   GlazeBinding,
   GlazeComponentConfig,
+  DataChange,
   GlazeContext,
   GlazeProps,
   InstanceState,
@@ -20,7 +28,6 @@ import type {
 
 export { className, styleName } from './styles.ts'
 export { withProvider } from './provider.ts'
-export { dataPath } from './data.ts'
 export { listOps, listPatch } from './list.ts'
 export type { GlazeComponentConfig, GlazeContext } from './types.ts'
 
@@ -121,27 +128,104 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   }
 
   const attach = (component: any, state: InstanceState) => {
-    const schedule = (data: Record<string, unknown>) => {
-      Object.assign(state.pending, data)
+    const applyPending = (pending: DataChange[]) => {
+      const dataGroup = (
+        Component as unknown as {
+          getDataProxy?: (comp: unknown) => {
+            getChanges?: () => unknown[]
+            setChanges?: (changes: unknown[]) => void
+            applyDataUpdates?: () => void
+          }
+        }
+      ).getDataProxy?.(component) ??
+        (
+          component as {
+            _$dataGroup?: {
+              getChanges?: () => unknown[]
+              setChanges?: (changes: unknown[]) => void
+              applyDataUpdates?: () => void
+            }
+          }
+        )._$dataGroup
+      if (
+        dataGroup &&
+        typeof dataGroup.getChanges === 'function' &&
+        typeof dataGroup.setChanges === 'function' &&
+        typeof dataGroup.applyDataUpdates === 'function'
+      ) {
+        // Keep changes another writer queued before this flush, then append
+        // ours as glass-easel's own DataChange tuples. This is the same queue
+        // `replaceDataOnPath`/`spliceArrayDataOnPath` fill, but it avoids one
+        // component method call per field and applies replace + splice in one
+        // template update.
+        const queued = dataGroup.getChanges()
+        dataGroup.setChanges([
+          ...queued,
+          ...pending.map((change) =>
+            change.splice
+              ? [
+                  change.path,
+                  change.splice.inserts,
+                  change.splice.index,
+                  change.splice.del,
+                ]
+              : [change.path, normalizeDataValue(change.value), undefined, undefined],
+          ),
+        ])
+        dataGroup.applyDataUpdates()
+        return
+      }
+      if (
+        typeof component.groupUpdates === 'function' &&
+        (typeof component.replaceDataOnPath === 'function' ||
+          typeof component.spliceArrayDataOnPath === 'function')
+      ) {
+        const replacements: DataChange[] = []
+        component.groupUpdates(() => {
+          for (const change of pending) {
+            if (change.splice) {
+              component.spliceArrayDataOnPath?.(
+                change.path,
+                change.splice.index,
+                change.splice.del,
+                change.splice.inserts,
+              )
+            } else if (typeof component.replaceDataOnPath === 'function') {
+              component.replaceDataOnPath(change.path, normalizeDataValue(change.value))
+            } else {
+              replacements.push(change)
+            }
+          }
+        })
+        if (replacements.length > 0) {
+          component.setData(
+            Object.fromEntries(
+              replacements.map((change) => [dataKey(change.path), normalizeDataValue(change.value)]),
+            ),
+          )
+        }
+        return
+      }
+      component.setData(
+        Object.fromEntries(
+          pending
+            .filter((change) => !change.splice)
+            .map((change) => [dataKey(change.path), normalizeDataValue(change.value)]),
+        ),
+      )
+    }
+
+    const schedule = (changes: DataChange[]) => {
+      if (changes.length === 0) return
+      for (const change of changes) state.pending.push(change)
       if (state.flushScheduled) return
       state.flushScheduled = true
       const flush = () => {
         state.flushScheduled = false
         const pending = state.pending
-        state.pending = {}
-        if (!state.active || Object.keys(pending).length === 0) return
-        if (
-          typeof component.replaceDataOnPath === 'function' &&
-          typeof component.groupUpdates === 'function'
-        ) {
-          component.groupUpdates(() => {
-            for (const [key, value] of Object.entries(pending)) {
-              component.replaceDataOnPath(dataPath(key), value)
-            }
-          })
-          return
-        }
-        component.setData(pending)
+        state.pending = []
+        if (!state.active || pending.length === 0) return
+        applyPending(pending)
       }
       if (typeof queueMicrotask === 'function') queueMicrotask(flush)
       else Promise.resolve().then(flush)
@@ -149,27 +233,28 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
 
     const applyBinding = (index: number, value: unknown) => {
       const key = listBindings[index]
+      // Scalar bindings in one effect group are recomputed together. Skip the
+      // unchanged ones so one signal write only produces its own data path,
+      // which also keeps the template engine on its binding-map path longer.
+      if (!key && Object.is(value, state.previous[index])) return
       const binding = `b${index}`
       const patch = key ? listPatch(state.previous[index], value, key, binding) : null
       if (patch) {
-        const data = Object.fromEntries(
-          Object.entries(patch).map(([key, item]) => [key, normalizeDataValue(item)]),
-        )
-        if (Object.keys(data).length > 0) schedule(data)
+        schedule(patch)
       } else {
-        const ops = key ? listOps(state.previous[index], value, key) : null
-        if (
-          ops &&
-          typeof component.spliceArrayDataOnPath === 'function' &&
-          typeof component.groupUpdates === 'function'
-        ) {
-          component.groupUpdates(() => {
-            for (const op of ops) {
-              component.spliceArrayDataOnPath([binding], op.index, op.del, op.inserts)
-            }
-          })
+        const ops =
+          key && typeof component.spliceArrayDataOnPath === 'function'
+            ? listOps(state.previous[index], value, key)
+            : null
+        if (ops) {
+          schedule(
+            ops.map((op) => ({
+              path: [binding] as (string | number)[],
+              splice: op,
+            })),
+          )
         } else {
-          schedule({ [binding]: normalizeDataValue(value) })
+          schedule([{ path: [binding], value }])
         }
       }
       state.previous[index] = snapshotValue(index, value)
@@ -296,7 +381,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           refs: [],
           initial: [],
           previous: [],
-          pending: {},
+          pending: [],
           flushScheduled: false,
           props: Object.create(null),
           propsProxy: null,
@@ -360,7 +445,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         // Keep the state (including prop signals) so a later `attached` can
         // rebuild the disposed root instead of seeing a dead instance.
         state.active = false
-        state.pending = {}
+        state.pending = []
         state.flushScheduled = false
         // Match the old detached behavior: event and ref callbacks stop until
         // the root is rebuilt on re-attach.
