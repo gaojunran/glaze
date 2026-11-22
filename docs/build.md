@@ -118,6 +118,9 @@ Every component bundle externalizes `solid-js`, `@glaze/runtime` and
 `glaze-runtime/index.js`. The shim is generated per build by collecting the
 named imports from the generated modules and their bundled helper files, then
 bundling `solid-js` and the Glaze runtime once with the builder's own copies.
+Solid 2 exposes `createStore` from the `solid-js` root entry; there is no
+`solid-js/store` subpath, so a component imports it from `solid-js`.
+
 Sharing is semantic as well as a size optimization: `createRoot`, `getOwner`
 and `runWithOwner` must come from the same Solid module instance or effects
 lose their owner and never clean up.

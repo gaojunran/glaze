@@ -24,11 +24,10 @@ export const dedupeSolidPlugin = {
 
 export const SHARED_SPECIFIERS = new Set([
   'solid-js',
-  'solid-js/store',
   '@glaze/runtime',
   '@glaze/runtime/mini',
 ])
-const SHARED_SPECIFIER_RE = /^(@glaze\/runtime(?:\/mini)?|solid-js(?:\/store)?)$/
+const SHARED_SPECIFIER_RE = /^(@glaze\/runtime(?:\/mini)?|solid-js)$/
 export const SHARED_MODULE = 'glaze-runtime/index.js'
 
 /** Compute the literal require() path a component uses to reach the shared runtime. */
