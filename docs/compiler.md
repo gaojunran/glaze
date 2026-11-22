@@ -623,7 +623,10 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
 5. **List structure** is a `DataChange` splice for insert, delete, and middle
    replacement (`spliceArrayDataOnPath` in the fallback path). A pure move is
    expressed as delete+insert over the changed middle; there is no LIS move
-   scheduler yet, so a full reverse still sends one large middle chunk.
+   scheduler yet, so a full reverse still sends one large middle chunk. The
+   previous array is snapshotted shallowly, so an item mutated in place and
+   returned in a new array (`items[0].done = true; return [...items]`) is not
+   detected; replace the item object instead.
 6. **Component event payloads** pass `event.detail` as one argument; multiple
    arguments arrive as an array.
 7. **Unsupported JSX** (`.map`, dynamic components, render props, `Portal`,
