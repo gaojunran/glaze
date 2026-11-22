@@ -28,6 +28,8 @@ const rootSelector = option('root')
 const runs = Number(option('runs', '3'))
 const rowCount = Number(option('count', '1000'))
 const updateSelector = option('update')
+const updateAllSelector = option('update-all')
+const lastTextSelector = option('last-text', '#last')
 const titleSelector = option('title', '#title')
 const rowSelector = option('row', '.row')
 const firstTextSelector = option('first-text', '.row-title')
@@ -102,6 +104,15 @@ async function measure(mp) {
     }, 'updated title')
   }
 
+  let updateAll
+  if (updateAllSelector) {
+    const before = await (await controls.$(lastTextSelector)).text()
+    updateAll = await tap(updateAllSelector, async () => {
+      const current = await controls.$(lastTextSelector)
+      return current && (await current.text()) !== before
+    }, 'updated all titles')
+  }
+
   let bump
   if (bumpSelector) {
     const before = await (await controls.$(tickSelector)).text()
@@ -148,7 +159,7 @@ async function measure(mp) {
     reverseMs = Date.now() - reverseStarted
   }
 
-  return { firstRender, bump, update, toggle, insert, delete: deleteRow, reverse: reverseMs }
+  return { firstRender, bump, update, updateAll, toggle, insert, delete: deleteRow, reverse: reverseMs }
 }
 
 const mp = await automator.connect(`ws://127.0.0.1:${port}/automator`)

@@ -17,6 +17,12 @@
 			"style": {
 				"navigationBarTitleText": "fine"
 			}
+		},
+		{
+			"path": "pages/components/index",
+			"style": {
+				"navigationBarTitleText": "components"
+			}
 		}
 	],
 	"globalStyle": {

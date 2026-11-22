@@ -1,0 +1,4 @@
+.bench { display: flex; flex-direction: column; }
+.row-card { display: flex; height: 20px; align-items: center; gap: 4px; }
+.row-title { font-size: 12px; }
+.row-index { font-size: 10px; color: #666; }

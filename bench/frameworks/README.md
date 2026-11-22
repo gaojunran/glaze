@@ -13,11 +13,11 @@ the same-harness Glaze/native suite in `docs/optimizations.md`.
 
 | App | Stack | Build | Routes |
 | --- | --- | --- | --- |
-| `apps/vue-mini` | `@vue-mini/core 1.2.16`, official create-vue-mini build | `pnpm install && pnpm build` | `pages/home/index` (flat), `pages/fine/index` (rich rows) |
+| `apps/vue-mini` | `@vue-mini/core 1.2.16`, official create-vue-mini build | `pnpm install && pnpm build` | `pages/home/index` (flat), `pages/fine/index` (rich rows), `pages/components/index` (500 row components) |
 | `apps/taro` | Taro 4.3.3, React 18, **Vite compiler** | `pnpm install && pnpm build:weapp` | `pages/index/index`, `pages/fine/index` |
-| `apps/uni-app` | uni-app Vue3 Vite preset `3.0.0-5030420261029002` | `pnpm install && pnpm build:mp-weixin` | `pages/index/index`, `pages/fine/index` |
-| Glaze | `examples/solid-todo` | repository `pnpm build` | `pages/bench/index`, `pages/bench-fine/index` |
-| Native | `examples/solid-todo/src/static/pages/*` | repository `pnpm build` | `pages/native/index`, `pages/native-fine/index` |
+| `apps/uni-app` | uni-app Vue3 Vite preset `3.0.0-5030420261029002` | `pnpm install && pnpm build:mp-weixin` | `pages/index/index`, `pages/fine/index`, `pages/components/index` |
+| Glaze | `examples/solid-todo` | repository `pnpm build` | `pages/bench/index`, `pages/bench-fine/index`, `pages/bench-component-rows/index`, `pages/bench-component-rows-pure/index` |
+| Native | `examples/solid-todo/src/static/pages/*` | repository `pnpm build` | `pages/native/index`, `pages/native-fine/index`, `pages/native-component-rows/index` |
 
 The **flat** pages render 1000 `.row` elements and expose `#title`, `#update`
 and `.reverse`. The Glaze/native flat pages only have `.reverse`; their update
@@ -35,6 +35,19 @@ The **fine** pages render 5000 `.row` elements. Each row also carries
 
 Every app has a `pages/blank/index` neutral route for a reLaunch before the
 timed route.
+
+The **component** pages render 500 real child components, each with `title` and
+`index` props plus a local counter. This forces every framework to keep a real
+component boundary per row; the Glaze `-pure` variant uses an inlinable row
+component instead, to show the cost of that boundary. They expose:
+
+- `#update` — change only `rows[0].title` (one child prop update)
+- `#update-all` — change all 500 titles (all child props update)
+- `#last` — text of the last row title, used to wait for the update
+
+Because the row text lives inside each child component's shadow root, the
+runner counts the `.row-card` host elements and uses `--first-text ''` for this
+page. Pass `--last-text '#last'` to the runner for `#update-all`.
 
 ## Run a fixture
 
@@ -97,11 +110,27 @@ node bench/frameworks/run.mjs --port 9446 --route /pages/native-fine/index \
   --update '#update' --skip-reverse --runs 3
 ```
 
-The runner supports `--bump`, `--toggle`, `--insert`, `--delete`, `--row` (row
-selector), `--first-text` (first-row text selector) and `--skip-reverse`. It prints JSON
-with each run's `firstRender`, optional `update`, `toggle`, `insert`, `delete`
-and `reverse` in milliseconds. It asserts the requested row count and, when a
-first-row text selector is supplied, that the first row actually rendered.
+```bash
+# Component page, 500 stateful row components, all titles update
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
+  --port 9440 --route /pages/components/index --neutral /pages/blank/index \
+  --count 500 --row '.row-card' --first-text '' \
+  --update-all '#update-all' --skip-reverse --runs 3
+```
+
+For the Glaze stateful and pure variants, use the same command with
+`--root '#app'` and the matching `--route`
+(`/pages/bench-component-rows/index` or
+`/pages/bench-component-rows-pure/index`); for native use
+`/pages/native-component-rows/index` without `--root`.
+
+The runner supports `--bump`, `--update-all`, `--toggle`, `--insert`,
+`--delete`, `--row` (row selector), `--first-text` (first-row text selector),
+`--last-text` (selector for the `--update-all` wait), and `--skip-reverse`. It prints JSON
+with each run's `firstRender`, optional `update`, `updateAll`, `toggle`,
+`insert`, `delete` and `reverse` in milliseconds. It asserts the requested row
+count and, when a first-row text selector is supplied, that the first row
+actually rendered.
 
 ## Observed on 2026-11-23
 
@@ -176,6 +205,32 @@ Caveats:
   resolve it without a larger payload or a data-diff counter.
 - No `setData` count or byte metric is available here. The rich-row update is
   the wall-clock proxy for that missing metric.
+
+### Component page: 500 stateful row components
+
+Three runs each. `#update` changes one row; `#update-all` changes every row's
+`title` prop. Native uses one parent `setData`; the framework pages update 500
+child components.
+
+| Implementation | First render | One child update | All 500 child updates |
+| --- | ---: | ---: | ---: |
+| Native WXML | 3237–3303 ms | 54 ms | **54 ms** |
+| uni-app Vue3 Vite | 3280–3318 ms | 55 ms | **59–66 ms** |
+| Vue Mini 1.2.16 | 3259–3311 ms | 56 ms | 120–138 ms |
+| Glaze, stateful row | 3350–3371 ms | 54 ms | 199–222 ms |
+| Glaze, pure row inline | 3183–3193 ms | — | **54–56 ms** |
+
+This is the opposite of the earlier assumption that uni-app's component
+boundary would dominate. On 500 simple stateful components, uni-app is close to
+native; Vue Mini is roughly 2–2.5× slower on all-row updates because each child's
+top-level `label` watcher calls its own `setData`; Glaze's **stateful** boundary
+is even slower, while its **pure** row inline path is back at native speed.
+
+The benchmark therefore separates two costs:
+
+- inlining pure components removes the per-row boundary entirely (Glaze `-pure`);
+- keeping a stateful boundary costs a per-child data/props round-trip, and the
+  exact cost differs by runtime (uni 59–66, Vue Mini 120–138, Glaze 199–222).
 
 ## Scope
 

@@ -8,6 +8,8 @@ const config: GlazeConfig = {
     'pages/bench/index': 'Bench.tsx',
     'pages/bench-fine/index': 'FineBench.tsx',
     'pages/bench-components/index': 'BenchComponents.tsx',
+    'pages/bench-component-rows/index': 'ComponentRows.tsx',
+    'pages/bench-component-rows-pure/index': 'PureComponentRows.tsx',
     'pages/bench-edges/index': 'BenchEdges.tsx',
     'pages/reactive/index': 'ReactiveCases.tsx',
     'pages/tailwind/index': 'TailwindCase.tsx',
@@ -23,6 +25,7 @@ const config: GlazeConfig = {
     'pages/native/index',
     'pages/native-fine/index',
     'pages/native-components/index',
+    'pages/native-component-rows/index',
     'pages/native-edges/index',
   ],
 }

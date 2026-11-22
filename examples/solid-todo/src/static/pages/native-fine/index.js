@@ -18,7 +18,7 @@ Page({
   bump() {
     this.setData({ tick: this.data.tick + 1 })
   },
-  toggleFirst() {  toggleFirst() {
+  toggleFirst() {
     this.setData({
       'rows[0].done': !this.data.rows[0].done,
     })

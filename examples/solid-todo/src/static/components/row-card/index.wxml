@@ -1,0 +1,6 @@
+<view class="row-card">
+  <text class="row-title">{{ title }}</text>
+  <text class="row-index">{{ index }}</text>
+  <text class="row-count">{{ count }}</text>
+  <button class="row-bump" bindtap="bump">bump</button>
+</view>
