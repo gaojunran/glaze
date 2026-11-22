@@ -121,6 +121,16 @@ loop, callback locals, keyed `Match`, camelCase props, and list append.
 
 Known limits are listed in [compiler.md](compiler.md#known-gaps).
 
+### M6 — subpackages
+
+- `glaze.config.mts` accepts `subpackages` entries with `root`, `pages`, and
+  `independent`.
+- Each package gets its own `components/` and `glaze-runtime/index.js`; page
+  wrappers and `usingComponents` use package-absolute paths.
+- Package ownership is validated: main cannot use subpackage components,
+  independent subpackages cannot reach main-package components, and pages must
+  live inside their declared package.
+
 ### M5.5 — Tailwind CSS
 
 - Optional `css.tailwind` config; `@glaze/build` stages and transforms after

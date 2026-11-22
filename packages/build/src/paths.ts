@@ -6,6 +6,9 @@ export { kebabCase }
 export const normalizeRoute = (route) =>
   route.replace(/^\//, '').replace(/\.(tsx|wxml)$/, '')
 
+export const normalizeSubpackageRoot = (root) =>
+  root.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+
 /**
  * Normalize a path relative to the source root.
  *

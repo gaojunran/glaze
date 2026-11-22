@@ -12,6 +12,9 @@ const config: GlazeConfig = {
     'pages/context/index': 'ContextPage.tsx',
     'pages/async/index': 'AsyncPage.tsx',
   },
+  subpackages: [
+    { root: 'pkg', pages: { 'pages/sub/index': 'pkg/PkgPage.tsx' }, independent: true },
+  ],
   static: ['static'],
   css: { tailwind: { input: 'src/tailwind.css' } },
   staticPages: ['pages/native/index', 'pages/native-components/index'],

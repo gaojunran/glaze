@@ -890,3 +890,131 @@ export default function Page() { return <view>cli</view> }
   assert.match(run.stdout, /glaze snippet: 1 page, 1 components/)
   assert.equal(await exists(path.join(project, 'page-snippet/project.config.json')), true)
 })
+
+test('builds an independent subpackage with its own runtime', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      subpackages: [
+        { root: 'pkg', pages: { 'pages/sub/index': 'pkg/Sub.tsx' }, independent: true },
+      ],
+    },
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view class="main">main</view>
+}
+`,
+      'src/pkg/Sub.tsx': `import Child from './Child'
+
+export default function Sub() {
+  return <view class="sub"><Child title="Hello" /></view>
+}
+`,
+      'src/pkg/Child.tsx': `export default function Child(props) {
+  return <view><slot /><text class="child">{props.title}</text></view>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+
+  const result = await buildProject(project)
+  assert.deepEqual(result.pages, ['pages/home/index', 'pkg/pages/sub/index'])
+
+  const appJson = JSON.parse(
+    await readFile(path.join(project, 'miniprogram/app.json'), 'utf8'),
+  )
+  assert.deepEqual(appJson.pages, ['pages/home/index'])
+  assert.deepEqual(appJson.subPackages, [
+    { root: 'pkg', pages: ['pages/sub/index'], independent: true },
+  ])
+
+  const pageJson = JSON.parse(
+    await readFile(path.join(project, 'miniprogram/pkg/pages/sub/index.json'), 'utf8'),
+  )
+  assert.equal(
+    pageJson.usingComponents['glaze-page'],
+    '/pkg/components/glaze-pkg-sub/index',
+  )
+
+  const componentJson = JSON.parse(
+    await readFile(
+      path.join(project, 'miniprogram/pkg/components/glaze-pkg-sub/index.json'),
+      'utf8',
+    ),
+  )
+  assert.equal(componentJson.usingComponents.child, '/pkg/components/glaze-pkg-child/index')
+
+  assert.equal(
+    await exists(path.join(project, 'miniprogram/pkg/glaze-runtime/index.js')),
+    true,
+  )
+  const bundle = await readFile(
+    path.join(project, 'miniprogram/pkg/components/glaze-pkg-sub/index.js'),
+    'utf8',
+  )
+  assert.match(bundle, /require\("\.\.\/\.\.\/glaze-runtime\/index\.js"\)/)
+})
+
+test('rejects a main page that reaches a subpackage component', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      subpackages: [{ root: 'pkg', pages: { 'pages/sub/index': 'pkg/Sub.tsx' } }],
+    },
+    files: {
+      'src/App.tsx': `import Sub from './pkg/Sub'
+
+export default function App() {
+  return <view><Sub /></view>
+}
+`,
+      'src/pkg/Sub.tsx': `export default function Sub() {
+  return <view><slot /><text>sub</text></view>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await assert.rejects(() => buildProject(project), /cannot use component .* from subpackage/)
+})
+
+test('an independent subpackage cannot reach a main-package component', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      subpackages: [
+        { root: 'pkg', pages: { 'pages/sub/index': 'pkg/Sub.tsx' }, independent: true },
+      ],
+    },
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view>main</view>
+}
+`,
+      'src/Shared.tsx': `export default function Shared() {
+  return <view><slot /><text>shared</text></view>
+}
+`,
+      'src/pkg/Sub.tsx': `import Shared from '../Shared'
+
+export default function Sub() {
+  return <view><Shared /></view>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await assert.rejects(
+    () => buildProject(project),
+    /reaches "Shared\.tsx" in another package/,
+  )
+})

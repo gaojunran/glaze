@@ -23,6 +23,7 @@ Source layout:
 - `src/ThemeLabel.tsx` — inlined context consumer;
 - `src/theme.ts` / `src/ContextBoundary.tsx` — imported context crossing a component boundary;
 - `src/AsyncPage.tsx` — root `Loading` / `Errored` boundaries;
+- `src/pkg/PkgPage.tsx` — page in an independent subpackage with its own runtime;
 - `src/Header.tsx` — always inlined;
 - `src/static/pages/native` — hand-written comparison page.
 
@@ -46,6 +47,7 @@ Pages:
 - `pages/tailwind/index` — Tailwind 4 utilities compiled into `app.wxss` (see `src/tailwind.css`);
 - `pages/context/index` — imported context across a component boundary;
 - `pages/async/index` — async `Loading` / `Errored` boundaries;
+- `pkg/pages/sub/index` — independent subpackage page with its own `glaze-runtime`;
 - `src/Card.scss` — component SCSS compiled into the parent component's `index.wxss`;
 - `pages/native/index` — the same 1000 rows in hand-written WXML.
 

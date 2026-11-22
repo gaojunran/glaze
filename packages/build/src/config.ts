@@ -16,12 +16,19 @@ export type GlazeCssConfig = {
   tailwind?: GlazeTailwindConfig
 }
 
+export type GlazeSubpackage = {
+  root: string
+  pages: Record<string, string>
+  independent?: boolean
+}
+
 export type GlazeConfig = {
   source: string
   output: string
   pages: Record<string, string>
   static?: string[]
   staticPages?: string[]
+  subpackages?: GlazeSubpackage[]
   clean?: boolean
   runtime?: GlazeRuntimeConfig
   css?: GlazeCssConfig
@@ -32,6 +39,7 @@ export const DEFAULT_CONFIG: GlazeConfig = {
   output: 'miniprogram',
   pages: {},
   staticPages: [],
+  subpackages: [],
 }
 
 export const CONFIG_FILES = ['glaze.config.mts', 'glaze.config.ts', 'glaze.config.mjs'] as const

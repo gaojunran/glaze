@@ -243,3 +243,14 @@ test('async Loading and Errored boundaries render fallbacks and resolved values'
   const fs = require('node:fs'); fs.writeFileSync('/tmp/opencode/async-app.xml', await app.outerWxml())
   await expect(app).toMatchText('.async-error', 'async-error')
 })
+
+test('independent subpackage loads its own runtime and updates state', async (miniProgram) => {
+  await miniProgram.reLaunch('/pkg/pages/sub/index')
+  const page = await miniProgram.currentPage()
+  await page.waitFor(800)
+  const app = await page.$('#app')
+  if (!app) throw new Error('glaze-root not found')
+  await expect(app).toMatchText('.pkg-title', 'Independent subpackage')
+  await (await app.$('.pkg-inc')).tap()
+  await expect(app).toMatchText('.pkg-count', '1')
+})

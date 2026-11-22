@@ -33,6 +33,10 @@ const config: GlazeConfig = {
   },
   static: ['static'],
   staticPages: ['pages/native/index'],
+  subpackages: [
+    { root: 'pkg', pages: { 'pages/sub/index': 'PkgPage.tsx' } },
+    { root: 'isolated', pages: { 'pages/sub/index': 'IsoPage.tsx' }, independent: true },
+  ],
   runtime: { bindingGroupSize: 8 },
 }
 
@@ -46,6 +50,7 @@ export default config
 | `pages` | route → page component source, relative to `source` |
 | `static` | directories whose contents are copied into the output root |
 | `staticPages` | routes already present in `static` and kept in `app.json` |
+| `subpackages` | subpackage roots, their page maps, and optional `independent: true` |
 | `clean` | replace the previous output after a successful build; defaults to `true` |
 | `runtime.bindingGroupSize` | scalar bindings per effect; a positive integer, default `8`, `1` disables grouping |
 | `css.tailwind.input` | optional Tailwind 4 stylesheet; enables the Tailwind stage |
@@ -115,6 +120,7 @@ miniprogram/
   components/glaze-*/    compiled Solid components
   glaze-runtime/index.js shared Solid + Glaze runtime
   pages/native/...       static pages copied from static/
+  <subpackage>/          subpackage pages, components and its own runtime
 ```
 
 A page is a thin wrapper over a compiled component. That keeps the page itself
@@ -157,12 +163,42 @@ it cannot enumerate the names to re-export, and rejects a `static` file that
 already occupies `glaze-runtime/index.js`. The shared file is referenced by
 relative path, never an absolute `/glaze-runtime/...` path.
 
+### Subpackages
+
+`subpackages` entries generate `app.json.subPackages`. Each page route is
+`<root>/<page>`; the page source path remains relative to `source`:
+
+```ts
+subpackages: [
+  { root: 'pkg', pages: { 'pages/sub/index': 'pkg/Sub.tsx' } },
+  { root: 'isolated', pages: { 'pages/sub/index': 'isolated/Sub.tsx' }, independent: true },
+]
+```
+
+Components are grouped by the package their **source file** lives in. A
+subpackage gets its own `components/` and `glaze-runtime/index.js`, and its
+component bundles use relative `require()` paths inside that package. This is
+required for independent subpackages, which cannot require main-package
+JavaScript.
+
+Ownership rules:
+
+- a main page may only reach main-package components;
+- a normal subpackage page may reach its own components and main-package
+  components;
+- an independent subpackage page may only reach components inside its own
+  root;
+- a page must live inside the package it declares.
+
+A normal subpackage that imports a main component still works because the
+generated path is absolute (`/components/...`); an independent subpackage that
+does so is a build error.
+
 Limitations:
 
-- an independent subpackage cannot require main-package JavaScript, so Glaze
-  output does not support independent subpackages yet;
-- the shared module is emitted once at the output root; per-subpackage runtime
-  copies are a future extension;
+- `static` and Tailwind output are still written once at the output root; they
+  are not duplicated into independent subpackages;
+- a component cannot be shared by two packages when either is independent;
 - `require()` paths are checked by the build tests and e2e, because the
   platform build does not fail on a wrong relative path (it fails at runtime
   with a blank page).
@@ -310,9 +346,9 @@ the shared runtime the six-component version was about 195 KB of component JS.
 4. **No per-page config.** `app.json` window/navigation settings are shared.
 5. **Output ownership is all-or-nothing.** `clean: true` replaces the whole
    output directory; custom files must live in `static`.
-6. **Shared runtime is a single main-package module.** `glaze-runtime/index.js`
-   is referenced by relative `require()`. Independent subpackages are not
-   supported because they cannot require main-package JavaScript.
+6. **Subpackage assets are not duplicated.** `static` and Tailwind styles are
+   written once at the output root; an independent subpackage that needs them
+   must copy or generate them itself.
 7. **WXSS references need manual handling.** `@import` is rejected and relative
    `url()` must be rewritten before building.
 
