@@ -39,6 +39,8 @@ export type GlazeContext = {
   ref(index: number, fn: (node: unknown) => void): void
   loading(boundary: number): boolean
   errored(boundary: number): boolean
+  error(boundary: number): unknown
+  errorArray(boundary: number): unknown[]
 }
 
 export type GlazeComponentConfig = {
@@ -72,7 +74,11 @@ export type InstanceState = {
   loadingSignals: Map<number, [() => boolean, (value: boolean) => void]>
   errorSignals: Map<number, [() => boolean, (value: boolean) => void]>
   bindingBoundaries: (number | null)[]
-  pendingAsync: Map<number, Set<number>>
-  errorBindings: Map<number, Set<number>>
+  bindingSources: unknown[]
+  fallbackSources: unknown[]
+  pendingAsync: Map<number, Map<unknown, Set<number>>>
+  errorBindings: Map<number, Map<unknown, Set<number>>>
+  errorValues: Map<number, Map<unknown, unknown>>
+  errorValueSignals: Map<number, [() => unknown, (value: unknown) => void]>
   error: unknown
 }

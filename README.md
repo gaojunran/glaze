@@ -16,8 +16,8 @@ events, context (including component boundaries), ref node queries, async
 `Repeat`, `For keyed` modes, `Show` callbacks, nested `Repeat`/`Show`, static
 spread, destructuring, class/style helpers, per-row patches and glass-easel
 splice updates, optional Tailwind 4 compilation, subpackages with per-package
-runtimes, per-page config, nested async boundaries, imported and static
-assets with URL rewriting, incremental watch, `glaze build` / `glaze watch` /
+runtimes, per-page config, nested async boundaries with source-aware pending
+state, imported and static assets with URL rewriting, incremental watch, `glaze build` / `glaze watch` /
 `glaze snippet`, a Vite build bridge, and a 1000-row benchmark in the minidev simulator. First render and keyed reverse
 are within a few percent of hand-written WXML in the same harness.
 

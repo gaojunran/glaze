@@ -588,7 +588,7 @@ test('store nested fields and store arrays share one runtime flush', async () =>
 test('tracks async pending and errored bindings for Loading and Errored', async () => {
   const def = defineGlazeComponent({
     errorBoundary: true,
-    data: { b0: null, b1: null, b2: null, b3: null },
+    data: { b0: null, b1: null, b2: null, b3: null, b4: null },
     setup(ctx) {
       ctx.bind(0, () => {
         throw new NotReadyError()
@@ -598,6 +598,7 @@ test('tracks async pending and errored bindings for Loading and Errored', async 
         throw new Error('boom')
       }, 0)
       ctx.bind(3, () => ctx.errored(0))
+      ctx.bind(4, () => (ctx.error(0) as Error)?.message)
     },
   })
   const instance = createInstance(def)
@@ -605,6 +606,7 @@ test('tracks async pending and errored bindings for Loading and Errored', async 
   await tick()
   assert.equal(instance.calls.at(-1).b1, true)
   assert.equal(instance.calls.at(-1).b3, true)
+  assert.equal(instance.calls.at(-1).b4, 'boom')
   assert.equal(instance.calls[0].b0, undefined)
   assert.equal(instance.calls[0].b2, undefined)
 })

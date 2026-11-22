@@ -1413,3 +1413,22 @@ test('marks relative resource literals for build-time asset rewriting', () => {
   assert.equal(dynamic.assets.length, 0)
   assert.match(dynamic.wxml, /src="\{\{b0\}\}"/)
 })
+
+test('compiles an Errored function fallback with an error accessor', () => {
+  const result = compileComponent(`
+    import { Errored } from 'solid-js'
+    export default function Page() {
+      return (
+        <Errored fallback={(error) => <text class="error">{error().message}</text>}>
+          <text>{broken()}</text>
+        </Errored>
+      )
+    }
+  `)
+  assert.match(result.wxml, /wx:if="\{\{b1\}\}"/)
+  assert.match(result.wxml, /wx:for="\{\{b0\}\}"/)
+  assert.match(result.wxml, /wx:for-item="error"/)
+  assert.match(result.wxml, /\{\{error\.message\}\}/)
+  assert.match(result.js, /ctx\.bind\(0, \(\) => \(ctx\.errorArray\(0\)\)\)/)
+  assert.match(result.js, /ctx\.bind\(2, \(\) => \(broken\(\)\), 0\)/)
+})

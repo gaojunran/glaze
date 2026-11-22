@@ -20,7 +20,7 @@ export default function AsyncPage() {
           <text class="nested-value">{later()}</text>
         </Loading>
       </Loading>
-      <Errored fallback={<text class="async-error">async-error</text>}>
+      <Errored fallback={(error) => <text class="async-error">{error().message}</text>}>
         <text class="async-broken">{broken()}</text>
       </Errored>
     </view>

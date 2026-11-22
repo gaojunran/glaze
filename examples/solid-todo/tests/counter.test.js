@@ -259,8 +259,7 @@ test('async Loading and Errored boundaries render fallbacks and resolved values'
   await expect(app).toMatchText('.title', 'Async boundaries')
   await expect(app).toMatchText('.async-value', 'async-ready')
   await expect(app).toMatchText('.nested-value', 'async-ready')
-  const fs = require('node:fs'); fs.writeFileSync('/tmp/opencode/async-app.xml', await app.outerWxml())
-  await expect(app).toMatchText('.async-error', 'async-error')
+  await expect(app).toMatchText('.async-error', 'boom')
 })
 
 test('independent subpackage loads its own runtime and updates state', async (miniProgram) => {

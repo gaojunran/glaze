@@ -119,20 +119,60 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
   if (getAttribute(node, 'on')) throw new Error(`<${kind}> does not support the "on" prop yet`)
   const fallbackAttr = getAttribute(node, 'fallback')
   const fallback = getExpression(fallbackAttr)
-  if (fallback && !t.isJSXElement(fallback) && !t.isJSXFragment(fallback)) {
-    throw new Error(`<${kind}> fallback must be JSX`)
-  }
   if (kind === 'Errored' && !fallback) throw new Error('<Errored> requires a fallback')
   if (kind === 'Errored') ctx.usesErrorBoundary = true
 
   const outerBoundary = ctx.currentAsyncBoundary
   const boundary = ctx.nextAsyncBoundary
   ctx.nextAsyncBoundary += 1
-  // The fallback and the boundary's own condition belong to the enclosing
-  // boundary; only the children are governed by this one. That lets nested
-  // Loading boundaries show their own fallback without outer pending state
-  // hiding the inner one.
-  const fallbackContent = fallback ? compileNode(fallback, ctx, scope) : ''
+
+  const isFunctionFallback =
+    fallback && (t.isArrowFunctionExpression(fallback) || t.isFunctionExpression(fallback))
+  if (
+    fallback &&
+    !isFunctionFallback &&
+    !t.isJSXElement(fallback) &&
+    !t.isJSXFragment(fallback)
+  ) {
+    throw new Error(`<${kind}> fallback must be JSX or a function returning JSX`)
+  }
+  if (isFunctionFallback && kind !== 'Errored') {
+    throw new Error('<Loading> fallback must be JSX')
+  }
+  if (isFunctionFallback && fallback.params.length > 1) {
+    throw new Error('<Errored> fallback reset is not supported yet')
+  }
+
+  let fallbackContent = ''
+  if (fallback && isFunctionFallback) {
+    const param = fallback.params[0]
+    if (!param || !t.isIdentifier(param)) {
+      throw new Error('<Errored> fallback must take an error accessor')
+    }
+    const callback = callbackBody(fallback, '<Errored>', [param.name])
+    if (!t.isJSXElement(callback.jsx) && !t.isJSXFragment(callback.jsx)) {
+      throw new Error('<Errored> fallback function must return JSX')
+    }
+    const values = ctx.addBindingCode(`ctx.errorArray(${boundary})`)
+    const errorScope = {
+      item: param.name,
+      index: '__glazeErrorIndex',
+      source: `b${values}`,
+      jsSource: `b${values}`,
+      parent: null,
+      level: 0,
+      itemAccessor: true,
+      indexAccessor: false,
+      aliases: callback.aliases,
+    }
+    fallbackContent = `<block wx:for="{{b${values}}}" wx:for-item="${param.name}" wx:for-index="__glazeErrorIndex" wx:key="*this">${compileNode(callback.jsx, ctx, errorScope)}</block>`
+  } else if (fallback) {
+    // The fallback and the boundary's own condition belong to the enclosing
+    // boundary; only the children are governed by this one. That lets nested
+    // Loading boundaries show their own fallback without outer pending state
+    // hiding the inner one.
+    fallbackContent = compileNode(fallback, ctx, scope)
+  }
   const index = ctx.addBindingCode(
     kind === 'Loading' ? `ctx.loading(${boundary})` : `ctx.errored(${boundary})`,
   )

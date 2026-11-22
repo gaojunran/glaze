@@ -359,7 +359,7 @@ Solid 2 `Loading` and `Errored` compile inside a component, including nested bou
 <Loading fallback={<text>loading</text>}>
   <text>{later()}</text>
 </Loading>
-<Errored fallback={<text>failed</text>}>
+<Errored fallback={(error) => <text>{error().message}</text>}>
   <text>{broken()}</text>
 </Errored>
 ```
@@ -372,9 +372,17 @@ content. A failed binding is skipped instead of writing `undefined`, so it
 cannot clear another binding's error. The fallback and the boundary's own
 condition belong to the outer boundary.
 
+Pending and error state is keyed by `NotReadyError.source` when present, with a
+per-binding fallback. This keeps one async source shared by several bindings
+from becoming several unrelated sources. Error objects are normalized to
+`{ name, message }` before crossing the WXML data bridge; `error()` in an
+`Errored` fallback reads that normalized value. The fallback is rendered through
+a single-element `wx:for`, so `error()` is rewritten to the WXML loop item and
+the dependency graph itself stays in JS.
+
 Boundaries inside a loop are rejected because their condition would need a
-per-row binding. `on` dependencies, function fallbacks, and reset are not
-implemented.
+per-row binding. `on` dependencies and reset are not implemented; an `Errored`
+fallback function may take only the error accessor.
 
 ### Refs
 
@@ -702,8 +710,8 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
 10. **Build integration** has `glaze build`, `glaze watch`, and a Vite build
     bridge. Watch is compile-incremental; there is no mini-program HMR.
 11. **Async boundaries** (`Loading` / `Errored`) support nesting, but not inside
-    a loop; `on` dependencies, function fallbacks, and reset are not
-    implemented.
+    a loop; `Errored` function fallbacks take only an error accessor, and `on`
+    dependencies and reset are not implemented.
 12. **Svelte** has no compiler yet.
 
 

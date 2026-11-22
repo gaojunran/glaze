@@ -127,6 +127,8 @@ Known limits are listed in [compiler.md](compiler.md#known-gaps).
   `independent`.
 - Each package gets its own `components/` and `glaze-runtime/index.js`; page
   wrappers and `usingComponents` use package-absolute paths.
+- Async pending/error state is keyed by `NotReadyError.source`, and `Errored`
+  supports an error-accessor fallback; reset and `on` remain future work.
 - `pageConfig` merges page-level JSON into generated wrappers.
 - `static` entries support `{ from, to, subpackage }`, and relative WXSS
   `url()` references to copied assets are rewritten for each generated

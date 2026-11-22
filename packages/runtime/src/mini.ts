@@ -41,6 +41,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     if (!config.errorBoundary) logBindingError(index, error)
   }
   type BoundarySignal = [() => boolean, (value: boolean) => void]
+  type BoundaryValueSignal = [() => unknown, (value: unknown) => void]
   const boundarySignal = (
     signals: Map<number, BoundarySignal>,
     boundary: number,
@@ -52,29 +53,88 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     }
     return signal
   }
+  const boundaryValueSignal = (
+    signals: Map<number, BoundaryValueSignal>,
+    boundary: number,
+  ): BoundaryValueSignal => {
+    let signal = signals.get(boundary)
+    if (!signal) {
+      signal = createSignal<unknown>(null)
+      signals.set(boundary, signal)
+    }
+    return signal
+  }
+  const normalizeAsyncError = (error: unknown): unknown => {
+    if (error instanceof Error) return { name: error.name, message: error.message }
+    if (error && typeof error === 'object' && 'message' in error) {
+      const value = error as { name?: unknown; message?: unknown }
+      return {
+        name: typeof value.name === 'string' ? value.name : 'Error',
+        message: String(value.message),
+      }
+    }
+    return { name: 'Error', message: String(error) }
+  }
+  const sourceKey = (state: InstanceState, index: number, error: unknown) => {
+    const source = (error as { source?: unknown } | null)?.source
+    if (source != null) return source
+    let fallback = state.fallbackSources[index]
+    if (fallback === undefined) {
+      fallback = { binding: index }
+      state.fallbackSources[index] = fallback
+    }
+    return fallback
+  }
   const clearAsync = (state: InstanceState, index: number) => {
     const boundary = state.bindingBoundaries[index]
     if (boundary == null) return
-    const pending = state.pendingAsync.get(boundary)
-    pending?.delete(index)
-    if (pending?.size === 0) state.pendingAsync.delete(boundary)
-    const errors = state.errorBindings.get(boundary)
-    errors?.delete(index)
-    if (errors?.size === 0) state.errorBindings.delete(boundary)
-    boundarySignal(state.loadingSignals, boundary)[1](Boolean(pending?.size))
-    boundarySignal(state.errorSignals, boundary)[1](Boolean(errors?.size))
+    const source = state.bindingSources[index]
+    for (const [map, signals] of [
+      [state.pendingAsync, state.loadingSignals],
+      [state.errorBindings, state.errorSignals],
+    ] as const) {
+      const sources = map.get(boundary)
+      if (!sources) continue
+      const consumers = sources.get(source)
+      consumers?.delete(index)
+      if (consumers?.size === 0) {
+        sources.delete(source)
+        if (map === state.errorBindings) state.errorValues.get(boundary)?.delete(source)
+      }
+      if (sources.size === 0) map.delete(boundary)
+      boundarySignal(signals, boundary)[1](sources.size > 0)
+    }
+    const errors = state.errorValues.get(boundary)
+    if (errors) {
+      if (errors.size === 0) state.errorValues.delete(boundary)
+      boundaryValueSignal(state.errorValueSignals, boundary)[1](
+        errors.size > 0 ? normalizeAsyncError(errors.values().next().value) : null,
+      )
+    }
   }
   const markAsync = (state: InstanceState, index: number, error: unknown) => {
     const boundary = state.bindingBoundaries[index]
     if (boundary == null) return
-    const map = isNotReady(error) ? state.pendingAsync : state.errorBindings
-    const entries = map.get(boundary) ?? new Set<number>()
-    entries.add(index)
-    map.set(boundary, entries)
+    const pending = isNotReady(error)
+    const source = sourceKey(state, index, error)
+    state.bindingSources[index] = source
+    const map = pending ? state.pendingAsync : state.errorBindings
+    const sources = map.get(boundary) ?? new Map<unknown, Set<number>>()
+    const consumers = sources.get(source) ?? new Set<number>()
+    if (consumers.has(index)) return
+    consumers.add(index)
+    sources.set(source, consumers)
+    map.set(boundary, sources)
     boundarySignal(
-      isNotReady(error) ? state.loadingSignals : state.errorSignals,
+      pending ? state.loadingSignals : state.errorSignals,
       boundary,
     )[1](true)
+    if (!pending) {
+      const values = state.errorValues.get(boundary) ?? new Map<unknown, unknown>()
+      values.set(source, error)
+      state.errorValues.set(boundary, values)
+      boundaryValueSignal(state.errorValueSignals, boundary)[1](normalizeAsyncError(error))
+    }
   }
   const deferredContext = (config.boundaryContexts?.length ?? 0) > 0
   const methods: Record<string, unknown> = {}
@@ -148,9 +208,13 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     state.previous.length = 0
     state.pendingAsync.clear()
     state.errorBindings.clear()
+    state.errorValues.clear()
     state.bindingBoundaries.length = 0
+    state.bindingSources.length = 0
+    state.fallbackSources.length = 0
     state.loadingSignals.forEach((signal) => signal[1](false))
     state.errorSignals.forEach((signal) => signal[1](false))
+    state.errorValueSignals.forEach((signal) => signal[1](null))
     state.error = undefined
     state.owner = null
 
@@ -169,6 +233,11 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           },
           loading: (boundary) => boundarySignal(state.loadingSignals, boundary)[0](),
           errored: (boundary) => boundarySignal(state.errorSignals, boundary)[0](),
+          error: (boundary) => boundaryValueSignal(state.errorValueSignals, boundary)[0](),
+          errorArray: (boundary) => {
+            const value = boundaryValueSignal(state.errorValueSignals, boundary)[0]()
+            return value == null ? [] : [value]
+          },
         },
         state.propsProxy!,
       )
@@ -467,8 +536,12 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           loadingSignals: new Map(),
           errorSignals: new Map(),
           bindingBoundaries: [],
+          bindingSources: [],
+          fallbackSources: [],
           pendingAsync: new Map(),
           errorBindings: new Map(),
+          errorValues: new Map(),
+          errorValueSignals: new Map(),
           error: undefined,
         }
         this.__glaze = state
