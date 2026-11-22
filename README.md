@@ -122,32 +122,6 @@ identical. The full protocol, per-run values and caveats (stale DOM across
 `reLaunch`, `input()` not real keystrokes, no `setData` byte counts) are in
 [Optimizations](docs/optimizations.md).
 
-### Public cross-framework data (not directly comparable)
-
-There is no public benchmark that runs Glaze, Taro, uni-app, Vue Mini and native
-on the same device, base library and workload. The only public cross-framework
-numbers found so far are:
-
-| Source | Covers | Versions / date | Caveat |
-| --- | --- | --- | --- |
-| [mp-framework-benchmark](https://github.com/yangmingshan/mp-framework-benchmark) | Native, Vue Mini, Taro (React) | Vue Mini 1.0.0-rc.11, Taro 3.6.32, 2024-06 | iPhone XR; no uni-app, no Glaze; author maintains Vue Mini |
-| [DCloud 2019 review](https://ask.dcloud.net.cn/article/35947) | Native, wepy, mpvue, Taro, uni-app | WeChat 7.0.3, 2019-05 | vendor-authored and obsolete |
-
-The only source with concrete numbers is the 2024 phone benchmark above. Its
-results (iPhone XR, three runs, older framework versions) are:
-
-| Case | Native | Vue Mini 1.0.0-rc.11 | Taro 3.6.32 (React) |
-| --- | ---: | ---: | ---: |
-| Dynamic list 100 → 1000 rows | 82.7 → 113.3 ms | 101 → 179.7 ms | 450.3 → 2266 ms |
-| Local update, 100 / 1000 rows | 6 / 4.3 ms | 5.3 / 5 ms | 242.7 / 2030.7 ms |
-| Static page render | 94 ms | 103 ms | 148.3 ms |
-| Hello World bundle | 1 KB | 26 KB | 280 KB |
-
-These are not Glaze numbers and not current Taro/Vue Mini numbers. They use a
-different workload (coupon list), phone and base library, and the author
-maintains Vue Mini. Do not subtract or average them with the minidev tables
-above.
-
 ## How it compares
 
 This is an architectural comparison, not a measured cross-framework benchmark.
