@@ -15,7 +15,10 @@ Page({
       'rows[0].title': `Row 0 ${tick}`,
     })
   },
-  toggleFirst() {
+  bump() {
+    this.setData({ tick: this.data.tick + 1 })
+  },
+  toggleFirst() {  toggleFirst() {
     this.setData({
       'rows[0].done': !this.data.rows[0].done,
     })

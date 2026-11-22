@@ -1,6 +1,7 @@
 <view class="bench">
   <text id="tick">{{tick}}</text>
   <text id="title">{{rows[0].title}}</text>
+  <button id="bump" class="bump" bindtap="bump">bump</button>
   <button id="update" class="update" bindtap="updateFirst">update</button>
   <button id="toggle" class="toggle" bindtap="toggleFirst">toggle</button>
   <button id="insert" class="insert" bindtap="insertFirst">insert</button>

@@ -26,6 +26,7 @@ actions differ and are not compared there.
 The **fine** pages render 5000 `.row` elements. Each row also carries
 `extra: 'x'.repeat(2000)`, which is data, not rendered text. They expose:
 
+- `#bump` — increment `tick` only
 - `#update` — change `rows[0].title`
 - `#toggle` — change `rows[0].done`
 - `#insert` — prepend a row
@@ -96,8 +97,8 @@ node bench/frameworks/run.mjs --port 9446 --route /pages/native-fine/index \
   --update '#update' --skip-reverse --runs 3
 ```
 
-The runner supports `--toggle`, `--insert`, `--delete`, `--row` (row selector),
-`--first-text` (first-row text selector) and `--skip-reverse`. It prints JSON
+The runner supports `--bump`, `--toggle`, `--insert`, `--delete`, `--row` (row
+selector), `--first-text` (first-row text selector) and `--skip-reverse`. It prints JSON
 with each run's `firstRender`, optional `update`, `toggle`, `insert`, `delete`
 and `reverse` in milliseconds. It asserts the requested row count and, when a
 first-row text selector is supplied, that the first row actually rendered.
@@ -169,6 +170,10 @@ Caveats:
   for list changes; in-place mutation is not a reliable trigger.
 - minidev can retain stale DOM across `reLaunch`; always use the neutral route
   and treat small update differences as noise.
+- A scalar-only `#bump` on this 5000-row page measured 55 ms for both Vue Mini
+  and uni-app (single runs). That is at the simulator polling floor, so it does
+  not mean uni-app's full-data diff is free; it means this harness cannot
+  resolve it without a larger payload or a data-diff counter.
 - No `setData` count or byte metric is available here. The rich-row update is
   the wall-clock proxy for that missing metric.
 

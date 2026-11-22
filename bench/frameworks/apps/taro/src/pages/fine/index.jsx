@@ -39,6 +39,7 @@ export default function Fine() {
     <View className="bench">
       <Text id="tick">{tick}</Text>
       <Text id="title">{rows[0].title}</Text>
+      <Button id="bump" className="bump" onClick={() => setTick((value) => value + 1)}>bump</Button>
       <Button id="update" className="update" onClick={updateFirst}>update</Button>
       <Button id="toggle" className="toggle" onClick={toggleFirst}>toggle</Button>
       <Button id="insert" className="insert" onClick={insertFirst}>insert</Button>

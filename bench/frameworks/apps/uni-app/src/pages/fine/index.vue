@@ -2,6 +2,7 @@
   <view class="bench">
     <text id="tick">{{ tick }}</text>
     <text id="title">{{ rows[0].title }}</text>
+    <button id="bump" class="bump" @click="bump">bump</button>
     <button id="update" class="update" @click="updateFirst">update</button>
     <button id="toggle" class="toggle" @click="toggleFirst">toggle</button>
     <button id="insert" class="insert" @click="insertFirst">insert</button>
@@ -27,6 +28,9 @@ export default {
     return { rows: ROWS.slice(), tick: 0 }
   },
   methods: {
+    bump() {
+      this.tick += 1
+    },
     updateFirst() {
       const nextTick = this.tick + 1
       this.tick = nextTick

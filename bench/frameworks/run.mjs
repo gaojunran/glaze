@@ -32,6 +32,8 @@ const titleSelector = option('title', '#title')
 const rowSelector = option('row', '.row')
 const firstTextSelector = option('first-text', '.row-title')
 const reverseSelector = option('reverse', '.reverse')
+const bumpSelector = option('bump')
+const tickSelector = option('tick', '#tick')
 const toggleSelector = option('toggle')
 const insertSelector = option('insert')
 const deleteSelector = option('delete')
@@ -100,6 +102,15 @@ async function measure(mp) {
     }, 'updated title')
   }
 
+  let bump
+  if (bumpSelector) {
+    const before = await (await controls.$(tickSelector)).text()
+    bump = await tap(bumpSelector, async () => {
+      const current = await controls.$(tickSelector)
+      return current && (await current.text()) !== before
+    }, 'bumped tick')
+  }
+
   let toggle
   if (toggleSelector) {
     const first = await firstRow()
@@ -137,7 +148,7 @@ async function measure(mp) {
     reverseMs = Date.now() - reverseStarted
   }
 
-  return { firstRender, update, toggle, insert, delete: deleteRow, reverse: reverseMs }
+  return { firstRender, bump, update, toggle, insert, delete: deleteRow, reverse: reverseMs }
 }
 
 const mp = await automator.connect(`ws://127.0.0.1:${port}/automator`)

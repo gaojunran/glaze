@@ -38,6 +38,7 @@ export default function FineBench() {
     <view class="bench">
       <text id="tick">{tick()}</text>
       <text id="title">{rows()[0].title}</text>
+      <button id="bump" class="bump" onClick={() => setTick((value) => value + 1)}>bump</button>
       <button id="update" class="update" onClick={updateFirst}>update</button>
       <button id="toggle" class="toggle" onClick={toggleFirst}>toggle</button>
       <button id="insert" class="insert" onClick={insertFirst}>insert</button>

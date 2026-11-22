@@ -19,6 +19,10 @@ definePage(() => {
     );
   };
 
+  const bump = () => {
+    tick.value += 1;
+  };
+
   const toggleFirst = () => {
     rows.value = rows.value.map((row, index) =>
       index === 0 ? { ...row, done: !row.done } : row,
@@ -38,5 +42,5 @@ definePage(() => {
     rows.value = [...rows.value].reverse();
   };
 
-  return { rows, tick, updateFirst, toggleFirst, insertFirst, deleteFirst, reverse };
+  return { rows, tick, bump, updateFirst, toggleFirst, insertFirst, deleteFirst, reverse };
 });
