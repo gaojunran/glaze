@@ -689,13 +689,16 @@ bundle size) is documented in `docs/build.md`.
 
 Run on 2026-11-22 in the repository workspace:
 
-- `pnpm -r test` — compiler 57 passed, build 13 passed, runtime 10 passed.
-- `pnpm build` — `2 pages, 6 components`.
+- `pnpm -r test` — compiler 63 passed, build 18 passed, runtime 20 passed.
+- `pnpm build` — `4 pages, 11 components`.
 - `target/debug/minidev test --project examples/solid-todo --browser
   ~/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell`
-  — 1 case passed, 0 failed (about 8.1 s). The counter e2e covers nested loops,
-  component events, keyed/non-keyed control flow, context, refs, and list
-  insert/append/delete.
+  — 4 cases passed, 0 failed (about 22–23 s). The counter e2e covers nested
+  loops, component events, keyed/non-keyed control flow, context, refs and list
+  insert/append/delete. The reactive e2e covers a Solid 2 `createStore` with
+  nested objects and arrays, `createMemo`, object-signal replacement, keyed
+  `For` over a store array, nested row fields and `Show` driven by a nested
+  store path.
 
 The simulator still prints `wx:key` performance warnings for the intentional
 `keyed={false}` and keyless object-list examples; they are warnings, not

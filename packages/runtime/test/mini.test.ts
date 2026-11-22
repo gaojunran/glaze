@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test, { after } from 'node:test'
-import { createSignal } from 'solid-js'
+import { createSignal, createStore } from 'solid-js'
 import { defineGlazeComponent, listOps, listPatch } from '../src/mini.ts'
 
 const originalComponent = globalThis.Component
@@ -504,4 +504,83 @@ test('the first effect run does not rewrite values already sent by mount', async
 
   assert.equal(instance.pathCalls.length, 0)
   assert.equal(instance.calls.length, 1)
+})
+
+test('applies object-valued scalar bindings by replacement', async () => {
+  let setProfile
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    setup(ctx) {
+      const [profile, set] = createSignal({ name: 'A', nested: { age: 1 } })
+      setProfile = set
+      ctx.bind(0, () => profile())
+    },
+  })
+
+  const instance = createInstance(def, {}, { paths: true })
+  def.lifetimes.attached.call(instance)
+
+  setProfile({ name: 'A', nested: { age: 2 } })
+  await tick()
+
+  assert.deepEqual(instance.pathCalls, [[['b0'], { name: 'A', nested: { age: 2 } }]])
+})
+
+test('patches a replaced list item object as one field change', async () => {
+  const second = { id: 2, title: 'two', meta: { tag: 'b' } }
+  let setItems
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    setup(ctx) {
+      const [items, set] = createSignal([
+        { id: 1, title: 'one', meta: { tag: 'a' } },
+        second,
+      ])
+      setItems = set
+      ctx.bind(0, () => items())
+    },
+  })
+
+  const instance = createInstance(def, {}, { paths: true })
+  def.lifetimes.attached.call(instance)
+
+  setItems([{ id: 1, title: 'one', meta: { tag: 'changed' } }, second])
+  await tick()
+
+  assert.deepEqual(instance.pathCalls, [
+    [['b0', 0, 'meta'], { tag: 'changed' }],
+  ])
+})
+
+test('store nested fields and store arrays share one runtime flush', async () => {
+  let setStore
+  const def = defineGlazeComponent({
+    data: { b0: null, b1: null },
+    listBindings: { 1: 'id' },
+    setup(ctx) {
+      const [state, set] = createStore({
+        user: { name: 'Ada' },
+        rows: [{ id: 1, title: 'one' }],
+      })
+      setStore = set
+      ctx.bind(0, () => state.user.name)
+      ctx.bind(1, () => state.rows)
+    },
+  })
+
+  const instance = createInstance(def, {}, { paths: true })
+  def.lifetimes.attached.call(instance)
+
+  setStore((prev) => ({
+    ...prev,
+    user: { ...prev.user, name: 'Grace' },
+    rows: [...prev.rows, { id: 2, title: 'two' }],
+  }))
+  await tick()
+
+  assert.deepEqual(instance.pathCalls, [[['b0'], 'Grace']])
+  assert.deepEqual(instance.ops, [
+    { path: ['b1'], index: 1, del: 0, inserts: [{ id: 2, title: 'two' }] },
+  ])
 })

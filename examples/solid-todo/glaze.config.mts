@@ -7,6 +7,7 @@ const config: GlazeConfig = {
     'pages/index/index': 'Counter.tsx',
     'pages/bench/index': 'Bench.tsx',
     'pages/bench-components/index': 'BenchComponents.tsx',
+    'pages/reactive/index': 'ReactiveCases.tsx',
   },
   static: ['static'],
   staticPages: ['pages/native/index', 'pages/native-components/index'],

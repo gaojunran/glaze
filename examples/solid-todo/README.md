@@ -39,6 +39,8 @@ Pages:
   `Repeat`, `For` fallback, `For keyed` modes, `Show` callbacks, nested `Repeat`/`Show`, static spread, destructuring, slots, custom events, context, ref, nested `For`,
   keyed `For`, class objects, `TodoItem` props;
 - `pages/bench/index` — 1000 rows compiled from Solid, including reverse;
+- `pages/bench-components/index` — 1000 pure + 1000 stateful row components;
+- `pages/reactive/index` — `createStore` nested objects/arrays, `createMemo`, object signals and keyed `For`;
 - `pages/native/index` — the same 1000 rows in hand-written WXML.
 
 ## Benchmark

@@ -135,3 +135,53 @@ test('honors catch, capture and mut-bind event semantics', async (miniProgram) =
   await (await captureHost.$('.event-ping')).tap()
   await expect(app).toMatchText('.event-log', 'cp')
 })
+
+test('deep store state and object/array seams update through compiled bindings', async (miniProgram) => {
+  await miniProgram.reLaunch('/pages/reactive/index')
+  const page = await miniProgram.currentPage()
+  await page.waitFor(800)
+  const app = await page.$('#app')
+  if (!app) throw new Error('glaze-root not found')
+
+  await expect(app).toMatchText('.user-name', 'Ada')
+  await expect(app).toMatchText('.user-city', 'London')
+  await expect(app).toMatchText('.done-count', '0')
+  await expect(app).toMatchText('.store-count', '0')
+  await expect(app).toMatchText('.profile-age', '1')
+
+  await (await app.$('.rename')).tap()
+  await expect(app).toMatchText('.user-name', 'Grace')
+  await expect(app).toMatchText('.renamed', 'renamed')
+
+  await (await app.$('.move-city')).tap()
+  await expect(app).toMatchText('.user-city', 'Paris')
+
+  await (await app.$('.toggle-row')).tap()
+  await expect(app).toMatchText('.done-count', '1')
+  await expect(app).toMatchText('.store-row-state', 'done')
+
+  await (await app.$('.retag-row')).tap()
+  await expect(app).toMatchText('.store-row-tag', 'changed')
+
+  await (await app.$('.push-row')).tap()
+  await page.waitFor(300)
+  await expect((await app.$$('.store-row')).length).toBe(3)
+  await expect(app).toMatchText('.store-row-title', 'one')
+
+  await (await app.$('.remove-row')).tap()
+  await page.waitFor(300)
+  await expect((await app.$$('.store-row')).length).toBe(2)
+
+  await (await app.$('.bump-count')).tap()
+  await expect(app).toMatchText('.store-count', '1')
+
+  await (await app.$('.rename-item')).tap()
+  await expect(app).toMatchText('.signal-row', 'alpha+')
+
+  await (await app.$('.append-item')).tap()
+  await page.waitFor(300)
+  await expect((await app.$$('.signal-row')).length).toBe(3)
+
+  await (await app.$('.age-profile')).tap()
+  await expect(app).toMatchText('.profile-age', '2')
+})
