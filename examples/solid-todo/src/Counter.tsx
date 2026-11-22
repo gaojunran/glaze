@@ -11,6 +11,7 @@ import SlotCard from './SlotCard'
 import ThemeLabel from './ThemeLabel'
 import ThemeDirect from './ThemeDirect'
 import TodoItem from './TodoItem'
+import logo from './assets/logo.png'
 
 type Todo = {
   id: number
@@ -56,6 +57,8 @@ export default function Counter() {
   return (
     <view class="page">
       <Header title="Glaze + Solid" />
+      <image class="asset-logo" src={logo} />
+      <image class="static-logo" src="./assets/static-logo.png" />
       <Nested title="Nested inline" />
       <CamelLabel userName={count() > 0 ? "positive" : "zero"} />
 

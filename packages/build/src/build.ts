@@ -389,6 +389,23 @@ export async function buildProject(
       }
     }
 
+    const resolveWxmlAssets = (result, outDir) =>
+      result.wxml.replace(/__GLAZE_ASSET_(\d+)__/g, (match, index) => {
+        const entry = result.assets?.[Number(index)]
+        if (!entry) return match
+        if (!entry.fromFile) {
+          throw new Error(`Cannot resolve asset "${entry.specifier}" without a source file`)
+        }
+        const source = path.resolve(path.dirname(entry.fromFile), entry.specifier)
+        const target = assets.get(source)
+        if (!target) {
+          throw new Error(
+            `Asset "${entry.specifier}" referenced from ${entry.fromFile} is not in static`,
+          )
+        }
+        return `/${target}`
+      })
+
     const appJs = path.join(sourceDir, 'app.js')
     if (existsSync(appJs)) await copyFile(appJs, path.join(stagingDir, 'app.js'))
     const appStyle = await readAppStyle(sourceDir)
@@ -442,7 +459,7 @@ export async function buildProject(
       const outDir = path.join(group.dir, outName)
       await mkdir(outDir, { recursive: true })
 
-      await writeFile(path.join(outDir, 'index.wxml'), result.wxml)
+      await writeFile(path.join(outDir, 'index.wxml'), resolveWxmlAssets(result, outDir))
 
       const usingComponents = {}
       for (const component of result.components) {
@@ -500,12 +517,31 @@ export async function buildProject(
         target: 'es2020',
         write: false,
         metafile: true,
+        outfile: path.join(outDir, 'index.js'),
+        assetNames: 'assets/[name]-[hash]',
+        publicPath: `${owner ? `/${owner.root}` : ''}/components/${outName}/`,
         nodePaths: [
           path.join(project, 'node_modules'),
           path.join(packageRoot, 'node_modules'),
           path.join(repoRoot, 'node_modules'),
         ],
-        loader: { '.tsx': 'tsx', '.ts': 'ts' },
+        loader: {
+          '.tsx': 'tsx',
+          '.ts': 'ts',
+          '.png': 'file',
+          '.jpg': 'file',
+          '.jpeg': 'file',
+          '.gif': 'file',
+          '.webp': 'file',
+          '.svg': 'file',
+          '.woff': 'file',
+          '.woff2': 'file',
+          '.ttf': 'file',
+          '.otf': 'file',
+          '.eot': 'file',
+          '.mp3': 'file',
+          '.mp4': 'file',
+        },
         plugins: [
           sharedRuntimePlugin(sharedSpecifierFor(outDir, group.sharedPath)),
           dedupeSolidPlugin,
@@ -513,9 +549,19 @@ export async function buildProject(
         minify: true,
         logLevel: 'warning',
       })
-      group.js.set(file, bundle.outputFiles[0].text)
+      const jsPath = path.join(outDir, 'index.js')
+      const jsOutput = bundle.outputFiles.find((output) => output.path === jsPath)
+      if (!jsOutput) throw new Error(`Component bundle did not produce index.js: ${file}`)
+      group.js.set(file, jsOutput.text)
+      for (const output of bundle.outputFiles) {
+        if (output.path === jsPath) continue
+        await mkdir(path.dirname(output.path), { recursive: true })
+        await writeFile(output.path, output.contents)
+      }
       for (const input of Object.keys(bundle.metafile.inputs)) {
-        if (input !== '<stdin>') group.inputs.add(input)
+        if (input === '<stdin>' || input.startsWith('<')) continue
+        if (!/\.(tsx?|jsx?|mjs|cjs|json)$/.test(input)) continue
+        group.inputs.add(input)
       }
     }
 

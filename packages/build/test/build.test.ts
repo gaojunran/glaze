@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { access, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -1225,4 +1225,197 @@ export default function App() {
   } finally {
     watcher.close()
   }
+})
+
+test('rewrites a static JSX resource literal through static assets', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      static: [{ from: 'assets', to: 'assets' }],
+    },
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view><image class="logo" src="./assets/logo.png" /></view>
+}
+`,
+      'src/assets/logo.png': 'png',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await buildProject(project)
+  const wxml = await readFile(
+    path.join(project, 'miniprogram/components/glaze-app/index.wxml'),
+    'utf8',
+  )
+  assert.match(wxml, /src="\/assets\/logo\.png"/)
+  assert.equal(
+    await exists(path.join(project, 'miniprogram/assets/logo.png')),
+    true,
+  )
+})
+
+test('bundles an imported asset next to the component', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `import logo from './assets/logo.png'
+
+export default function App() {
+  return <view><image class="logo" src={logo} /></view>
+}
+`,
+      'src/assets/logo.png': 'png',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await buildProject(project)
+  const componentDir = path.join(project, 'miniprogram/components/glaze-app')
+  const js = await readFile(path.join(componentDir, 'index.js'), 'utf8')
+  assert.match(js, /"\/components\/glaze-app\/assets\/logo-[A-Z0-9]+\.png"/)
+  const outputs = await readdir(path.join(componentDir, 'assets'))
+  assert.equal(outputs.length, 1)
+  assert.match(outputs[0], /^logo-[A-Z0-9]+\.png$/)
+  const wxml = await readFile(path.join(componentDir, 'index.wxml'), 'utf8')
+  assert.match(wxml, /src="\{\{b0\}\}"/)
+})
+
+test('fails when a static JSX asset is not copied by static', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view><image src="./assets/missing.png" /></view>
+}
+`,
+      'src/assets/missing.png': 'png',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await assert.rejects(
+    () => buildProject(project),
+    /Asset "\.\/assets\/missing\.png".*is not in static/,
+  )
+})
+
+test('bundles an asset imported by a component child', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `import Child from './Child'
+
+export default function App() {
+  return <view><Child /></view>
+}
+`,
+      'src/Child.tsx': `import logo from './assets/logo.png'
+
+export default function Child() {
+  return <image class="logo" src={logo} />
+}
+`,
+      'src/assets/logo.png': 'png',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await buildProject(project)
+  const componentDir = path.join(project, 'miniprogram/components/glaze-child')
+  const outputs = await readdir(path.join(componentDir, 'assets'))
+  assert.equal(outputs.length, 1)
+  const parent = await readFile(
+    path.join(project, 'miniprogram/components/glaze-app/index.wxml'),
+    'utf8',
+  )
+  assert.match(parent, /<child/)
+})
+
+test('rewrites a static resource literal passed to a component prop', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      static: [{ from: 'assets', to: 'assets' }],
+    },
+    files: {
+      'src/App.tsx': `import Child from './Child'
+
+export default function App() {
+  return <view><Child src="./assets/logo.png" /></view>
+}
+`,
+      'src/Child.tsx': `import { createSignal } from 'solid-js'
+
+export default function Child(props) {
+  const [ready] = createSignal(true)
+  return <view><slot /><image src={props.src} /><text>{ready() ? 'ok' : ''}</text></view>
+}
+`,
+      'src/assets/logo.png': 'png',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await buildProject(project)
+  const parent = await readFile(
+    path.join(project, 'miniprogram/components/glaze-app/index.wxml'),
+    'utf8',
+  )
+  assert.match(parent, /src="\/assets\/logo\.png"/)
+  const child = await readFile(
+    path.join(project, 'miniprogram/components/glaze-child/index.wxml'),
+    'utf8',
+  )
+  assert.match(child, /src="\{\{b0\}\}"/)
+})
+
+test('keeps imported subpackage assets inside the package root', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      subpackages: [
+        { root: 'pkg', pages: { 'pages/sub/index': 'pkg/Sub.tsx' }, independent: true },
+      ],
+    },
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view>main</view>
+}
+`,
+      'src/pkg/Sub.tsx': `import logo from './assets/logo.png'
+
+export default function Sub() {
+  return <view><image src={logo} /></view>
+}
+`,
+      'src/pkg/assets/logo.png': 'png',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await buildProject(project)
+  const componentDir = path.join(project, 'miniprogram/pkg/components/glaze-pkg-sub')
+  const js = await readFile(path.join(componentDir, 'index.js'), 'utf8')
+  assert.match(js, /"\/pkg\/components\/glaze-pkg-sub\/assets\/logo-[A-Z0-9]+\.png"/)
+  const outputs = await readdir(path.join(componentDir, 'assets'))
+  assert.equal(outputs.length, 1)
 })

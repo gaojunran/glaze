@@ -61,6 +61,21 @@ export function compileNode(node, ctx, scope, extraAttrs = []) {
   throw new Error('Unsupported JSX child')
 }
 
+const RESOURCE_ATTRIBUTES = new Set(['src', 'poster'])
+
+/**
+ * A relative literal in a resource attribute is resolved against the source
+ * TSX file and rewritten by the builder once the output directory is known.
+ * Remote, data and package-absolute paths stay untouched.
+ */
+function staticAssetAttr(name, value, ctx) {
+  if (!RESOURCE_ATTRIBUTES.has(name)) return null
+  if (!value.startsWith('./') && !value.startsWith('../')) return null
+  const token = `__GLAZE_ASSET_${ctx.assets.length}__`
+  ctx.assets.push({ token, specifier: value, fromFile: ctx.currentFile })
+  return token
+}
+
 export function compileElement(node, ctx, scope, extraAttrs = []) {
   const tag = node.openingElement.name
   if (
@@ -148,7 +163,9 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
     }
     const propName = attrName === 'className' ? 'class' : attrName
     if (t.isStringLiteral(expression) || t.isNumericLiteral(expression)) {
-      attrs.push(`${propName}="${escapeAttr(String(expression.value))}"`)
+      const value = String(expression.value)
+      const asset = t.isStringLiteral(expression) ? staticAssetAttr(propName, value, ctx) : null
+      attrs.push(`${propName}="${escapeAttr(asset ?? value)}"`)
       continue
     }
     if (propName === 'class' && (t.isObjectExpression(expression) || t.isArrayExpression(expression))) {
@@ -243,7 +260,8 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
       continue
     }
     if (t.isStringLiteral(expression)) {
-      attrs.push(`${propName}="${escapeAttr(expression.value)}"`)
+      const asset = staticAssetAttr(propName, expression.value, ctx)
+      attrs.push(`${propName}="${escapeAttr(asset ?? expression.value)}"`)
       continue
     }
     if (t.isNumericLiteral(expression)) {

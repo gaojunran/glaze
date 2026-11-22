@@ -13,6 +13,7 @@ export type CompileOptions = {
 }
 
 export type ComponentRef = { name: string; source: string; fromFile?: string; file?: string }
+export type AssetEntry = { token: string; specifier: string; fromFile: string | null }
 export type BindingEntry = {
   code: string
   listKey: string | null
@@ -60,6 +61,7 @@ export type CompileResult = {
   boundaryContexts: BoundaryContext[]
   components: ComponentRef[]
   inlineComponents: ComponentRef[]
+  assets: AssetEntry[]
   bindingCount: number
   handlerCount: number
   refCount: number
@@ -83,6 +85,7 @@ export type CompilerContext = {
   helpers: Set<string>
   components: ComponentRef[]
   inlineComponents: ComponentRef[]
+  assets: AssetEntry[]
   imports: Map<string, string>
   knownImports: Set<string>
   extraImports: string[]

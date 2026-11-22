@@ -8,6 +8,24 @@ test('counter renders and updates through the compiled bindings', async (miniPro
   if (!app) throw new Error('glaze-root not found')
 
   await expect(app).toMatchText('.title', 'Glaze + Solid')
+  const logo = await app.$('.asset-logo')
+  const assetUrl = await logo.attribute('src')
+  if (!/^\/components\/glaze-counter\/assets\/logo-[A-Z0-9]+\.png$/.test(assetUrl)) {
+    throw new Error(`unexpected asset url: ${assetUrl}`)
+  }
+  const image = await miniProgram.callWxMethod('getImageInfo', { src: assetUrl })
+  if (!image || image.width !== 1) {
+    throw new Error(`asset did not load: ${JSON.stringify(image)}`)
+  }
+  const staticLogo = await app.$('.static-logo')
+  const staticUrl = await staticLogo.attribute('src')
+  if (staticUrl !== '/assets/static-logo.png') {
+    throw new Error(`unexpected static asset url: ${staticUrl}`)
+  }
+  const staticImage = await miniProgram.callWxMethod('getImageInfo', { src: staticUrl })
+  if (!staticImage || staticImage.width !== 1) {
+    throw new Error(`static asset did not load: ${JSON.stringify(staticImage)}`)
+  }
   await expect(app).toMatchText('.count', '0')
   const camelInitial = await app.outerWxml()
   await expect(camelInitial).toContain('camel-label')

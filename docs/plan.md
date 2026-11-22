@@ -131,6 +131,10 @@ Known limits are listed in [compiler.md](compiler.md#known-gaps).
 - `static` entries support `{ from, to, subpackage }`, and relative WXSS
   `url()` references to copied assets are rewritten for each generated
   component.
+- Standard TSX asset imports use esbuild's `file` loader and emit a
+  package-absolute URL; static `src`/`poster` literals are resolved through
+  `static` and rewritten the same way. Dynamic values and JS strings are not
+  rewritten.
 - `glaze watch` passes changed files to the builder, which reuses cached
   compilation for unchanged TSX and recompiles parents of changed inlined
   children.

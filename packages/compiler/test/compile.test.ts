@@ -1393,3 +1393,23 @@ test('assigns separate ids to nested Loading boundaries', () => {
   assert.match(result.js, /ctx\.bind\(1, \(\) => \(ctx\.loading\(1\)\), 0\)/)
   assert.match(result.js, /ctx\.bind\(2, \(\) => \(later\(\)\), 1\)/)
 })
+
+test('marks relative resource literals for build-time asset rewriting', () => {
+  const relative = compileComponent(`
+    export default function Page() {
+      return <view><image src="./assets/logo.png" poster="https://cdn.example/poster.png" /></view>
+    }
+  `)
+  assert.equal(relative.assets.length, 1)
+  assert.equal(relative.assets[0].specifier, './assets/logo.png')
+  assert.match(relative.wxml, /src="__GLAZE_ASSET_0__"/)
+  assert.match(relative.wxml, /poster="https:\/\/cdn\.example\/poster\.png"/)
+
+  const dynamic = compileComponent(`
+    export default function Page(props) {
+      return <view><image src={props.src} /></view>
+    }
+  `)
+  assert.equal(dynamic.assets.length, 0)
+  assert.match(dynamic.wxml, /src="\{\{b0\}\}"/)
+})

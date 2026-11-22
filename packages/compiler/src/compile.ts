@@ -76,6 +76,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     helpers: new Set<string>(),
     components: [],
     inlineComponents: [],
+    assets: [],
     imports: collectImports(ast),
     knownImports: new Set(
       ast.program.body
@@ -241,6 +242,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     boundaryContexts: ctx.boundaryContexts,
     components: ctx.components,
     inlineComponents: ctx.inlineComponents,
+    assets: ctx.assets,
     bindingCount: ctx.bindings.length,
     handlerCount: ctx.events.length,
     refCount: ctx.refs.length,

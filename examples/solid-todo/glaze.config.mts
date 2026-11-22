@@ -15,7 +15,7 @@ const config: GlazeConfig = {
   subpackages: [
     { root: 'pkg', pages: { 'pages/sub/index': 'pkg/PkgPage.tsx' }, independent: true },
   ],
-  static: ['static'],
+  static: ['static', { from: 'assets/static-logo.png', to: 'assets/static-logo.png' }],
   css: { tailwind: { input: 'src/tailwind.css' } },
   staticPages: ['pages/native/index', 'pages/native-components/index'],
 }

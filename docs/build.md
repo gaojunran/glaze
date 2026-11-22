@@ -248,6 +248,42 @@ An object entry copies a directory's contents into `to` (relative to the output
 root or the named subpackage). A single file is copied to `to` or to the target
 directory.
 
+### Imported assets
+
+A standard module import is bundled by esbuild with the `file` loader:
+
+```tsx
+import logo from './assets/logo.png'
+
+<image src={logo} />
+```
+
+The asset is emitted next to the compiled component as
+`assets/<name>-<hash>.<ext>`, and the generated module receives a
+package-absolute URL such as
+`/components/glaze-app/assets/logo-PVIPRHR2.png`. Supported extensions are
+PNG, JPEG, GIF, WebP, SVG, WOFF/WOFF2/TTF/OTF/EOT, MP3 and MP4.
+
+The absolute URL is deliberate: the same value works for a component prop and
+for a component boundary, and an independent subpackage gets its own
+`/<package>/components/.../assets/...` path.
+
+### Static WXML references
+
+A relative literal in a resource attribute is resolved from the source TSX and
+must match a file copied by `static`:
+
+```tsx
+<image src="./assets/logo.png" />
+<video poster="./assets/poster.jpg" />
+```
+
+`src` and `poster` are rewritten to a package-absolute path such as
+`/assets/logo.png` or `/pkg/assets/logo.png`. This also applies when the literal
+is passed as a component prop.
+
+### Styles
+
 Component styles are copied next to the generated component, so the builder
 resolves asset references at build time:
 
@@ -260,6 +296,18 @@ resolves asset references at build time:
 - `@import` is still rejected with an error naming the source `.wxss` file.
 
 The rewrite also runs for inlined child styles and for `app.wxss`.
+
+### Dynamic references
+
+A dynamic value is not rewritten:
+
+```tsx
+<image src={props.src} />
+```
+
+Use a package-absolute path (`/assets/logo.png`), a remote URL, or a runtime
+value. Arbitrary JS strings are not inspected; only `import` and static
+resource attributes are build-time asset inputs.
 
 ## Static pages
 
@@ -347,10 +395,11 @@ Windows separators, WXSS portability, `staticPages` deduplication, app shell
 warnings, config reloads, CLI help, generated `styleIsolation`, the shared
 runtime file, relative `require()` resolution, namespace-import rejection,
 subpackage ownership and runtime placement, page config merging, and
-`static`/runtime collisions. The current suite has 35 builder tests; compiler
-has 68, runtime 22, shared 2.
+`static`/runtime collisions. The current suite has 41 builder tests; compiler
+has 69, runtime 22, shared 2.
 
-Real simulator run:
+Real simulator run (nine cases, including asset loading through
+`wx.getImageInfo`):
 
 ```bash
 cd ~/Playground/minibuild
@@ -366,9 +415,11 @@ target/debug/minidev test \
 Result: nine e2e cases pass against the generated `miniprogram` directory,
 covering the counter/control-flow/list/event/context/ref probe, review-boundary
 probes, catch/capture/mut-bind, store seams, Tailwind, cross-file context, ref
-queries, async boundaries and an independent subpackage.
+queries, async boundaries and an independent subpackage. The counter case also
+asserts the imported asset URL and loads it with `wx.getImageInfo`, then checks
+the static `src` literal the same way.
 
-On the example project (`pnpm build`, 5 pages, 12 components) the shared module
+On the example project (`pnpm build`, 8 pages, 16 components) the shared module
 is 46,582 B and all generated component `index.js` files total 10,678 B. Before
 the shared runtime the six-component version was about 195 KB of component JS.
 
@@ -378,8 +429,9 @@ the shared runtime the six-component version was about 195 KB of component JS.
    and reloads the config on every change; there is no mini-program HMR.
 2. **Vite plugin is a build bridge.** It does not provide mini-program HMR or a
    web preview renderer.
-3. **Assets are not discovered from source.** Only files copied through
-   `static` are addressable by relative WXSS `url()`.
+3. **Dynamic asset values are not rewritten.** `src={value}` and JS strings must
+   use package-absolute or remote URLs; only `import` and static `src`/`poster`
+   literals are build-time inputs.
 4. **Output ownership is all-or-nothing.** `clean: true` replaces the whole
    output directory; custom files must live in `static`.
 5. **Tailwind output is not duplicated.** Global Tailwind styles are written once
