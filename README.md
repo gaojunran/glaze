@@ -1,5 +1,7 @@
 # Glaze
 
+English | [简体中文](README.zh-CN.md)
+
 **Solid and Svelte, running natively on glass-easel.**
 
 Glaze compiles modern web frameworks to native mini-program WXML and runs only
