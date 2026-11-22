@@ -35,6 +35,7 @@ import {
   sharedSpecifierFor,
 } from './shared.ts'
 import { readAppStyle, readComponentStyle } from './preprocess.ts'
+import { assertPortableWxss, rewriteWxssUrls } from './styles.ts'
 import { applyTailwind, validateTailwindConfig } from './tailwind.ts'
 export { normalizeSourcePath, outputNameForRelative } from './paths.ts'
 
@@ -49,7 +50,14 @@ async function replaceOutput(stagingDir: string, outputDir: string, clean: boole
   await rm(stagingDir, { recursive: true, force: true })
 }
 
-export async function buildProject(projectPath = process.cwd()) {
+const compileCache = new Map<string, { fingerprint: string; entry: any }>()
+let compileCacheTag = ''
+const dependencyGraph = new Map<string, Set<string>>()
+
+export async function buildProject(
+  projectPath = process.cwd(),
+  options: { changedFiles?: string[] } = {},
+) {
   const project = path.resolve(projectPath)
   const config = await loadConfig(project)
   const bindingGroupSize = config.runtime?.bindingGroupSize
@@ -140,10 +148,49 @@ export async function buildProject(projectPath = process.cwd()) {
   const outputFor = (owner, file, name) =>
     owner ? `/${owner.root}/components/${name}/index` : `/components/${name}/index`
 
+  const cacheTag = `${project}|${JSON.stringify({
+    source: config.source,
+    output: config.output,
+    pages: config.pages,
+    subpackages: config.subpackages,
+    pageConfig: config.pageConfig,
+    runtime: config.runtime,
+    static: config.static,
+    staticPages: config.staticPages,
+  })}`
+  if (cacheTag !== compileCacheTag) {
+    compileCache.clear()
+    dependencyGraph.clear()
+    compileCacheTag = cacheTag
+  }
+  let changedFiles = options.changedFiles
+    ? new Set(options.changedFiles.map((file) => path.resolve(file)))
+    : null
+  if (changedFiles) {
+    const stack = [...changedFiles]
+    while (stack.length > 0) {
+      const file = stack.pop()
+      for (const parent of dependencyGraph.get(file) ?? []) {
+        if (changedFiles.has(parent)) continue
+        changedFiles.add(parent)
+        stack.push(parent)
+      }
+    }
+  }
   const compiled = new Map()
-  const compileFile = (file) => {
+  const compileFile = async (file: string) => {
     const existing = compiled.get(file)
     if (existing) return existing
+    const fileStat = await stat(file).catch(() => null)
+    const fingerprint = fileStat ? `${fileStat.mtimeMs}:${fileStat.size}` : 'missing'
+    if (changedFiles && !changedFiles.has(file)) {
+      const cached = compileCache.get(file)
+      if (cached && cached.fingerprint === fingerprint) {
+        compiled.set(file, cached.entry)
+        return cached.entry
+      }
+    }
+    const dependencies = new Set<string>()
     const entry = {
       result: compileComponent(sources.get(file), {
         inline: true,
@@ -151,11 +198,14 @@ export async function buildProject(projectPath = process.cwd()) {
         bindingGroupSize,
         resolveComponent: (_name, specifier, fromFile = file) => {
           const child = resolveSourceImport(fromFile, specifier, sources)
+          if (child) dependencies.add(child)
           return child ? { source: sources.get(child), file: child } : null
         },
       }),
+      dependencies,
     }
     compiled.set(file, entry)
+    compileCache.set(file, { fingerprint, entry })
     return entry
   }
 
@@ -173,23 +223,32 @@ export async function buildProject(projectPath = process.cwd()) {
   // Unreachable TSX files are never parsed, so a stray file cannot fail a
   // build that does not use it.
   const used = new Set(pageEntries.map((entry) => entry.file))
-  const edges = new Map()
+  const edges = new Map<string, Set<string>>()
   const queue = [...used]
   while (queue.length > 0) {
     const file = queue.pop()
-    const entry = compileFile(file)
-    const children = []
+    const entry = await compileFile(file)
+    const children = new Set<string>(entry.dependencies ?? [])
     for (const component of entry.result.components) {
       const fromFile = component.fromFile ?? file
       const child = resolveSourceImport(fromFile, component.source, sources)
       if (!child) {
         throw new Error(`Cannot resolve component "${component.name}" from ${fromFile}`)
       }
-      children.push(child)
+      children.add(child)
       if (!used.has(child)) {
         used.add(child)
         queue.push(child)
       }
+    }
+    for (const previous of edges.get(file) ?? []) {
+      if (children.has(previous)) continue
+      dependencyGraph.get(previous)?.delete(file)
+    }
+    for (const child of children) {
+      const parents = dependencyGraph.get(child) ?? new Set<string>()
+      parents.add(file)
+      dependencyGraph.set(child, parents)
     }
     edges.set(file, children)
   }
@@ -264,23 +323,85 @@ export async function buildProject(projectPath = process.cwd()) {
   const stagingDir = await mkdtemp(path.join(stagingBase, 'out-'))
 
   try {
+    const assets = new Map<string, string>()
+    const assetEntry = (entry) => {
+      if (typeof entry === 'string') return { from: entry }
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        throw new Error('Static entries must be a string or an object with "from"')
+      }
+      return entry
+    }
+    const copyTree = async (source, target) => {
+      await mkdir(target, { recursive: true })
+      for (const item of await readdir(source, { withFileTypes: true })) {
+        const from = path.join(source, item.name)
+        const to = path.join(target, item.name)
+        if (item.isDirectory()) {
+          await copyTree(from, to)
+        } else {
+          await copyFile(from, to)
+          assets.set(from, normalizeSourcePath(path.relative(stagingDir, to)))
+        }
+      }
+    }
+    for (const raw of config.static ?? []) {
+      const entry = assetEntry(raw)
+      if (typeof entry.from !== 'string' || entry.from.trim() === '') {
+        throw new Error('Static asset "from" must be a non-empty relative path')
+      }
+      if (entry.to !== undefined && typeof entry.to !== 'string') {
+        throw new Error('Static asset "to" must be a relative path')
+      }
+      const fromRelative = normalizeSourcePath(entry.from)
+      if (fromRelative === '' || fromRelative === '.') {
+        throw new Error(`Static asset "from" must name a subdirectory or file: ${entry.from}`)
+      }
+      const from = path.resolve(sourceDir, fromRelative)
+      if (!isInside(sourceDir, from)) {
+        throw new Error(`Static asset source must be inside "source": ${entry.from}`)
+      }
+      if (!existsSync(from)) continue
+      const root = entry.subpackage
+        ? path.join(stagingDir, entry.subpackage)
+        : stagingDir
+      if (entry.subpackage && !subpackages.some((item) => item.root === entry.subpackage)) {
+        throw new Error(`Static asset subpackage does not exist: ${entry.subpackage}`)
+      }
+      if (
+        entry.to &&
+        (path.isAbsolute(entry.to) ||
+          normalizeSourcePath(entry.to).split('/').includes('..'))
+      ) {
+        throw new Error(`Static asset target must be a relative path: ${entry.to}`)
+      }
+      const sourceStat = await stat(from)
+      const target = entry.to
+        ? path.join(root, entry.to)
+        : sourceStat.isDirectory()
+          ? root
+          : path.join(root, path.basename(from))
+      if (sourceStat.isDirectory()) {
+        await copyTree(from, target)
+      } else {
+        await mkdir(path.dirname(target), { recursive: true })
+        await copyFile(from, target)
+        assets.set(from, normalizeSourcePath(path.relative(stagingDir, target)))
+      }
+    }
+
     const appJs = path.join(sourceDir, 'app.js')
     if (existsSync(appJs)) await copyFile(appJs, path.join(stagingDir, 'app.js'))
-    const appWxss = path.join(sourceDir, 'app.wxss')
-    if (existsSync(appWxss)) {
-      await copyFile(appWxss, path.join(stagingDir, 'app.wxss'))
-    } else {
-      const appStyle = await readAppStyle(sourceDir)
-      if (appStyle) await writeFile(path.join(stagingDir, 'app.wxss'), appStyle.content)
-    }
-    for (const dir of config.static ?? []) {
-      const from = path.join(sourceDir, dir)
-      if (!existsSync(from)) continue
-      for (const entry of await readdir(from, { withFileTypes: true })) {
-        await cp(path.join(from, entry.name), path.join(stagingDir, entry.name), {
-          recursive: true,
-        })
-      }
+    const appStyle = await readAppStyle(sourceDir)
+    if (appStyle) {
+      const content = rewriteWxssUrls(
+        appStyle.file,
+        appStyle.content,
+        stagingDir,
+        stagingDir,
+        assets,
+      )
+      assertPortableWxss(appStyle.file, content, { allowRelative: true })
+      await writeFile(path.join(stagingDir, 'app.wxss'), content)
     }
 
     const styleCache = new Map()
@@ -354,10 +475,16 @@ export async function buildProject(projectPath = process.cwd()) {
         const child = inline.file ?? resolveSourceImport(file, inline.source, sources)
         inlineStyles.push(await readStyle(child))
       }
-      await writeFile(
-        path.join(outDir, 'index.wxss'),
-        [await readStyle(file), ...inlineStyles].join('\n'),
-      )
+      const ownStyle = await readStyle(file)
+      const styleParts = [
+        rewriteWxssUrls(ownStyle.file, ownStyle.content, outDir, stagingDir, assets),
+        ...inlineStyles.map((style) =>
+          rewriteWxssUrls(style.file, style.content, outDir, stagingDir, assets),
+        ),
+      ]
+      const styleText = styleParts.join('\n')
+      assertPortableWxss(ownStyle.file, styleText, { allowRelative: true })
+      await writeFile(path.join(outDir, 'index.wxss'), styleText)
 
       const bundle = await esbuild({
         stdin: {
@@ -469,7 +596,7 @@ export async function buildProject(projectPath = process.cwd()) {
     }
     await writeFile(appJsonFile, `${JSON.stringify(appJson, null, 2)}\n`)
 
-    await applyTailwind(project, sourceDir, stagingDir, config)
+    await applyTailwind(project, sourceDir, stagingDir, config, assets)
 
     await replaceOutput(stagingDir, outputDir, config.clean !== false)
   } catch (error) {

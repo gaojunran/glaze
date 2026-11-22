@@ -13,7 +13,12 @@ export type CompileOptions = {
 }
 
 export type ComponentRef = { name: string; source: string; fromFile?: string; file?: string }
-export type BindingEntry = { code: string; listKey: string | null; block: number }
+export type BindingEntry = {
+  code: string
+  listKey: string | null
+  block: number
+  asyncBoundary: number | null
+}
 export type EventEntry = { code: string; ast: AnyNode; scope: Scope | null; custom: boolean; block: number }
 export type RefEntry = { code: string; block: number }
 export type PropGetter = { name: string; code: string; expression: AnyNode }
@@ -93,6 +98,8 @@ export type CompilerContext = {
   currentProvider: number | null
   usesSlot: boolean
   usesErrorBoundary: boolean
+  nextAsyncBoundary: number
+  currentAsyncBoundary: number | null
   namedSlots: Set<string>
   usesWxs: boolean
   blocks: Block[]

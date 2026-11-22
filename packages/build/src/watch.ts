@@ -1,4 +1,4 @@
-import { existsSync, watch } from 'node:fs'
+import { existsSync, statSync, watch } from 'node:fs'
 import path from 'node:path'
 import { configFileFor, loadConfig } from './config.ts'
 import { buildProject } from './build.ts'
@@ -12,15 +12,17 @@ export async function watchProject(projectPath = process.cwd(), options: any = {
   let building = false
   let pending = false
   let closed = false
+  let changed = new Set<string>()
 
   const isIgnored = (name) => {
     if (name.includes('.tmp')) return true
     if (currentConfig.output && name.includes(currentConfig.output)) return true
-    return !/\.(tsx?|jsx?|mjs|json|wxml|wxss|scss|less|css)$/.test(name)
+    return !/\.(tsx?|jsx?|mjs|mts|cts|json|wxml|wxss|scss|less|css)$/.test(name)
   }
 
-  const schedule = () => {
+  const schedule = (filename?: string, base = project) => {
     if (closed) return
+    if (filename) changed.add(path.resolve(base, filename.toString()))
     if (timer) clearTimeout(timer)
     timer = setTimeout(() => {
       timer = null
@@ -52,12 +54,18 @@ export async function watchProject(projectPath = process.cwd(), options: any = {
         watchers.set(
           target,
           watch(target, { recursive: true }, (_event, filename) => {
+            let base = target
+            try {
+              if (!statSync(target).isDirectory()) base = path.dirname(target)
+            } catch {
+              base = path.dirname(target)
+            }
             if (!filename) {
-              schedule()
+              schedule(undefined, base)
               return
             }
             if (isIgnored(filename.toString())) return
-            schedule()
+            schedule(filename.toString(), base)
           }),
         )
       } catch {
@@ -73,8 +81,13 @@ export async function watchProject(projectPath = process.cwd(), options: any = {
       return
     }
     building = true
+    const changedFiles = changed.size > 0 ? [...changed] : null
+    changed = new Set()
     try {
-      const result = await buildProject(project)
+      const result = await buildProject(
+        project,
+        changedFiles ? { changedFiles } : {},
+      )
       syncWatchers(result.config)
       options.onBuild?.(result)
     } catch (error) {

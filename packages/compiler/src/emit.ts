@@ -65,7 +65,11 @@ export function emitModule(ast: AnyNode, setupStatements: AnyNode[], ctx: Compil
   const renderBindings = (blockId) =>
     ctx.bindings
       .map((binding, index) =>
-        binding.block === blockId ? `    ctx.bind(${index}, () => (${binding.code}));` : '',
+        binding.block === blockId
+          ? `    ctx.bind(${index}, () => (${binding.code})${
+              binding.asyncBoundary == null ? '' : `, ${binding.asyncBoundary}`
+            });`
+          : '',
       )
       .filter(Boolean)
       .join('\n')

@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { GlazeConfig, GlazeTailwindConfig } from './config.ts'
+import { assertPortableWxss, rewriteWxssUrls } from './styles.ts'
 
 const CLASS_ATTRIBUTE = /\bclass\s*=\s*(?:"([^"]*)"|'([^']*)')/g
 
@@ -76,6 +77,7 @@ export async function applyTailwind(
   sourceDir: string,
   stagingDir: string,
   config: GlazeConfig,
+  assets: Map<string, string> = new Map(),
 ): Promise<void> {
   const tailwind: GlazeTailwindConfig | undefined = config.css?.tailwind
   if (!tailwind) return
@@ -116,7 +118,16 @@ export async function applyTailwind(
       path.resolve(input) === path.resolve(appWxssSource) || !existsSync(appWxss)
         ? ''
         : await readFile(appWxss, 'utf8')
-    await writeFile(appWxss, [generated.css, existing.trim()].filter(Boolean).join('\n'))
+    const generatedCss = rewriteWxssUrls(
+      input,
+      generated.css,
+      stagingDir,
+      stagingDir,
+      assets,
+    )
+    const output = [generatedCss, existing.trim()].filter(Boolean).join('\n')
+    assertPortableWxss(input, output, { allowRelative: true })
+    await writeFile(appWxss, output)
 
     for (let index = 0; index < wxmlFiles.length; index += 1) {
       const transformed = await compiler.transformTemplate(wxml[index], generated.snapshot)

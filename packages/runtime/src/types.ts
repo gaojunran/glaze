@@ -34,11 +34,11 @@ export type GlazeContextProvider = (props: {
 
 
 export type GlazeContext = {
-  bind(index: number, fn: GlazeBinding): void
+  bind(index: number, fn: GlazeBinding, asyncBoundary?: number | null): void
   event(index: number, fn: GlazeEventHandler): void
   ref(index: number, fn: (node: unknown) => void): void
-  loading(): boolean
-  errored(): boolean
+  loading(boundary: number): boolean
+  errored(boundary: number): boolean
 }
 
 export type GlazeComponentConfig = {
@@ -69,9 +69,10 @@ export type InstanceState = {
   dispose: (() => void) | null
   mounted: boolean
   active: boolean
-  loading: [() => boolean, (value: boolean) => void]
-  errored: [() => boolean, (value: boolean) => void]
-  pendingAsync: Set<number>
-  errorBindings: Set<number>
+  loadingSignals: Map<number, [() => boolean, (value: boolean) => void]>
+  errorSignals: Map<number, [() => boolean, (value: boolean) => void]>
+  bindingBoundaries: (number | null)[]
+  pendingAsync: Map<number, Set<number>>
+  errorBindings: Map<number, Set<number>>
   error: unknown
 }

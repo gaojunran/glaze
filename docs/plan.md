@@ -128,6 +128,12 @@ Known limits are listed in [compiler.md](compiler.md#known-gaps).
 - Each package gets its own `components/` and `glaze-runtime/index.js`; page
   wrappers and `usingComponents` use package-absolute paths.
 - `pageConfig` merges page-level JSON into generated wrappers.
+- `static` entries support `{ from, to, subpackage }`, and relative WXSS
+  `url()` references to copied assets are rewritten for each generated
+  component.
+- `glaze watch` passes changed files to the builder, which reuses cached
+  compilation for unchanged TSX and recompiles parents of changed inlined
+  children.
 - Package ownership is validated: main cannot use subpackage components,
   independent subpackages cannot reach main-package components, and pages must
   live inside their declared package.

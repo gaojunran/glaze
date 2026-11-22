@@ -115,9 +115,7 @@ export function compileShowCallback(node, ctx, scope, when, keyed, fn, fallback)
 }
 
 export function compileAsyncBoundary(node, ctx, scope, kind) {
-  if (scope || ctx.currentBlock !== 0) {
-    throw new Error(`<${kind}> is only supported at the component root`)
-  }
+  if (scope) throw new Error(`<${kind}> inside a loop is not supported yet`)
   if (getAttribute(node, 'on')) throw new Error(`<${kind}> does not support the "on" prop yet`)
   const fallbackAttr = getAttribute(node, 'fallback')
   const fallback = getExpression(fallbackAttr)
@@ -126,9 +124,22 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
   }
   if (kind === 'Errored' && !fallback) throw new Error('<Errored> requires a fallback')
   if (kind === 'Errored') ctx.usesErrorBoundary = true
-  const children = compileChildren(node.children, ctx, scope)
+
+  const outerBoundary = ctx.currentAsyncBoundary
+  const boundary = ctx.nextAsyncBoundary
+  ctx.nextAsyncBoundary += 1
+  // The fallback and the boundary's own condition belong to the enclosing
+  // boundary; only the children are governed by this one. That lets nested
+  // Loading boundaries show their own fallback without outer pending state
+  // hiding the inner one.
   const fallbackContent = fallback ? compileNode(fallback, ctx, scope) : ''
-  const index = ctx.addBindingCode(kind === 'Loading' ? 'ctx.loading()' : 'ctx.errored()')
+  const index = ctx.addBindingCode(
+    kind === 'Loading' ? `ctx.loading(${boundary})` : `ctx.errored(${boundary})`,
+  )
+  ctx.currentAsyncBoundary = boundary
+  const children = compileChildren(node.children, ctx, scope)
+  ctx.currentAsyncBoundary = outerBoundary
+
   const condition = kind === 'Loading' && !fallback ? `!b${index}` : `b${index}`
   if (!fallback) return `<block wx:if="{{${condition}}}">${children}</block>`
   return `<block wx:if="{{${condition}}}">${fallbackContent}</block><block wx:else>${children}</block>`

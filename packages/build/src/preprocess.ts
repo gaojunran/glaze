@@ -2,7 +2,6 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { styleCandidatesFor } from './config.ts'
-import { assertPortableWxss } from './styles.ts'
 
 export type StyleSource = {
   file: string
@@ -56,12 +55,10 @@ async function readOrCompile(file: string): Promise<string> {
  * .less, matching the existing generated-output contract; preprocessors are an
  * authoring format, not a second runtime path.
  */
-export async function readComponentStyle(sourceFile: string): Promise<string> {
+export async function readComponentStyle(sourceFile: string): Promise<StyleSource> {
   const file = firstExisting(styleCandidatesFor(sourceFile))
-  if (!file) return ''
-  const content = await readOrCompile(file)
-  if (content) assertPortableWxss(file, content)
-  return content
+  if (!file) return { file: sourceFile, content: '' }
+  return { file, content: await readOrCompile(file) }
 }
 
 /** Read the app-level style, preferring app.wxss over app.scss/app.less. */

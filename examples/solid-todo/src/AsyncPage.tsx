@@ -15,6 +15,11 @@ export default function AsyncPage() {
       <Loading fallback={<text class="async-loading">loading</text>}>
         <text class="async-value">{later()}</text>
       </Loading>
+      <Loading fallback={<text class="nested-outer">outer-loading</text>}>
+        <Loading fallback={<text class="nested-inner">inner-loading</text>}>
+          <text class="nested-value">{later()}</text>
+        </Loading>
+      </Loading>
       <Errored fallback={<text class="async-error">async-error</text>}>
         <text class="async-broken">{broken()}</text>
       </Errored>

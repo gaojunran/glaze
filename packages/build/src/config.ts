@@ -22,11 +22,15 @@ export type GlazeSubpackage = {
   independent?: boolean
 }
 
+export type GlazeStaticEntry =
+  | string
+  | { from: string; to?: string; subpackage?: string }
+
 export type GlazeConfig = {
   source: string
   output: string
   pages: Record<string, string>
-  static?: string[]
+  static?: GlazeStaticEntry[]
   staticPages?: string[]
   subpackages?: GlazeSubpackage[]
   pageConfig?: Record<string, Record<string, unknown>>

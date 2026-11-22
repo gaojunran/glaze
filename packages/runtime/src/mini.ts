@@ -40,6 +40,42 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   const reportError = (index: number, error: unknown) => {
     if (!config.errorBoundary) logBindingError(index, error)
   }
+  type BoundarySignal = [() => boolean, (value: boolean) => void]
+  const boundarySignal = (
+    signals: Map<number, BoundarySignal>,
+    boundary: number,
+  ): BoundarySignal => {
+    let signal = signals.get(boundary)
+    if (!signal) {
+      signal = createSignal(false)
+      signals.set(boundary, signal)
+    }
+    return signal
+  }
+  const clearAsync = (state: InstanceState, index: number) => {
+    const boundary = state.bindingBoundaries[index]
+    if (boundary == null) return
+    const pending = state.pendingAsync.get(boundary)
+    pending?.delete(index)
+    if (pending?.size === 0) state.pendingAsync.delete(boundary)
+    const errors = state.errorBindings.get(boundary)
+    errors?.delete(index)
+    if (errors?.size === 0) state.errorBindings.delete(boundary)
+    boundarySignal(state.loadingSignals, boundary)[1](Boolean(pending?.size))
+    boundarySignal(state.errorSignals, boundary)[1](Boolean(errors?.size))
+  }
+  const markAsync = (state: InstanceState, index: number, error: unknown) => {
+    const boundary = state.bindingBoundaries[index]
+    if (boundary == null) return
+    const map = isNotReady(error) ? state.pendingAsync : state.errorBindings
+    const entries = map.get(boundary) ?? new Set<number>()
+    entries.add(index)
+    map.set(boundary, entries)
+    boundarySignal(
+      isNotReady(error) ? state.loadingSignals : state.errorSignals,
+      boundary,
+    )[1](true)
+  }
   const deferredContext = (config.boundaryContexts?.length ?? 0) > 0
   const methods: Record<string, unknown> = {}
   const handlerCount = config.handlerCount ?? 0
@@ -112,16 +148,18 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     state.previous.length = 0
     state.pendingAsync.clear()
     state.errorBindings.clear()
+    state.bindingBoundaries.length = 0
+    state.loadingSignals.forEach((signal) => signal[1](false))
+    state.errorSignals.forEach((signal) => signal[1](false))
     state.error = undefined
-    state.loading[1](false)
-    state.errored[1](false)
     state.owner = null
 
     state.dispose = createRoot((dispose) => {
       config.setup(
         {
-          bind(index, fn) {
+          bind(index, fn, asyncBoundary = null) {
             state.bindings[index] = fn
+            state.bindingBoundaries[index] = asyncBoundary
           },
           event(index, fn) {
             state.events[index] = fn
@@ -129,8 +167,8 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           ref(index, fn) {
             state.refs[index] = { id: `glaze-r${index}`, fn }
           },
-          loading: () => state.loading[0](),
-          errored: () => state.errored[0](),
+          loading: (boundary) => boundarySignal(state.loadingSignals, boundary)[0](),
+          errored: (boundary) => boundarySignal(state.errorSignals, boundary)[0](),
         },
         state.propsProxy!,
       )
@@ -147,14 +185,8 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         } catch (error) {
           // One async or broken binding must not prevent the component from
           // rendering the remaining values.
-          if (isNotReady(error)) {
-            state.pendingAsync.add(index)
-            state.loading[1](true)
-          } else {
-            state.errorBindings.add(index)
-            state.error = error
-            state.errored[1](true)
-          }
+          if (!isNotReady(error)) state.error = error
+          markAsync(state, index, error)
           reportError(index, error)
         }
       })
@@ -269,10 +301,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     }
 
     const applyBinding = (index: number, value: unknown) => {
-      state.pendingAsync.delete(index)
-      state.loading[1](state.pendingAsync.size > 0)
-      state.errorBindings.delete(index)
-      state.errored[1](state.errorBindings.size > 0)
+      clearAsync(state, index)
       const key = listBindings[index]
       // Scalar bindings in one effect group are recomputed together. Skip the
       // unchanged ones so one signal write only produces its own data path,
@@ -317,14 +346,8 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
             try {
               applyBinding(index, value)
             } catch (error) {
-              if (isNotReady(error)) {
-                state.pendingAsync.add(index)
-                state.loading[1](true)
-              } else {
-                state.errorBindings.add(index)
-                state.error = error
-                state.errored[1](true)
-              }
+              if (!isNotReady(error)) state.error = error
+              markAsync(state, index, error)
               reportError(index, error)
             }
           },
@@ -332,14 +355,8 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
             // A failed compute keeps the last applied value; later changes can
             // recover, and other bindings keep their own effects running.
             first = false
-            if (isNotReady(error)) {
-              state.pendingAsync.add(index)
-              state.loading[1](true)
-            } else {
-              state.errorBindings.add(index)
-              state.error = error
-              state.errored[1](true)
-            }
+            if (!isNotReady(error)) state.error = error
+            markAsync(state, index, error)
             reportError(index, error)
           },
         })
@@ -378,6 +395,8 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
                 try {
                   return { index, value: state.bindings[index]!() }
                 } catch (error) {
+                  if (!isNotReady(error)) state.error = error
+                  markAsync(state, index, error)
                   reportError(index, error)
                   return { index, value: undefined, failed: true }
                 }
@@ -405,14 +424,8 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
               },
               error(error) {
                 first = false
-                if (isNotReady(error)) {
-                  state.pendingAsync.add(group[0] ?? 0)
-                  state.loading[1](true)
-                } else {
-                  state.errorBindings.add(group[0] ?? 0)
-                  state.error = error
-                  state.errored[1](true)
-                }
+                if (!isNotReady(error)) state.error = error
+                for (const index of group) markAsync(state, index, error)
                 reportError(group[0] ?? 0, error)
               },
             },
@@ -451,10 +464,11 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           dispose: null,
           mounted: false,
           active: false,
-          loading: createSignal(false),
-          errored: createSignal(false),
-          pendingAsync: new Set(),
-          errorBindings: new Set(),
+          loadingSignals: new Map(),
+          errorSignals: new Map(),
+          bindingBoundaries: [],
+          pendingAsync: new Map(),
+          errorBindings: new Map(),
           error: undefined,
         }
         this.__glaze = state

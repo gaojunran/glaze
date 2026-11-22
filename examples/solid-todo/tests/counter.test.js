@@ -240,6 +240,7 @@ test('async Loading and Errored boundaries render fallbacks and resolved values'
   if (!app) throw new Error('glaze-root not found')
   await expect(app).toMatchText('.title', 'Async boundaries')
   await expect(app).toMatchText('.async-value', 'async-ready')
+  await expect(app).toMatchText('.nested-value', 'async-ready')
   const fs = require('node:fs'); fs.writeFileSync('/tmp/opencode/async-app.xml', await app.outerWxml())
   await expect(app).toMatchText('.async-error', 'async-error')
 })

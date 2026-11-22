@@ -10,6 +10,7 @@ import {
   outputNameForRelative,
 } from '../src/build.ts'
 import { buildSnippet, defaultSnippetOut, parseSnippetSource } from '../src/snippet.ts'
+import { watchProject } from '../src/index.ts'
 
 const exists = async (file) => {
   try {
@@ -412,7 +413,7 @@ test('rejects WXSS @import and relative url() but accepts portable URLs', async 
   await writeProjectFile(project, 'src/App.wxss', `.page { background: url('./bg.png'); }\n`)
   await assert.rejects(
     () => buildProject(project),
-    /WXSS url\(\) must be absolute.*App\.wxss/,
+    /WXSS url\(\) references an asset that is not in static.*App\.wxss/,
   )
 
   await writeProjectFile(
@@ -1057,4 +1058,171 @@ test('merges page config into the generated page json', async () => {
     await readFile(path.join(project, 'miniprogram/pages/other/index.json'), 'utf8'),
   )
   assert.deepEqual(other.usingComponents, { 'glaze-page': '/components/glaze-other/index' })
+})
+
+test('copies static assets and rewrites relative WXSS urls', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      static: [{ from: 'assets', to: 'assets' }, { from: 'icon.png' }],
+    },
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view class="page">asset</view>
+}
+`,
+      'src/App.wxss': `.page { background: url('./assets/bg.png'); }\n`,
+      'src/assets/bg.png': 'png',
+      'src/icon.png': 'icon',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await buildProject(project)
+  const wxss = await readFile(
+    path.join(project, 'miniprogram/components/glaze-app/index.wxss'),
+    'utf8',
+  )
+  assert.match(wxss, /url\('\.\.\/\.\.\/assets\/bg\.png'\)/)
+  assert.equal(await exists(path.join(project, 'miniprogram/assets/bg.png')), true)
+  assert.equal(await exists(path.join(project, 'miniprogram/icon.png')), true)
+})
+
+test('places static assets inside an independent subpackage', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      subpackages: [
+        { root: 'pkg', pages: { 'pages/sub/index': 'pkg/Sub.tsx' }, independent: true },
+      ],
+      static: [{ from: 'pkg/assets', to: 'assets', subpackage: 'pkg' }],
+    },
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view>main</view>
+}
+`,
+      'src/pkg/Sub.tsx': `export default function Sub() {
+  return <view class="sub">sub</view>
+}
+`,
+      'src/pkg/Sub.wxss': `.sub { background: url('./assets/bg.png'); }\n`,
+      'src/pkg/assets/bg.png': 'png',
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await buildProject(project)
+  assert.equal(
+    await exists(path.join(project, 'miniprogram/pkg/assets/bg.png')),
+    true,
+  )
+  const wxss = await readFile(
+    path.join(project, 'miniprogram/pkg/components/glaze-pkg-sub/index.wxss'),
+    'utf8',
+  )
+  assert.match(wxss, /url\('\.\.\/\.\.\/assets\/bg\.png'\)/)
+})
+
+test('incremental build recompiles a parent that inlines a changed child', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `import Child from './Child'
+
+export default function App() {
+  return <view><Child /></view>
+}
+`,
+      'src/Child.tsx': `export default function Child() {
+  return <text class="child">one</text>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+  await buildProject(project)
+
+  await writeProjectFile(
+    project,
+    'src/Child.tsx',
+    `export default function Child() {
+  return <text class="child">two</text>
+}
+`,
+  )
+  await buildProject(project, {
+    changedFiles: [path.join(project, 'src/Child.tsx')],
+  })
+
+  const wxml = await readFile(
+    path.join(project, 'miniprogram/components/glaze-app/index.wxml'),
+    'utf8',
+  )
+  assert.match(wxml, />two</)
+})
+
+test('watch recompiles an inlined child on change', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `import Child from './Child'
+
+export default function App() {
+  return <view><Child /></view>
+}
+`,
+      'src/Child.tsx': `export default function Child() {
+  return <text class="child">one</text>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+  let builds = 0
+  const watcher = await watchProject(project, {
+    onBuild: () => {
+      builds += 1
+    },
+    onError: (error) => {
+      throw error
+    },
+  })
+  try {
+    assert.equal(builds, 1)
+    await writeProjectFile(
+      project,
+      'src/Child.tsx',
+      `export default function Child() {
+  return <text class="child">two</text>
+}
+`,
+    )
+    const deadline = Date.now() + 5000
+    let wxml = ''
+    while (Date.now() < deadline) {
+      wxml = await readFile(
+        path.join(project, 'miniprogram/components/glaze-app/index.wxml'),
+        'utf8',
+      ).catch(() => '')
+      if (wxml.includes('>two<')) break
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    assert.equal(builds >= 2, true)
+    assert.match(wxml, />two</)
+  } finally {
+    watcher.close()
+  }
 })

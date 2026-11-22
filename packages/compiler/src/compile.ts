@@ -95,6 +95,8 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     currentProvider: null,
     usesSlot: false,
     usesErrorBoundary: false,
+    nextAsyncBoundary: 0,
+    currentAsyncBoundary: null,
     namedSlots: new Set<string>(),
     usesWxs: false,
     blocks: [
@@ -120,6 +122,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
         code: this.guardCode(codeOf(expression)),
         listKey,
         block: this.currentBlock,
+        asyncBoundary: this.currentAsyncBoundary,
       })
       return index
     },
@@ -134,6 +137,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
         code: this.guardCode(code),
         listKey,
         block: this.currentBlock,
+        asyncBoundary: this.currentAsyncBoundary,
       })
       return index
     },

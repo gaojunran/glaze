@@ -1370,7 +1370,26 @@ test('compiles Loading and Errored boundaries', () => {
   `)
   assert.match(result.wxml, /wx:if="\{\{b0\}\}"><text>loading<\/text><\/block><block wx:else><text>ready/)
   assert.match(result.wxml, /wx:if="\{\{b1\}\}"><text>failed<\/text><\/block><block wx:else><text>value/)
-  assert.match(result.js, /ctx\.bind\(0, \(\) => \(ctx\.loading\(\)\)\)/)
-  assert.match(result.js, /ctx\.bind\(1, \(\) => \(ctx\.errored\(\)\)\)/)
+  assert.match(result.js, /ctx\.bind\(0, \(\) => \(ctx\.loading\(0\)\)\)/)
+  assert.match(result.js, /ctx\.bind\(1, \(\) => \(ctx\.errored\(1\)\)\)/)
   assert.match(result.js, /errorBoundary: true/)
+})
+
+test('assigns separate ids to nested Loading boundaries', () => {
+  const result = compileComponent(`
+    import { Loading } from 'solid-js'
+    export default function Page() {
+      return (
+        <Loading fallback={<text>outer</text>}>
+          <Loading fallback={<text>inner</text>}>
+            <text>{later()}</text>
+          </Loading>
+        </Loading>
+      )
+    }
+  `)
+  assert.match(result.wxml, /wx:if="\{\{b0\}\}"><text>outer<\/text><\/block><block wx:else><block wx:if="\{\{b1\}\}"><text>inner/)
+  assert.match(result.js, /ctx\.bind\(0, \(\) => \(ctx\.loading\(0\)\)\)/)
+  assert.match(result.js, /ctx\.bind\(1, \(\) => \(ctx\.loading\(1\)\), 0\)/)
+  assert.match(result.js, /ctx\.bind\(2, \(\) => \(later\(\)\), 1\)/)
 })

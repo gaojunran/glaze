@@ -51,7 +51,7 @@ export default config
 | `source` | source root, a subdirectory of the project |
 | `output` | generated mini-program root, a subdirectory of the project |
 | `pages` | route → page component source, relative to `source` |
-| `static` | directories whose contents are copied into the output root |
+| `static` | asset entries copied into the output; a string copies its contents to the root, an object can set `to` and `subpackage` |
 | `staticPages` | routes already present in `static` and kept in `app.json` |
 | `subpackages` | subpackage roots, their page maps, and optional `independent: true` |
 | `pageConfig` | per-route page JSON merged into the generated page config |
@@ -203,8 +203,8 @@ does so is a build error.
 
 Limitations:
 
-- `static` and Tailwind output are still written once at the output root; they
-  are not duplicated into independent subpackages;
+- global Tailwind styles are still written once at the output root; use a
+  `static` entry with `subpackage` for package-local assets;
 - a component cannot be shared by two packages when either is independent;
 - `require()` paths are checked by the build tests and e2e, because the
   platform build does not fail on a wrong relative path (it fails at runtime
@@ -232,16 +232,34 @@ normalized to `/` before the name is generated, so Windows and POSIX produce the
 same names. If two source files map to the same name, the build fails with both
 paths instead of silently overwriting one component.
 
-## WXSS limits
+## Assets and WXSS references
 
-Component styles are copied next to the generated component, so source-relative
-WXSS references cannot work:
+`static` accepts strings and objects:
 
-- `@import` is rejected with an error naming the source `.wxss` file;
-- `url()` is rejected unless it is absolute (`/...`), remote (`http:`,
-  `https:`), protocol-relative (`//...`) or a `data:` URL.
+```ts
+static: [
+  'static',                                      // contents copied to the output root
+  { from: 'assets', to: 'assets' },              // output/assets/*
+  { from: 'pkg/assets', to: 'assets', subpackage: 'pkg' },
+]
+```
 
-Inlining `@import` and copying assets is not implemented yet.
+An object entry copies a directory's contents into `to` (relative to the output
+root or the named subpackage). A single file is copied to `to` or to the target
+directory.
+
+Component styles are copied next to the generated component, so the builder
+resolves asset references at build time:
+
+- `url()` may be absolute (`/...`), remote (`http:`, `https:`),
+  protocol-relative (`//...`) or a `data:` URL;
+- a relative `url()` is resolved from the source stylesheet and must point at a
+  file copied by `static`; the emitted URL is rewritten relative to the
+  generated component directory;
+- a relative `url()` with no matching `static` file is a build error;
+- `@import` is still rejected with an error naming the source `.wxss` file.
+
+The rewrite also runs for inlined child styles and for `app.wxss`.
 
 ## Static pages
 
@@ -251,7 +269,8 @@ wrapper over it, so the static page keeps ownership of that route.
 
 ## App shell
 
-`app.js` and `app.wxss` are copied when present. If either is missing the build
+`app.js` is copied when present, and `app.wxss` (or its `.scss`/`.less`
+predecessor) is read, URL-rewritten, and written. If either is missing the build
 still succeeds, but warns clearly because a mini-program normally needs both.
 `app.json` is copied when present; otherwise a minimal glass-easel default is
 written.
@@ -287,6 +306,14 @@ Every rebuild reloads the config with a cache-busting query, so editing
 `glaze.config.mts` takes effect without restarting the watcher. When the config
 changes `source`, the watcher targets are rebuilt as well.
 
+`watch` passes the changed paths to the builder. The builder keeps the compiled
+result of each TSX file keyed by mtime and size, recompiles only changed files
+and reuses cached results for the rest. If an inlined child changes, the
+dependency graph marks its parents for recompilation too, because the parent
+embeds the child's WXML. Style, asset, config and Tailwind changes still rerun
+the whole write/serialization stage; only TypeScript compilation is
+incremental.
+
 ## Vite plugin
 
 `@glaze/vite-plugin` runs `buildProject` from `buildStart` and rebuilds on a
@@ -312,12 +339,16 @@ pnpm --filter @glaze/build test
 ```
 
 They build temporary projects and cover: page wrappers and inlined children,
+incremental compilation with dependency propagation, `watch` rebuilding a
+changed inlined child, static asset copying and WXSS URL rewriting,
 helper/JSON/type-only imports, output path safety, preservation of previous
 output on failure, `clean: false` merging, reachability, output-name collisions,
 Windows separators, WXSS portability, `staticPages` deduplication, app shell
 warnings, config reloads, CLI help, generated `styleIsolation`, the shared
-runtime file, relative `require()` resolution, namespace-import rejection and
-`static`/runtime collisions.
+runtime file, relative `require()` resolution, namespace-import rejection,
+subpackage ownership and runtime placement, page config merging, and
+`static`/runtime collisions. The current suite has 35 builder tests; compiler
+has 68, runtime 22, shared 2.
 
 Real simulator run:
 
@@ -332,10 +363,10 @@ target/debug/minidev test \
   --browser <chrome>
 ```
 
-Result: two e2e cases pass against the generated `miniprogram` directory: the
-main counter/control-flow/list/event/context/ref probe, and the review-boundary
-probe for non-keyed `Show`, numeric props, class/style and the Solid 2
-`<Theme value>` context form.
+Result: nine e2e cases pass against the generated `miniprogram` directory,
+covering the counter/control-flow/list/event/context/ref probe, review-boundary
+probes, catch/capture/mut-bind, store seams, Tailwind, cross-file context, ref
+queries, async boundaries and an independent subpackage.
 
 On the example project (`pnpm build`, 5 pages, 12 components) the shared module
 is 46,582 B and all generated component `index.js` files total 10,678 B. Before
@@ -343,20 +374,19 @@ the shared runtime the six-component version was about 195 KB of component JS.
 
 ## Known gaps
 
-1. **Watch is a full rebuild.** Every change reruns the whole pipeline; config
-   reloads and watcher targets are refreshed, but there is no incremental
-   compile.
+1. **Watch is only compile-incremental.** It still rewrites the staged output
+   and reloads the config on every change; there is no mini-program HMR.
 2. **Vite plugin is a build bridge.** It does not provide mini-program HMR or a
    web preview renderer.
-3. **No asset pipeline.** Images and other assets are copied only through
-   `static`.
+3. **Assets are not discovered from source.** Only files copied through
+   `static` are addressable by relative WXSS `url()`.
 4. **Output ownership is all-or-nothing.** `clean: true` replaces the whole
    output directory; custom files must live in `static`.
-5. **Subpackage assets are not duplicated.** `static` and Tailwind styles are
-   written once at the output root; an independent subpackage that needs them
-   must copy or generate them itself.
-6. **WXSS references need manual handling.** `@import` is rejected and relative
-   `url()` must be rewritten before building.
+5. **Tailwind output is not duplicated.** Global Tailwind styles are written once
+   at the output root; an independent subpackage that needs them must copy or
+   generate them itself.
+6. **WXSS `@import` remains unsupported.** Use a preprocessor or inline the
+   stylesheet before building.
 
 ## Rejected alternatives
 

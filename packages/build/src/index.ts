@@ -13,4 +13,5 @@ export type {
   GlazeCssConfig,
   GlazeTailwindConfig,
   GlazeSubpackage,
+  GlazeStaticEntry,
 } from './config.ts'

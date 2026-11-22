@@ -353,7 +353,7 @@ boundary context defer their setup to `ready`, because the parent's first
 
 ### Async boundaries
 
-Solid 2 `Loading` and `Errored` are compiled at the component root:
+Solid 2 `Loading` and `Errored` compile inside a component, including nested boundaries:
 
 ```tsx
 <Loading fallback={<text>loading</text>}>
@@ -364,13 +364,17 @@ Solid 2 `Loading` and `Errored` are compiled at the component root:
 </Errored>
 ```
 
-`<Loading>` becomes a `wx:if` binding on `ctx.loading()`, which is true while
-any binding is waiting on a `NotReadyError`. `<Errored>` becomes a binding on
-`ctx.errored()`, true while any binding has failed with a non-`NotReadyError`.
-A failed binding is skipped instead of writing `undefined`, so it cannot clear
-another binding's error. The boundary is component-wide, not a nested scope;
-nested `Loading` / `Errored`, `on` dependencies, function fallbacks, and reset
-are not implemented.
+Each boundary gets an id. Bindings inside it are emitted with that id, and
+`<Loading>` becomes a `wx:if` binding on `ctx.loading(id)`; `<Errored>` becomes
+`ctx.errored(id)`. A binding is governed by its **nearest** enclosing boundary,
+so an inner pending binding shows the inner fallback without hiding the outer
+content. A failed binding is skipped instead of writing `undefined`, so it
+cannot clear another binding's error. The fallback and the boundary's own
+condition belong to the outer boundary.
+
+Boundaries inside a loop are rejected because their condition would need a
+per-row binding. `on` dependencies, function fallbacks, and reset are not
+implemented.
 
 ### Refs
 
@@ -696,10 +700,10 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
    on an inline WXS module for per-row arrays. It is not available on platforms
    that disable WXS.
 10. **Build integration** has `glaze build`, `glaze watch`, and a Vite build
-   bridge. There is no mini-program HMR or incremental compile.
-11. **Async boundaries** (`Loading` / `Errored`) are component-wide and root
-    only; nested boundaries, `on` dependencies, function fallbacks, and reset
-    are not implemented.
+    bridge. Watch is compile-incremental; there is no mini-program HMR.
+11. **Async boundaries** (`Loading` / `Errored`) support nesting, but not inside
+    a loop; `on` dependencies, function fallbacks, and reset are not
+    implemented.
 12. **Svelte** has no compiler yet.
 
 
