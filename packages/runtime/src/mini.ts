@@ -3,235 +3,27 @@ import {
   createRoot,
   createSignal,
   getOwner,
-  NotReadyError,
   runWithOwner,
 } from 'solid-js'
+import { dataPath, normalizeDataValue, normalizePropValue, GLAZE_EVENT_OPTIONS, reportBindingError, SCALAR_BINDING_GROUP } from './data.ts'
+import { listOps, listPatch } from './list.ts'
+import { withProvider } from './provider.ts'
+declare const Component: (options: Record<string, unknown>) => unknown
 
-export function className(value: unknown): string {
-  if (typeof value === 'string') return value
-  if (Array.isArray(value)) {
-    return value.map(className).filter(Boolean).join(' ')
-  }
-  if (value && typeof value === 'object') {
-    return Object.entries(value as Record<string, unknown>)
-      .filter(([, active]) => active)
-      .map(([name]) => name)
-      .join(' ')
-  }
-  return ''
-}
+import type {
+  GlazeBinding,
+  GlazeComponentConfig,
+  GlazeContext,
+  GlazeProps,
+  InstanceState,
+} from './types.ts'
 
-export function styleName(value: unknown): string {
-  if (typeof value === 'string') return value
-  if (!value || typeof value !== 'object') return ''
-  return Object.entries(value as Record<string, unknown>)
-    .filter(([, item]) => item != null && item !== '')
-    .map(([key, item]) => `${key.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`)}:${item}`)
-    .join(';')
-}
+export { className, styleName } from './styles.ts'
+export { withProvider } from './provider.ts'
+export { dataPath } from './data.ts'
+export { listOps, listPatch } from './list.ts'
+export type { GlazeComponentConfig, GlazeContext } from './types.ts'
 
-export type GlazeBinding = () => unknown
-export type GlazeEventHandler = (event?: unknown) => void
-export type GlazeProps = Record<string, unknown>
-
-export type GlazeContextProvider = (props: {
-  value: unknown
-  children: () => unknown
-}) => () => unknown
-
-/**
- * Run inline child setup inside a Solid context provider.
- *
- * Solid's provider is a component that sets the context while its children
- * accessor runs. Calling the provider directly and draining its memo keeps
- * that window open for the compiled child blocks, which are ordinary
- * statements rather than a JSX child tree.
- */
-export function withProvider(
-  context: GlazeContextProvider,
-  value: unknown,
-  setup: () => void,
-): void {
-  const provider = context({
-    value,
-    children: () => {
-      setup()
-      return ''
-    },
-  })
-  provider()
-}
-
-export type GlazeContext = {
-  bind(index: number, fn: GlazeBinding): void
-  event(index: number, fn: GlazeEventHandler): void
-  ref(index: number, fn: (node: unknown) => void): void
-}
-
-export type GlazeComponentConfig = {
-  data?: Record<string, unknown>
-  properties?: string[]
-  propMap?: Record<string, string>
-  eventProps?: Record<string, string>
-  listBindings?: Record<string, string>
-  handlerCount?: number
-  refCount?: number
-  setup(ctx: GlazeContext, props: GlazeProps): void
-}
-
-type InstanceState = {
-  bindings: GlazeBinding[]
-  events: GlazeEventHandler[]
-  refs: { id: string; fn: (node: unknown) => void }[]
-  initial: unknown[]
-  previous: unknown[]
-  pending: Record<string, unknown>
-  flushScheduled: boolean
-  props: Record<string, [() => unknown, (value: unknown) => void]>
-  propsProxy: GlazeProps | null
-  owner: ReturnType<typeof getOwner>
-  dispose: (() => void) | null
-  mounted: boolean
-  active: boolean
-}
-
-type ListOp = { index: number; del: number; inserts: unknown[] }
-
-const keyOf = (item: unknown, key: string) =>
-  (item as Record<string, unknown> | null | undefined)?.[key]
-
-/** Internal helper, exported for unit tests. */
-export function listOps(previous: unknown, next: unknown, key: string): ListOp[] | null {
-  if (!Array.isArray(previous) || !Array.isArray(next)) return null
-  if (key === '*this') return null
-
-  let prefix = 0
-  while (
-    prefix < previous.length &&
-    prefix < next.length &&
-    Object.is(keyOf(previous[prefix], key), keyOf(next[prefix], key))
-  ) {
-    prefix += 1
-  }
-
-  let suffix = 0
-  while (
-    suffix < previous.length - prefix &&
-    suffix < next.length - prefix &&
-    Object.is(
-      keyOf(previous[previous.length - 1 - suffix], key),
-      keyOf(next[next.length - 1 - suffix], key),
-    )
-  ) {
-    suffix += 1
-  }
-
-  if (prefix === previous.length && prefix === next.length) return null
-  if (prefix === previous.length) {
-    return [{ index: prefix, del: 0, inserts: next.slice(prefix) }]
-  }
-  if (prefix === next.length) {
-    return [{ index: prefix, del: previous.length - prefix, inserts: [] }]
-  }
-  return [
-    {
-      index: prefix,
-      del: previous.length - prefix - suffix,
-      inserts: next.slice(prefix, next.length - suffix),
-    },
-  ]
-}
-
-/** Internal helper, exported for unit tests. */
-export function listPatch(
-  previous: unknown,
-  next: unknown,
-  key: string,
-  binding: string,
-): Record<string, unknown> | null {
-  if (!Array.isArray(previous) || !Array.isArray(next)) return null
-  if (key === '*this') return null
-  if (previous.length !== next.length) return null
-
-  const previousIndex = new Map(previous.map((item, index) => [item?.[key], index]))
-  const patch: Record<string, unknown> = {}
-
-  for (let index = 0; index < next.length; index += 1) {
-    const item = next[index]
-    const beforeIndex = previousIndex.get(item?.[key])
-    if (beforeIndex !== index) return null
-
-    const before = previous[beforeIndex]
-    if (before === item) continue
-    for (const field of Object.keys(item)) {
-      if (before && Object.is(before[field], item[field])) continue
-      if (!before || !(field in before)) return null
-      patch[`${binding}[${index}].${field}`] = item[field]
-    }
-    for (const field of Object.keys(before ?? {})) {
-      if (!(field in item)) return null
-    }
-  }
-
-  return patch
-}
-
-declare const Component: (config: Record<string, unknown>) => unknown
-
-const normalizePropValue = (value: unknown): unknown => (value === null ? undefined : value)
-/**
- * Custom events from component boundaries bubble inside the component tree so
- * `catch`/`capture` bindings can stop or intercept them. `composed` stays off:
- * an event must not cross the shadow boundary and retrigger the parent's
- * same-named event prop.
- */
-const GLAZE_EVENT_OPTIONS = { bubbles: true, capturePhase: true }
-const SCALAR_BINDING_GROUP = 8
-
-// Mini-program `setData` rejects `undefined`; WXML renders `null` as empty.
-const normalizeDataValue = (value: unknown): unknown => (value === undefined ? null : value)
-
-/** Internal helper, exported for unit tests. */
-export function dataPath(key: string): (string | number)[] {
-  const path: (string | number)[] = []
-  let index = 0
-  while (index < key.length) {
-    if (key[index] === '.') {
-      index += 1
-      continue
-    }
-    if (key[index] === '[') {
-      const end = key.indexOf(']', index)
-      if (end < 0) throw new Error(`Invalid data path: ${key}`)
-      const segment = key.slice(index + 1, end)
-      path.push(/^\d+$/.test(segment) ? Number(segment) : segment)
-      index = end + 1
-      continue
-    }
-    let end = index
-    while (end < key.length && key[end] !== '.' && key[end] !== '[') end += 1
-    path.push(key.slice(index, end))
-    index = end
-  }
-  return path
-}
-
-function reportBindingError(index: number, error: unknown): void {
-  // Async resources below a binding legitimately throw while settling; only
-  // surface unexpected failures so they do not disappear behind the guard.
-  if (error instanceof NotReadyError) return
-  const errorConsole = (globalThis as { console?: Console }).console
-  errorConsole?.error?.(`[glaze] binding b${index} failed`, error)
-}
-
-/**
- * Mini-program component runtime for compiler output.
- *
- * The compiler emits `data` placeholders, a binding count via `ctx.bind`, and
- * handlers via `ctx.event`. This wrapper runs the user's Solid setup once per
- * instance, computes initial binding values before the first paint, then
- * forwards later binding changes through `setData` paths.
- */
 export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   const propertyNames = config.properties ?? []
   const methods: Record<string, unknown> = {}
@@ -386,11 +178,11 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     const refs = state.refs.filter(Boolean)
     if (refs.length > 0) {
       const query =
-        component.createSelectorQuery?.() ??
+        (component as { createSelectorQuery?: () => any }).createSelectorQuery?.() ??
         (globalThis as unknown as { wx: any }).wx.createSelectorQuery().in(component)
       for (const ref of refs) {
         query.select(`#${ref.id}`).boundingClientRect((rect: unknown) => {
-          ref.fn(rect ? { id: ref.id, ...rect } : null)
+          ref.fn(rect ? { id: ref.id, ...(rect as Record<string, unknown>) } : null)
         })
       }
       query.exec()
@@ -483,7 +275,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         }
       }
       state.bindings.forEach((fn, index) => {
-        if (fn && Object.hasOwn(listBindings, index)) createBindingEffect(index)
+        if (Object.hasOwn(listBindings, index)) createBindingEffect(index)
       })
     })
   }

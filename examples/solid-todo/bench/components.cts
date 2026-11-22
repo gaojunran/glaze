@@ -1,7 +1,7 @@
 // Component-dense comparison: Glaze routes vs hand-written native components.
 //
 // Start `minidev sim serve` on port 9422 first, then:
-//   NODE_PATH=<minidev>/sdk node examples/solid-todo/bench/components.cjs
+//   NODE_PATH=<minidev>/sdk node examples/solid-todo/bench/components.cts
 //
 // Both routes render 1000 pure row components and 1000 stateful row components.
 // Each row is a real custom component with its own shadow root, so the page-level

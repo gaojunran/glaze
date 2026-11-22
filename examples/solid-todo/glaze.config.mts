@@ -1,4 +1,6 @@
-export default {
+import type { GlazeConfig } from "@glaze/build"
+
+const config: GlazeConfig = {
   source: 'src',
   output: 'miniprogram',
   pages: {
@@ -9,3 +11,5 @@ export default {
   static: ['static'],
   staticPages: ['pages/native/index', 'pages/native-components/index'],
 }
+
+export default config

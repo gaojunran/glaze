@@ -7,7 +7,7 @@ import { buildProject } from '@glaze/build'
  * mini-program output is produced by `@glaze/build`. This keeps Vite useful for
  * an accompanying web preview while the WXML/WXSS/JS artifacts stay in sync.
  */
-export default function glaze(options = {}) {
+export default function glaze(options: { project?: string; build?: boolean } = {}) {
   let project = options.project ?? process.cwd()
   const enabled = options.build !== false
 

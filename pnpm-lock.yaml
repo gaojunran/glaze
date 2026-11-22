@@ -6,7 +6,14 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.5
+        version: 22.20.5
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
 
   examples/solid-todo:
     dependencies:
@@ -22,6 +29,9 @@ importers:
       '@glaze/runtime':
         specifier: workspace:*
         version: link:../runtime
+      '@glaze/shared':
+        specifier: workspace:*
+        version: link:../shared
       esbuild:
         specifier: ^0.28.0
         version: 0.28.2
@@ -40,6 +50,9 @@ importers:
       '@babel/types':
         specifier: ^7.28.0
         version: 7.29.14
+      '@glaze/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/runtime:
     dependencies:
@@ -50,14 +63,7 @@ importers:
         specifier: ^2.0.3
         version: 2.0.3
 
-  packages/solid:
-    dependencies:
-      '@solidjs/universal':
-        specifier: ^2.0.3
-        version: 2.0.3(solid-js@2.0.3)
-      solid-js:
-        specifier: ^2.0.3
-        version: 2.0.3
+  packages/shared: {}
 
   packages/vite-plugin:
     dependencies:
@@ -66,7 +72,7 @@ importers:
         version: link:../build
       vite:
         specifier: ^7.0.0
-        version: 7.3.8
+        version: 7.3.8(@types/node@22.20.5)
 
 packages:
 
@@ -407,14 +413,11 @@ packages:
     resolution: {integrity: sha512-M6+kiJflqSvJRHRcmdsdIXpPLPkQrY817zWKKfxZ3z3ZRE5eEtddtWPrDXY4IM1Wz3zAqG+3Fx/HQIkAtpRwnA==}
     engines: {node: '>=22.12.0'}
 
-  '@solidjs/universal@2.0.3':
-    resolution: {integrity: sha512-WovRaLg0lDjPIZ+hRBg30rqx8O8fjxM89k0W2FL+EdEiKcFo24Txon4lOvV7jVI8ylX5cLi34HLHUX0rmj1Xrw==}
-    engines: {node: '>=22.12.0'}
-    peerDependencies:
-      solid-js: ^2.0.3
-
   '@types/estree@1.0.10':
     resolution: {integrity: sha512-lTyOMnOcmRBzdCv6/4zUZCrEhV0xrqQiUZBZtVcbmLHBXKLnN8q89v/wKRF/Q0HbwVsqbIG3o5HDoFl9sduM+g==}
+
+  '@types/node@22.20.5':
+    resolution: {integrity: sha512-U2+DNr+wSjpsTS/wZGYHq7GcwfuSmKiKvoPvK22zwTlRhU91yOniN4qRR5KhIjvif7ysw/dz/hKmfDH0Ris4aA==}
 
   esbuild@0.28.2:
     resolution: {integrity: sha512-HKVLS8dvII+xoKW9kmqxbRKrnWEXfJJr/FZhhJmiqIB0e053QNYFqOBouTMO/k5sID4MvCiUCvv8b9M4h32wIA==}
@@ -485,6 +488,14 @@ packages:
   tinyglobby@0.2.17:
     resolution: {integrity: sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==}
     engines: {node: '>=12.0.0'}
+
+  typescript@5.9.3:
+    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
+  undici-types@6.21.0:
+    resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
   vite@7.3.8:
     resolution: {integrity: sha512-3tTi78MAKhVk9h+YZVXMQ8POmneJuE97QUPAWtJghHzhH7BAyiqQOC2KZh1DWOsu/USB2cRXhznPByaabvYXfw==}
@@ -721,11 +732,11 @@ snapshots:
 
   '@solidjs/signals@2.0.3': {}
 
-  '@solidjs/universal@2.0.3(solid-js@2.0.3)':
-    dependencies:
-      solid-js: 2.0.3
-
   '@types/estree@1.0.10': {}
+
+  '@types/node@22.20.5':
+    dependencies:
+      undici-types: 6.21.0
 
   esbuild@0.28.2:
     optionalDependencies:
@@ -830,7 +841,11 @@ snapshots:
       fdir: 6.5.0(picomatch@4.0.7)
       picomatch: 4.0.7
 
-  vite@7.3.8:
+  typescript@5.9.3: {}
+
+  undici-types@6.21.0: {}
+
+  vite@7.3.8(@types/node@22.20.5):
     dependencies:
       esbuild: 0.28.2
       fdir: 6.5.0(picomatch@4.0.7)
@@ -839,4 +854,5 @@ snapshots:
       rollup: 4.68.7
       tinyglobby: 0.2.17
     optionalDependencies:
+      '@types/node': 22.20.5
       fsevents: 2.3.3

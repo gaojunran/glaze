@@ -24,14 +24,15 @@ are within a few percent of hand-written WXML in the same harness.
 | --- | --- |
 | `@glaze/compiler` | Solid JSX to WXML + binding runtime |
 | `@glaze/build` | `glaze build`: project and page output |
+| `@glaze/shared` | Small shared helpers (string/path naming) |
 | `@glaze/runtime` | per-instance Solid root and binding bridge |
-| `@glaze/solid` | future renderer experiments |
 | `@glaze/vite-plugin` | future Vite integration |
 | `examples/solid-todo` | counter, todo list and 1000-row benchmark |
 
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Source layout](docs/source-layout.md)
 - [Compiler](docs/compiler.md)
 - [Implementation plan](docs/plan.md)
 - [Build](docs/build.md)

@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import {
   buildProject,
   outputNameForRelative,
-} from '../src/build.mjs'
+} from '../src/build.ts'
 
 const exists = async (file) => {
   try {
@@ -19,10 +19,10 @@ const exists = async (file) => {
   }
 }
 
-async function createProject({ config, files = {} }) {
+async function createProject({ config, files = {}, configFile = 'glaze.config.mjs' }) {
   const project = await mkdtemp(path.join(tmpdir(), 'glaze-build-'))
   await writeFile(
-    path.join(project, 'glaze.config.mjs'),
+    path.join(project, configFile),
     `export default ${JSON.stringify(config, null, 2)}\n`,
   )
   for (const [relative, content] of Object.entries(files)) {
@@ -574,7 +574,7 @@ test('rejects a static file that collides with the shared runtime', async () => 
 })
 
 test('CLI prints help and rejects a missing or unknown command', () => {
-  const cli = fileURLToPath(new URL('../src/cli.mjs', import.meta.url))
+  const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url))
 
   const help = spawnSync(process.execPath, [cli, '--help'], { encoding: 'utf8' })
   assert.equal(help.status, 0)
@@ -587,4 +587,22 @@ test('CLI prints help and rejects a missing or unknown command', () => {
   const unknown = spawnSync(process.execPath, [cli, 'nope'], { encoding: 'utf8' })
   assert.equal(unknown.status, 1)
   assert.match(unknown.stderr, /Unknown command: nope/)
+})
+
+test('loads a TypeScript config file', async () => {
+  const project = await createProject({
+    configFile: 'glaze.config.mts',
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `export default function App() {\n  return <view>ts config</view>\n}\n`,
+    },
+  })
+  await Promise.all(appShell(project))
+  const result = await buildProject(project)
+  assert.deepEqual(result.pages, ['pages/home/index'])
+  assert.equal(await exists(path.join(project, 'miniprogram/app.json')), true)
 })

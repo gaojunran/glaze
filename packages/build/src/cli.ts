@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { buildProject, watchProject } from './build.mjs'
+import { buildProject } from './build.ts'
+import { watchProject } from './watch.ts'
 
 const usage = `Usage: glaze <command> [project]
 
@@ -32,7 +33,7 @@ if (command !== 'build' && command !== 'watch') {
   process.exit(1)
 }
 
-const report = (result) =>
+const report = (result: { pages: string[]; components: string[]; outputDir: string }) =>
   console.log(
     `glaze build: ${result.pages.length} pages, ${result.components.length} components -> ${result.outputDir}`,
   )
@@ -43,7 +44,7 @@ try {
   } else {
     const watched = await watchProject(project, {
       onBuild: report,
-      onError: (error) => console.error(`glaze watch failed: ${error.message}`),
+      onError: (error: Error) => console.error(`glaze watch failed: ${error.message}`),
     })
     console.log('glaze watch: waiting for changes (Ctrl+C to stop)')
     process.on('SIGINT', () => {
@@ -52,6 +53,6 @@ try {
     })
   }
 } catch (error) {
-  console.error(`glaze ${command} failed: ${error.message}`)
+  console.error((error as Error).message)
   process.exit(1)
 }

@@ -19,10 +19,12 @@ pipeline; Vite is not used to render the mini-program.
 
 ## Config
 
-`glaze.config.mjs`:
+`glaze.config.mts`:
 
-```js
-export default {
+```ts
+import type { GlazeConfig } from "@glaze/build"
+
+const config: GlazeConfig = {
   source: 'src',
   output: 'miniprogram',
   pages: {
@@ -32,6 +34,8 @@ export default {
   static: ['static'],
   staticPages: ['pages/native/index'],
 }
+
+export default config
 ```
 
 | Field | Meaning |
@@ -188,24 +192,24 @@ pnpm --filter @glaze/example-solid-todo build
 The CLI requires a command and prints usage for `--help`:
 
 ```bash
-node packages/build/src/cli.mjs --help
-node packages/build/src/cli.mjs build /path/to/project
+node packages/build/src/cli.ts --help
+node packages/build/src/cli.ts build /path/to/project
 ```
 
 Watch mode:
 
 ```bash
-node packages/build/src/cli.mjs watch /path/to/project
+node packages/build/src/cli.ts watch /path/to/project
 # or
 pnpm --filter @glaze/example-solid-todo exec glaze watch
 ```
 
 `watch` performs an initial build, then debounces source changes and serializes
 rebuilds. It watches `.tsx`, `.ts`, `.js`, `.json`, `.wxml`, and `.wxss` files
-under `source`, plus `glaze.config.mjs`.
+under `source`, plus `glaze.config.mts`.
 
 Every rebuild reloads the config with a cache-busting query, so editing
-`glaze.config.mjs` takes effect without restarting the watcher. When the config
+`glaze.config.mts` takes effect without restarting the watcher. When the config
 changes `source`, the watcher targets are rebuilt as well.
 
 ## Vite plugin

@@ -5,14 +5,16 @@
   "type": "module",
   "description": "Solid JSX to mini-program WXML compiler",
   "exports": {
-    ".": "./src/index.mjs"
+    ".": "./src/index.ts"
   },
   "dependencies": {
+    "@glaze/shared": "workspace:*",
     "@babel/generator": "^7.28.0",
     "@babel/parser": "^7.28.0",
     "@babel/types": "^7.28.0"
   },
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   }
 }

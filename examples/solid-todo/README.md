@@ -10,7 +10,7 @@ pnpm build
 ```
 
 This writes the whole `miniprogram` directory from `src`, using
-`glaze.config.mjs`. The output is generated and git-ignored.
+`glaze.config.mts`. The output is generated and git-ignored.
 
 Source layout:
 
@@ -46,5 +46,5 @@ Pages:
 With `sim serve` running on port 9422:
 
 ```bash
-NODE_PATH=~/Playground/minibuild/sdk node bench/compare.cjs
+NODE_PATH=~/Playground/minibuild/sdk node bench/compare.cts
 ```

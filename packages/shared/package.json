@@ -1,0 +1,14 @@
+{
+  "name": "@glaze/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Small framework-neutral helpers shared by Glaze packages",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test test/*.test.ts"
+  }
+}

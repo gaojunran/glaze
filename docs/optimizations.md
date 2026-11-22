@@ -214,7 +214,7 @@ and measurable improvement on the 1000-component cases. A flat-row improvement
 is not evidence for P0.
 
 Status: the component-dense baseline below implements the second and third rows
-of this table (`bench/components.cjs`). It was measured before P0; the P0 result
+of this table (`bench/components.cts`). It was measured before P0; the P0 result
 is recorded separately below.
 
 ## Component-dense baseline
@@ -264,7 +264,7 @@ target/debug/minidev sim serve \
 
 # separate shell
 cd ~/Projects/glaze
-NODE_PATH=~/Playground/minibuild/sdk node examples/solid-todo/bench/components.cjs
+NODE_PATH=~/Playground/minibuild/sdk node examples/solid-todo/bench/components.cts
 ```
 
 Environment: minidev 0.18.0 (`400d69e`, 2026-11-22), Node v22.23.0, pnpm

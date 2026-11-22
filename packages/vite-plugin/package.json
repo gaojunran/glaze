@@ -4,11 +4,14 @@
   "private": true,
   "type": "module",
   "description": "Vite integration for Glaze",
-  "exports": "./src/index.mjs",
+  "exports": "./src/index.ts",
   "peerDependencies": {
     "vite": "^7.0.0"
   },
   "dependencies": {
     "@glaze/build": "workspace:*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   }
 }

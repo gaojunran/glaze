@@ -1,7 +1,7 @@
 // Compare the compiled Solid page with the hand-written native page.
 //
 // Start `minidev sim serve` on port 9422 first, then:
-//   NODE_PATH=<minidev>/sdk node examples/solid-todo/bench/compare.cjs
+//   NODE_PATH=<minidev>/sdk node examples/solid-todo/bench/compare.cts
 //
 // The numbers include automator round-trips and page routing; use them to
 // compare the two pages on the same machine, not as absolute render timings.

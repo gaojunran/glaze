@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { compileComponent } from '../src/index.mjs'
+import { compileComponent } from '../src/index.ts'
 
 const source = `
 import { createSignal, For, Show } from 'solid-js'

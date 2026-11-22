@@ -1,5 +1,7 @@
 # Architecture
 
+The module-level source map is in [source-layout](source-layout.md).
+
 Glaze has two layers: a build-time compiler and a small runtime.
 
 ```

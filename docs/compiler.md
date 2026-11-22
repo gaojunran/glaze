@@ -553,7 +553,7 @@ target/debug/minidev sim serve \
 Run the benchmark against the native page while the simulator is running:
 
 ```bash
-NODE_PATH=~/Playground/minibuild/sdk node examples/solid-todo/bench/compare.cjs
+NODE_PATH=~/Playground/minibuild/sdk node examples/solid-todo/bench/compare.cts
 ```
 
 Run the e2e case:
