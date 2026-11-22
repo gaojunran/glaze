@@ -14,7 +14,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import path from 'node:path'
-import { loadConfig, collectTsx, resolveSourceImport, styleFor } from './config.ts'
+import { loadConfig, collectTsx, resolveSourceImport } from './config.ts'
 import {
   kebabCase,
   normalizeRoute,
@@ -32,7 +32,7 @@ import {
   sharedRuntimePlugin,
   sharedSpecifierFor,
 } from './shared.ts'
-import { assertPortableWxss } from './styles.ts'
+import { readAppStyle, readComponentStyle } from './preprocess.ts'
 import { applyTailwind, validateTailwindConfig } from './tailwind.ts'
 export { normalizeSourcePath, outputNameForRelative } from './paths.ts'
 
@@ -143,10 +143,13 @@ export async function buildProject(projectPath = process.cwd()) {
     (config.staticPages ?? []).map((route) => normalizeRoute(route)),
   )
 
+  const hasAppStyle = ['app.wxss', 'app.scss', 'app.less'].some((file) =>
+    existsSync(path.join(sourceDir, file)),
+  )
   const missingAppFiles = ['app.js', 'app.wxss'].filter(
     (name) =>
       !existsSync(path.join(sourceDir, name)) &&
-      !(name === 'app.wxss' && config.css?.tailwind),
+      !(name === 'app.wxss' && (hasAppStyle || config.css?.tailwind)),
   )
   for (const name of missingAppFiles) {
     console.warn(
@@ -158,9 +161,14 @@ export async function buildProject(projectPath = process.cwd()) {
   const stagingDir = await mkdtemp(path.join(stagingBase, 'out-'))
 
   try {
-    for (const name of ['app.js', 'app.wxss']) {
-      const from = path.join(sourceDir, name)
-      if (existsSync(from)) await copyFile(from, path.join(stagingDir, name))
+    const appJs = path.join(sourceDir, 'app.js')
+    if (existsSync(appJs)) await copyFile(appJs, path.join(stagingDir, 'app.js'))
+    const appWxss = path.join(sourceDir, 'app.wxss')
+    if (existsSync(appWxss)) {
+      await copyFile(appWxss, path.join(stagingDir, 'app.wxss'))
+    } else {
+      const appStyle = await readAppStyle(sourceDir)
+      if (appStyle) await writeFile(path.join(stagingDir, 'app.wxss'), appStyle.content)
     }
     for (const dir of config.static ?? []) {
       const from = path.join(sourceDir, dir)
@@ -175,13 +183,7 @@ export async function buildProject(projectPath = process.cwd()) {
     const styleCache = new Map()
     const readStyle = async (file) => {
       if (styleCache.has(file)) return styleCache.get(file)
-      let content = ''
-      try {
-        content = await readFile(file, 'utf8')
-      } catch (error) {
-        if (error.code !== 'ENOENT') throw error
-      }
-      if (content) assertPortableWxss(file, content)
+      const content = await readComponentStyle(file)
       styleCache.set(file, content)
       return content
     }
@@ -234,11 +236,11 @@ export async function buildProject(projectPath = process.cwd()) {
       const inlineStyles = []
       for (const inline of result.inlineComponents) {
         const child = inline.file ?? resolveSourceImport(file, inline.source, sources)
-        inlineStyles.push(await readStyle(styleFor(child)))
+        inlineStyles.push(await readStyle(child))
       }
       await writeFile(
         path.join(outDir, 'index.wxss'),
-        [await readStyle(styleFor(file)), ...inlineStyles].join('\n'),
+        [await readStyle(file), ...inlineStyles].join('\n'),
       )
 
       const bundle = await esbuild({

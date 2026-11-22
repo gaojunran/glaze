@@ -649,6 +649,70 @@ export default function App() {
   assert.match(generated, /bindingGroupSize:2/)
 })
 
+test('compiles component and app SCSS through the build', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/app.js': 'App({})\n',
+      'src/app.json': JSON.stringify({ componentFramework: 'glass-easel', window: {} }),
+      'src/app.scss': `$bg: #fefefe;\npage { background: $bg; }\n`,
+      'src/_vars.scss': '$brand: #123456;\n',
+      'src/App.tsx': `export default function App() {\n  return <view class="title">scss</view>\n}\n`,
+      'src/App.scss': `@use './vars' as *;\n.title { color: $brand; }\n`,
+    },
+  })
+
+  const warnings = []
+  const originalWarn = console.warn
+  console.warn = (message) => warnings.push(String(message))
+  try {
+    await buildProject(project)
+  } finally {
+    console.warn = originalWarn
+  }
+
+  assert.equal(warnings.some((message) => message.includes('app.wxss is missing')), false)
+  const appWxss = await readFile(path.join(project, 'miniprogram/app.wxss'), 'utf8')
+  assert.match(appWxss, /page\s*\{\s*background: #fefefe;/)
+  const componentWxss = await readFile(
+    path.join(project, 'miniprogram/components/glaze-app/index.wxss'),
+    'utf8',
+  )
+  assert.match(componentWxss, /\.title\s*\{\s*color: #123456;/)
+})
+
+test('compiles component and app Less through the build', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/app.js': 'App({})\n',
+      'src/app.json': JSON.stringify({ componentFramework: 'glass-easel', window: {} }),
+      'src/app.less': `@bg: #fafafa;\npage { background: @bg; }\n`,
+      'src/vars.less': '@brand: #654321;\n',
+      'src/App.tsx': `export default function App() {\n  return <view class="title">less</view>\n}\n`,
+      'src/App.less': `@import './vars.less';\n.title { color: @brand; }\n`,
+    },
+  })
+
+  await buildProject(project)
+
+  const appWxss = await readFile(path.join(project, 'miniprogram/app.wxss'), 'utf8')
+  assert.match(appWxss, /page\s*\{\s*background: #fafafa;/)
+  const componentWxss = await readFile(
+    path.join(project, 'miniprogram/components/glaze-app/index.wxss'),
+    'utf8',
+  )
+  assert.match(componentWxss, /\.title\s*\{\s*color: #654321;/)
+})
+
 test('generates Tailwind app.wxss and escapes generated WXML classes', async () => {
   const project = await createProject({
     config: {

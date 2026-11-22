@@ -22,18 +22,28 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
+    "less": "^4.9.1",
+    "sass": "^1.108.2",
     "tailwindcss": "^4.3.5",
     "weapp-tailwindcss": "^5.7.5"
   },
   "peerDependencies": {
     "tailwindcss": "^4",
-    "weapp-tailwindcss": "^5"
+    "weapp-tailwindcss": "^5",
+    "less": "^4",
+    "sass": "^1"
   },
   "peerDependenciesMeta": {
     "tailwindcss": {
       "optional": true
     },
     "weapp-tailwindcss": {
+      "optional": true
+    },
+    "less": {
+      "optional": true
+    },
+    "sass": {
       "optional": true
     }
   }

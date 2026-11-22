@@ -1,0 +1,16 @@
+$card-bg: #f9fafb;
+$title-color: #6b7280;
+
+.card {
+  margin-top: 32rpx;
+  padding: 24rpx;
+  border-radius: 16rpx;
+  background: $card-bg;
+
+  .card-title {
+    display: block;
+    font-size: 26rpx;
+    color: $title-color;
+    margin-bottom: 12rpx;
+  }
+}

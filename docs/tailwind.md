@@ -116,6 +116,10 @@ the same Node range.
 
   `peer-[.tapped]` emits a `~` sibling selector; the upstream docs warn that
   this can fail in mini-program CSS, so prefer avoiding `peer-*` in Glaze.
+
+  `hover-class` is a native WXML attribute, so a hyphenated JSX attribute is
+  copied to WXML unchanged (`<view hover-class="tapped">`). A camelCase
+  `hoverClass` is not rewritten; use the WXML spelling.
 - **One global app.wxss for now.** Subpackage-specific Tailwind roots and
   independent subpackage isolation are not implemented. Everything is paid for
   on every page that loads the main package.
@@ -138,7 +142,8 @@ the same Node range.
   calculations for existing WXSS that relied on `content-box` or default
   padding. Project `app.wxss` is appended after the generated CSS and can
   override it; disabling preflight needs a `weapp-tailwindcss` `cssOptions`
-  hook, which Glaze does not expose yet.
+  hook, which Glaze does not expose yet. `app.scss` / `app.less` are compiled
+  to `app.wxss` before the Tailwind CSS is appended.
 - **CSS compatibility still needs runtime evidence.** Tailwind 4 can emit
   modern CSS; `weapp-tailwindcss` produces the mini-program target, but the
   result should be checked in the simulator and on a device.

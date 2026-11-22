@@ -90,3 +90,8 @@ export function styleFor(sourceFile) {
   )
 }
 
+export function styleCandidatesFor(sourceFile) {
+  const base = styleFor(sourceFile).slice(0, -'.wxss'.length)
+  return [`${base}.wxss`, `${base}.scss`, `${base}.less`]
+}
+

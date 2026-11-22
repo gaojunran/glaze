@@ -16,7 +16,7 @@ export async function watchProject(projectPath = process.cwd(), options: any = {
   const isIgnored = (name) => {
     if (name.includes('.tmp')) return true
     if (currentConfig.output && name.includes(currentConfig.output)) return true
-    return !/\.(tsx?|jsx?|mjs|json|wxml|wxss|css)$/.test(name)
+    return !/\.(tsx?|jsx?|mjs|json|wxml|wxss|scss|less|css)$/.test(name)
   }
 
   const schedule = () => {

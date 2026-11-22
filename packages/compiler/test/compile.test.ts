@@ -928,6 +928,15 @@ test('compiles Show and Repeat inside For through WXS helpers', () => {
   assert.match(result.wxml, /wx:for-item="__glazeRepeat1"/)
 })
 
+test('passes hyphenated native attributes through unchanged', () => {
+  const result = compileComponent(`
+    export default function Page() {
+      return <view hover-class="tapped" data-id="main">x</view>
+    }
+  `)
+  assert.match(result.wxml, /<view hover-class="tapped" data-id="main">x<\/view>/)
+})
+
 test('expands static spread attributes', () => {
   const result = compileComponent(`
     export default function Page(props) {

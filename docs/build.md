@@ -64,16 +64,25 @@ This protects the project from a config typo such as `output: 'src'` or
 
 ## SCSS and Less
 
-The WeChat DevTools compiler plugins (`setting.useCompilerPlugins: ["sass"]`
-or `["less"]`) compile `.scss`/`.less` files that are inside the mini-program
-root into `.wxss`. Glaze does not use that source path: `styleFor()` looks for
-a sibling `.wxss`, the builder writes generated `index.wxss`, and the output is
-validated in minidev, which does not implement the DevTools compiler plugins.
+SCSS and Less are compiled inside `@glaze/build`, not by the WeChat DevTools
+compiler plugins. A component's sibling `style.scss` or `style.less` is
+compiled to the generated `index.wxss`; `src/app.scss` and `src/app.less` are
+compiled to the generated `app.wxss`. This keeps the output a portable
+`wxml / js / wxss / json` package that minidev and `miniprogram-ci` can load.
 
-A `.scss`/`.less` sibling of a `.tsx` file is therefore currently ignored.
-Supporting it means compiling styles in the Glaze build (for example with the
-optional `sass`/`less` package) before writing the component, not copying the
-preprocessed file to `miniprogram/`.
+Resolution order is `style.wxss` -> `style.scss` -> `style.less`, so an existing
+`.wxss` keeps priority. Imports are resolved by the preprocessor from the style
+file's directory, which means `@use './vars'` and `@import './vars.less'` work
+as usual.
+
+`sass@^1` and `less@^4` are optional peer dependencies. They are loaded only
+when a matching style file exists; a missing package is a build error naming
+the package to install. `app.scss` / `app.less` suppress the missing
+`app.wxss` warning.
+
+Tailwind should still use a `.css` entry. If a project uses both, the compiled
+`app.wxss` is written first and the Tailwind-generated CSS is appended after
+it; do not put `@import "tailwindcss"` inside `.scss` / `.less`.
 
 Tailwind is documented separately in [tailwind.md](tailwind.md).
 
