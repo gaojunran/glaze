@@ -48,6 +48,10 @@ export function emitModule(ast: AnyNode, setupStatements: AnyNode[], ctx: Compil
       ? `  propMap: ${JSON.stringify(options.propMap)},\n`
       : ''
   const errorBoundary = options.errorBoundary ? '  errorBoundary: true,\n' : ''
+  const asyncStatus =
+    options.asyncStatus && options.asyncStatus.length > 0
+      ? `  asyncStatus: ${JSON.stringify(options.asyncStatus)},\n`
+      : ''
   const eventProps =
     Object.keys(options.eventProps ?? {}).length > 0
       ? `  eventProps: ${JSON.stringify(options.eventProps)},\n`
@@ -185,7 +189,7 @@ import { ${runtimeImports} } from "@glaze/runtime/mini";
 ${moduleStatements}
 
 export default defineGlazeComponent({
-${properties}${propMap}${eventProps}${errorBoundary}${
+${properties}${propMap}${eventProps}${errorBoundary}${asyncStatus}${
     options.bindingGroupSize === undefined
       ? ''
       : `  bindingGroupSize: ${options.bindingGroupSize},\n`

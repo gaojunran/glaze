@@ -372,13 +372,23 @@ content. A failed binding is skipped instead of writing `undefined`, so it
 cannot clear another binding's error. The fallback and the boundary's own
 condition belong to the outer boundary.
 
-Pending and error state is keyed by `NotReadyError.source` when present, with a
-per-binding fallback. This keeps one async source shared by several bindings
-from becoming several unrelated sources. Error objects are normalized to
-`{ name, message }` before crossing the WXML data bridge; `error()` in an
-`Errored` fallback reads that normalized value. The fallback is rendered through
-a single-element `wx:for`, so `error()` is rewritten to the WXML loop item and
-the dependency graph itself stays in JS.
+Bindings in a component with async boundaries are wrapped in one Solid memo
+each. The memo is the single evaluation node the data effect reads; a
+`NotReadyError` propagates as pending, while a real error is stored as a value
+and rethrown by the data effect so the existing skip-and-log behavior survives.
+Initial values still call the raw binding before the memo is created, so a
+first-attempt failure can recover.
+
+First-pending state is captured by the runtime's binding error channel. After
+content has landed, `isPending` reports a refetch and restores the fallback.
+The compiler emits `asyncStatus: [{ index, kind, boundary }]`; those condition
+bindings are projected directly from the status signals rather than through an
+effect that a pending read in the same component could hold. Pending state is
+per boundary and per binding; errors are keyed by `NotReadyError.source` when
+present. Error objects are normalized to `{ name, message }` before crossing the
+WXML data bridge; `error()` in an `Errored` fallback reads that normalized
+value. The fallback is rendered through a single-element `wx:for`, so `error()`
+is rewritten to the WXML loop item and the dependency graph itself stays in JS.
 
 Boundaries inside a loop are rejected because their condition would need a
 per-row binding. `on` dependencies and reset are not implemented; an `Errored`

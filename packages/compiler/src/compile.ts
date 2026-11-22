@@ -98,6 +98,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     usesErrorBoundary: false,
     nextAsyncBoundary: 0,
     currentAsyncBoundary: null,
+    asyncStatus: [],
     namedSlots: new Set<string>(),
     usesWxs: false,
     blocks: [
@@ -227,6 +228,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     errorBoundary: ctx.usesErrorBoundary,
     namedSlots: [...ctx.namedSlots],
     boundaryContexts: ctx.boundaryContexts,
+    asyncStatus: ctx.asyncStatus,
   })
 
   return {
@@ -240,6 +242,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     errorBoundary: ctx.usesErrorBoundary,
     namedSlots: [...ctx.namedSlots],
     boundaryContexts: ctx.boundaryContexts,
+    asyncStatus: ctx.asyncStatus,
     components: ctx.components,
     inlineComponents: ctx.inlineComponents,
     assets: ctx.assets,

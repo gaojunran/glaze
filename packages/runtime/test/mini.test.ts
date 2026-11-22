@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test, { after } from 'node:test'
-import { createSignal, createStore, NotReadyError } from 'solid-js'
+import { createMemo, createSignal, createStore, NotReadyError } from 'solid-js'
 import { defineGlazeComponent, listOps, listPatch } from '../src/mini.ts'
 
 const originalComponent = globalThis.Component
@@ -588,6 +588,10 @@ test('store nested fields and store arrays share one runtime flush', async () =>
 test('tracks async pending and errored bindings for Loading and Errored', async () => {
   const def = defineGlazeComponent({
     errorBoundary: true,
+    asyncStatus: [
+      { index: 1, kind: 'loading', boundary: 0 },
+      { index: 3, kind: 'error', boundary: 0 },
+    ],
     data: { b0: null, b1: null, b2: null, b3: null, b4: null },
     setup(ctx) {
       ctx.bind(0, () => {
@@ -614,6 +618,10 @@ test('tracks async pending and errored bindings for Loading and Errored', async 
 test('tracks nested async boundaries separately', async () => {
   const def = defineGlazeComponent({
     errorBoundary: true,
+    asyncStatus: [
+      { index: 1, kind: 'loading', boundary: 0 },
+      { index: 3, kind: 'loading', boundary: 1 },
+    ],
     data: { b0: null, b1: null, b2: null, b3: null, b4: null },
     setup(ctx) {
       ctx.bind(0, () => {
@@ -631,4 +639,47 @@ test('tracks nested async boundaries separately', async () => {
   await tick()
   assert.equal(instance.calls.at(-1).b1, true)
   assert.equal(instance.calls.at(-1).b3, true)
+})
+
+test('derives Loading from Solid pending state across commit and refetch', async () => {
+  let resolveFirst
+  let resolveSecond
+  const first = new Promise((resolve) => (resolveFirst = resolve))
+  const second = new Promise((resolve) => (resolveSecond = resolve))
+  let setPhase
+  const def = defineGlazeComponent({
+    asyncStatus: [{ index: 1, kind: 'loading', boundary: 0 }],
+    data: { b0: null, b1: null },
+    setup(ctx) {
+      const [phase, set] = createSignal(0)
+      setPhase = set
+      const later = createMemo(async () => {
+        await (phase() === 0 ? first : second)
+        return `value-${phase()}`
+      })
+      ctx.bind(0, () => later(), 0)
+      ctx.bind(1, () => ctx.loading(0))
+    },
+  })
+
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  assert.equal(instance.calls.at(-1).b1, true)
+
+  resolveFirst()
+  await tick()
+  await tick()
+  assert.equal(instance.calls.at(-1).b0, 'value-0')
+  assert.equal(instance.calls.at(-1).b1, false)
+
+  setPhase(1)
+  await tick()
+  await tick()
+  assert.equal(instance.calls.at(-1).b1, true)
+
+  resolveSecond()
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(instance.calls.at(-1).b0, 'value-1')
+  assert.equal(instance.calls.at(-1).b1, false)
 })

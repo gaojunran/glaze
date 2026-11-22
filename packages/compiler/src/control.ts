@@ -176,6 +176,11 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
   const index = ctx.addBindingCode(
     kind === 'Loading' ? `ctx.loading(${boundary})` : `ctx.errored(${boundary})`,
   )
+  ctx.asyncStatus.push({
+    index,
+    kind: kind === 'Loading' ? 'loading' : 'error',
+    boundary,
+  })
   ctx.currentAsyncBoundary = boundary
   const children = compileChildren(node.children, ctx, scope)
   ctx.currentAsyncBoundary = outerBoundary

@@ -396,7 +396,8 @@ warnings, config reloads, CLI help, generated `styleIsolation`, the shared
 runtime file, relative `require()` resolution, namespace-import rejection,
 subpackage ownership and runtime placement, page config merging, and
 `static`/runtime collisions. The current suite has 41 builder tests; compiler
-has 70, runtime 22, shared 2.
+has 70, runtime 23, shared 2. The runtime also covers first-pending, refetch
+pending, and error recovery for a memoized async binding.
 
 Real simulator run (nine cases, including asset loading through
 `wx.getImageInfo`):

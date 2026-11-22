@@ -1373,6 +1373,10 @@ test('compiles Loading and Errored boundaries', () => {
   assert.match(result.js, /ctx\.bind\(0, \(\) => \(ctx\.loading\(0\)\)\)/)
   assert.match(result.js, /ctx\.bind\(1, \(\) => \(ctx\.errored\(1\)\)\)/)
   assert.match(result.js, /errorBoundary: true/)
+  assert.match(
+    result.js,
+    /asyncStatus: \[\{\"index\":0,\"kind\":\"loading\",\"boundary\":0\},\{\"index\":1,\"kind\":\"error\",\"boundary\":1\}\]/,
+  )
 })
 
 test('assigns separate ids to nested Loading boundaries', () => {

@@ -48,6 +48,7 @@ export type GlazeComponentConfig = {
   bindingGroupSize?: number
   boundaryContexts?: { name: string; key: string }[]
   errorBoundary?: boolean
+  asyncStatus?: { index: number; kind: 'loading' | 'error'; boundary: number }[]
   properties?: string[]
   propMap?: Record<string, string>
   eventProps?: Record<string, string>
@@ -59,11 +60,17 @@ export type GlazeComponentConfig = {
 
 export type InstanceState = {
   bindings: GlazeBinding[]
+  bindingFns: GlazeBinding[]
+  bindingMemos: (GlazeBinding | null)[]
   events: GlazeEventHandler[]
   refs: { id: string; fn: (node: unknown) => void }[]
   initial: unknown[]
   previous: unknown[]
   pending: DataChange[]
+  asyncPending: Map<number, Set<number>>
+  settled: boolean[]
+  statusVersion: [() => number, (value: number) => void]
+  applyStatus: ((index: number, value: unknown) => void) | null
   flushScheduled: boolean
   props: Record<string, [() => unknown, (value: unknown) => void]>
   propsProxy: GlazeProps | null
@@ -76,9 +83,9 @@ export type InstanceState = {
   bindingBoundaries: (number | null)[]
   bindingSources: unknown[]
   fallbackSources: unknown[]
-  pendingAsync: Map<number, Map<unknown, Set<number>>>
   errorBindings: Map<number, Map<unknown, Set<number>>>
   errorValues: Map<number, Map<unknown, unknown>>
   errorValueSignals: Map<number, [() => unknown, (value: unknown) => void]>
+  asyncStatus?: { index: number; kind: 'loading' | 'error'; boundary: number }[]
   error: unknown
 }

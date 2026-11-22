@@ -59,6 +59,7 @@ export type CompileResult = {
   errorBoundary: boolean
   namedSlots: string[]
   boundaryContexts: BoundaryContext[]
+  asyncStatus: { index: number; kind: 'loading' | 'error'; boundary: number }[]
   components: ComponentRef[]
   inlineComponents: ComponentRef[]
   assets: AssetEntry[]
@@ -77,6 +78,7 @@ export type EmitOptions = {
   errorBoundary: boolean
   namedSlots: string[]
   boundaryContexts: BoundaryContext[]
+  asyncStatus: { index: number; kind: 'loading' | 'error'; boundary: number }[]
 }
 export type CompilerContext = {
   bindings: BindingEntry[]
@@ -103,6 +105,7 @@ export type CompilerContext = {
   usesErrorBoundary: boolean
   nextAsyncBoundary: number
   currentAsyncBoundary: number | null
+  asyncStatus: { index: number; kind: 'loading' | 'error'; boundary: number }[]
   namedSlots: Set<string>
   usesWxs: boolean
   blocks: Block[]
