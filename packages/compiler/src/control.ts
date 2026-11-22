@@ -114,6 +114,26 @@ export function compileShowCallback(node, ctx, scope, when, keyed, fn, fallback)
   return `${thenNode}${elseNode}`
 }
 
+export function compileAsyncBoundary(node, ctx, scope, kind) {
+  if (scope || ctx.currentBlock !== 0) {
+    throw new Error(`<${kind}> is only supported at the component root`)
+  }
+  if (getAttribute(node, 'on')) throw new Error(`<${kind}> does not support the "on" prop yet`)
+  const fallbackAttr = getAttribute(node, 'fallback')
+  const fallback = getExpression(fallbackAttr)
+  if (fallback && !t.isJSXElement(fallback) && !t.isJSXFragment(fallback)) {
+    throw new Error(`<${kind}> fallback must be JSX`)
+  }
+  if (kind === 'Errored' && !fallback) throw new Error('<Errored> requires a fallback')
+  if (kind === 'Errored') ctx.usesErrorBoundary = true
+  const children = compileChildren(node.children, ctx, scope)
+  const fallbackContent = fallback ? compileNode(fallback, ctx, scope) : ''
+  const index = ctx.addBindingCode(kind === 'Loading' ? 'ctx.loading()' : 'ctx.errored()')
+  const condition = kind === 'Loading' && !fallback ? `!b${index}` : `b${index}`
+  if (!fallback) return `<block wx:if="{{${condition}}}">${children}</block>`
+  return `<block wx:if="{{${condition}}}">${fallbackContent}</block><block wx:else>${children}</block>`
+}
+
 export function compileShow(node, ctx, scope) {
   const when = getExpression(getAttribute(node, 'when'))
   if (!when) throw new Error('<Show> requires a when expression')

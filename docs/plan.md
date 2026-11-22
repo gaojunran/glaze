@@ -88,8 +88,12 @@ counter e2e passes against the generated output.
 - Component custom events: `onX` → `bind:x`, `onXCatch`/`onXCapture`/... →
   `catch:x`/`capture-bind:x`/...; child `eventProps` → `triggerEvent` with
   bubble and capture-phase options.
-- Context Provider: inline descendants only, via `withProvider`.
-- Refs: generated id plus `boundingClientRect` measurement facade.
+- Context Provider: inline descendants via `withProvider`; imported contexts
+  cross a component boundary through a `glazecontext` property.
+- Refs: node handle with measurement, descendant queries, and
+  `scrollIntoView`.
+- Async boundaries: root `Loading` / `Errored` track `NotReadyError` and failed
+  bindings.
 - Nested `For`: distinct item/index names, one index marker per level.
 - Structural list patches: insert/delete/reorder use glass-easel
   `spliceArrayDataOnPath` via `groupUpdates`; field patches remain for stable

@@ -210,3 +210,36 @@ test('Tailwind utilities reach WXML and app.wxss', async (miniProgram) => {
     throw new Error(`unexpected Tailwind padding: ${paddingTop}`)
   }
 })
+
+test('cross-file context reaches a component boundary', async (miniProgram) => {
+  await miniProgram.reLaunch('/pages/context/index')
+  const page = await miniProgram.currentPage()
+  await page.waitFor(800)
+  const app = await page.$('#app')
+  if (!app) throw new Error('glaze-root not found')
+  await expect(app).toMatchText('.title', 'Context boundary')
+  const xml = await app.outerWxml()
+  await expect(xml).toContain('class="context-boundary">cross-file')
+})
+
+test('ref facade queries a child node inside the component', async (miniProgram) => {
+  await miniProgram.reLaunch('/pages/index/index')
+  const page = await miniProgram.currentPage()
+  await page.waitFor(800)
+  const app = await page.$('#app')
+  if (!app) throw new Error('glaze-root not found')
+  await (await app.$('.ref-query')).tap()
+  await expect(app).toMatchText('.ref-query-result', /found:/)
+})
+
+test('async Loading and Errored boundaries render fallbacks and resolved values', async (miniProgram) => {
+  await miniProgram.reLaunch('/pages/async/index')
+  const page = await miniProgram.currentPage()
+  await page.waitFor(1200)
+  const app = await page.$('#app')
+  if (!app) throw new Error('glaze-root not found')
+  await expect(app).toMatchText('.title', 'Async boundaries')
+  await expect(app).toMatchText('.async-value', 'async-ready')
+  const fs = require('node:fs'); fs.writeFileSync('/tmp/opencode/async-app.xml', await app.outerWxml())
+  await expect(app).toMatchText('.async-error', 'async-error')
+})

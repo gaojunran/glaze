@@ -15,6 +15,7 @@ import {
 } from './ast.ts'
 import { classAttr, styleAttr } from './attributes.ts'
 import {
+  compileAsyncBoundary,
   compileConditional,
   compileFor,
   compileRepeat,
@@ -69,8 +70,15 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
     return wrapDirectives(compileProvider(node, ctx, scope), extraAttrs)
   }
   const name = tagName(tag)
-  if (t.isJSXIdentifier(tag) && ctx.contextNames.has(name)) {
+  if (
+    t.isJSXIdentifier(tag) &&
+    (ctx.contextNames.has(name) ||
+      (ctx.contextKeys.get(name)?.imported === true && getAttribute(node, 'value')))
+  ) {
     return wrapDirectives(compileProvider(node, ctx, scope), extraAttrs)
+  }
+  if ((name === 'Loading' || name === 'Errored') && ctx.imports.get(name) === 'solid-js') {
+    return wrapDirectives(compileAsyncBoundary(node, ctx, scope, name), extraAttrs)
   }
   if (name === 'Show') return wrapDirectives(compileShow(node, ctx, scope), extraAttrs)
   if (name === 'For') return wrapDirectives(compileFor(node, ctx, scope), extraAttrs)
@@ -182,6 +190,19 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
   ctx.addComponent(name, source, ctx.currentFile)
 
   const attrs = []
+  if (ctx.activeProviders.length > 0) {
+    const local = ctx.activeProviders.filter((provider) => !provider.imported)
+    if (local.length > 0) {
+      throw new Error(
+        `Context ${local[0].name} is local and cannot cross a component boundary; import it from a module`,
+      )
+    }
+    const value = `({ ${ctx.activeProviders
+      .map((provider) => `${JSON.stringify(provider.key)}: (${provider.code})`)
+      .join(', ')} })`
+    const index = ctx.addBindingCode(value)
+    attrs.push(`glazecontext="{{b${index}}}"`)
+  }
   for (const attr of expandAttributes(node.openingElement.attributes)) {
     if (!t.isJSXAttribute(attr)) {
       throw new Error('JSX spread attributes are not supported')
@@ -281,6 +302,10 @@ export function compileProvider(node, ctx, scope) {
       ? tag.name
       : null
   if (!contextName) throw new Error('Unsupported context provider form')
+  const contextEntry = ctx.contextKeys.get(contextName)
+  if (!contextEntry) {
+    throw new Error(`Context provider ${contextName} must be a createContext value or an import`)
+  }
 
   const blockId = ctx.blocks.length
   ctx.blocks.push({
@@ -294,9 +319,17 @@ export function compileProvider(node, ctx, scope) {
 
   const previous = ctx.currentProvider
   const previousBlock = ctx.currentBlock
+  const provider = {
+    name: contextName,
+    key: contextEntry.key,
+    imported: contextEntry.imported,
+    code: codeOf(value),
+  }
+  ctx.activeProviders.push(provider)
   ctx.currentProvider = blockId
   ctx.currentBlock = blockId
   const children = compileChildren(node.children, ctx, scope)
+  ctx.activeProviders.pop()
   ctx.currentProvider = previous
   ctx.currentBlock = previousBlock
   return children

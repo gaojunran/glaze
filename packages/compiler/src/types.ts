@@ -17,6 +17,8 @@ export type BindingEntry = { code: string; listKey: string | null; block: number
 export type EventEntry = { code: string; ast: AnyNode; scope: Scope | null; custom: boolean; block: number }
 export type RefEntry = { code: string; block: number }
 export type PropGetter = { name: string; code: string; expression: AnyNode }
+export type ContextProvider = { name: string; key: string; imported: boolean; code: string }
+export type BoundaryContext = { name: string; key: string }
 export type Block = {
   setup: AnyNode[]
   propsParam: string | null
@@ -48,7 +50,9 @@ export type CompileResult = {
   propMap: Record<string, string>
   eventProps: Record<string, string>
   usesSlot: boolean
+  errorBoundary: boolean
   namedSlots: string[]
+  boundaryContexts: BoundaryContext[]
   components: ComponentRef[]
   inlineComponents: ComponentRef[]
   bindingCount: number
@@ -63,7 +67,9 @@ export type EmitOptions = {
   propMap: Record<string, string>
   eventProps: Record<string, string>
   usesSlot: boolean
+  errorBoundary: boolean
   namedSlots: string[]
+  boundaryContexts: BoundaryContext[]
 }
 export type CompilerContext = {
   bindings: BindingEntry[]
@@ -81,8 +87,12 @@ export type CompilerContext = {
   inlineChildrenCount: number
   rootPropsParam: string | null
   contextNames: Set<string>
+  contextKeys: Map<string, { key: string; imported: boolean }>
+  activeProviders: ContextProvider[]
+  boundaryContexts: BoundaryContext[]
   currentProvider: number | null
   usesSlot: boolean
+  usesErrorBoundary: boolean
   namedSlots: Set<string>
   usesWxs: boolean
   blocks: Block[]

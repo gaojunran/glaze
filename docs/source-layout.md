@@ -40,7 +40,8 @@ Large files were split by responsibility rather than by size alone:
 | | `data.ts` | data paths, value normalization, binding error reporting |
 | | `list.ts` | keyed list diff/patch |
 | | `styles.ts` | `class`/`style` object helpers |
-| | `provider.ts` | inline Solid context provider bridge |
+| | `provider.ts` | inline Solid context provider bridge and boundary re-entry |
+| | `ref.ts` | node handle: measurement, descendant queries and scrolling |
 | | `types.ts` | runtime/public types |
 | `@glaze/shared` | `strings.ts` | `kebabCase`, shared by compiler and build naming |
 

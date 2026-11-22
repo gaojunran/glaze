@@ -1306,3 +1306,71 @@ test('emits an optional binding group size', () => {
   const grouped = compileComponent(source, { bindingGroupSize: 1 })
   assert.match(grouped.js, /bindingGroupSize: 1,/)
 })
+
+test('passes imported context through a component boundary', () => {
+  const parent = compileComponent(
+    `
+      import { Theme } from './Theme'
+      import Child from './Child'
+      export default function Page() {
+        return <Theme.Provider value="dark"><Child /></Theme.Provider>
+      }
+    `,
+    { sourceFile: '/app/Page.tsx' },
+  )
+  assert.match(parent.wxml, /<child glazecontext="\{\{b0\}\}" \/>/)
+  assert.match(parent.js, /withProvider\(Theme, \("dark"\)/)
+
+  const child = compileComponent(
+    `
+      import { useContext } from 'solid-js'
+      import { Theme } from './Theme'
+      export default function Child() {
+        const theme = useContext(Theme)
+        return <text>{theme}</text>
+      }
+    `,
+    { sourceFile: '/app/Child.tsx' },
+  )
+  assert.deepEqual(child.propertyNames, ['glazecontext'])
+  assert.equal(child.boundaryContexts.length, 1)
+  assert.match(child.js, /withBoundaryContexts\(\[\{ context: Theme, key: "\/app\/Theme#Theme" \}\]/)
+  assert.match(child.js, /boundaryContexts: \[\{"name":"Theme","key":"\/app\/Theme#Theme"\}\]/)
+})
+
+test('rejects a local context that would cross a component boundary', () => {
+  assert.throws(
+    () =>
+      compileComponent(
+        `
+          import { createContext } from 'solid-js'
+          import Child from './Child'
+          const Theme = createContext('light')
+          export default function Page() {
+            return <Theme.Provider value="dark"><Child /></Theme.Provider>
+          }
+        `,
+        { sourceFile: '/app/Page.tsx' },
+      ),
+    /cannot cross a component boundary/,
+  )
+})
+
+test('compiles Loading and Errored boundaries', () => {
+  const result = compileComponent(`
+    import { Loading, Errored } from 'solid-js'
+    export default function Page() {
+      return (
+        <view>
+          <Loading fallback={<text>loading</text>}><text>ready</text></Loading>
+          <Errored fallback={<text>failed</text>}><text>value</text></Errored>
+        </view>
+      )
+    }
+  `)
+  assert.match(result.wxml, /wx:if="\{\{b0\}\}"><text>loading<\/text><\/block><block wx:else><text>ready/)
+  assert.match(result.wxml, /wx:if="\{\{b1\}\}"><text>failed<\/text><\/block><block wx:else><text>value/)
+  assert.match(result.js, /ctx\.bind\(0, \(\) => \(ctx\.loading\(\)\)\)/)
+  assert.match(result.js, /ctx\.bind\(1, \(\) => \(ctx\.errored\(\)\)\)/)
+  assert.match(result.js, /errorBoundary: true/)
+})

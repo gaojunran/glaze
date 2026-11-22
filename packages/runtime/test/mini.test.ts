@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test, { after } from 'node:test'
-import { createSignal, createStore } from 'solid-js'
+import { createSignal, createStore, NotReadyError } from 'solid-js'
 import { defineGlazeComponent, listOps, listPatch } from '../src/mini.ts'
 
 const originalComponent = globalThis.Component
@@ -583,4 +583,28 @@ test('store nested fields and store arrays share one runtime flush', async () =>
   assert.deepEqual(instance.ops, [
     { path: ['b1'], index: 1, del: 0, inserts: [{ id: 2, title: 'two' }] },
   ])
+})
+
+test('tracks async pending and errored bindings for Loading and Errored', async () => {
+  const def = defineGlazeComponent({
+    errorBoundary: true,
+    data: { b0: null, b1: null, b2: null, b3: null },
+    setup(ctx) {
+      ctx.bind(0, () => {
+        throw new NotReadyError()
+      })
+      ctx.bind(1, () => ctx.loading())
+      ctx.bind(2, () => {
+        throw new Error('boom')
+      })
+      ctx.bind(3, () => ctx.errored())
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  assert.equal(instance.calls.at(-1).b1, true)
+  assert.equal(instance.calls.at(-1).b3, true)
+  assert.equal(instance.calls[0].b0, undefined)
+  assert.equal(instance.calls[0].b2, undefined)
 })

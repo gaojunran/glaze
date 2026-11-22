@@ -9,6 +9,8 @@ const config: GlazeConfig = {
     'pages/bench-components/index': 'BenchComponents.tsx',
     'pages/reactive/index': 'ReactiveCases.tsx',
     'pages/tailwind/index': 'TailwindCase.tsx',
+    'pages/context/index': 'ContextPage.tsx',
+    'pages/async/index': 'AsyncPage.tsx',
   },
   static: ['static'],
   css: { tailwind: { input: 'src/tailwind.css' } },

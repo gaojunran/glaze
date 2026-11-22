@@ -32,6 +32,12 @@ export default function Counter() {
   const [picked] = createSignal({ name: 'picked' })
   const upper = (value: string) => value.toUpperCase()
   const [refWidth, setRefWidth] = createSignal(0)
+  const [refQuery, setRefQuery] = createSignal('idle')
+  let refNode: { querySelector(selector: string): Promise<{ width?: number } | null> } | null = null
+  const queryRef = async () => {
+    const child = await refNode?.querySelector('.ref-label')
+    setRefQuery(child ? `found:${child.width ?? 0}` : 'missing')
+  }
   const [tapLog, setTapLog] = createSignal('')
   const [captureLog, setCaptureLog] = createSignal('')
   const [mutLog, setMutLog] = createSignal('')
@@ -196,9 +202,15 @@ export default function Counter() {
 
       <view
         class="ref-probe"
-        ref={(node: { width?: number } | null) => setRefWidth(node?.width ?? 0)}
+        ref={(node: { width?: number; querySelector?: (selector: string) => Promise<unknown> } | null) => {
+          refNode = (node as { querySelector: (selector: string) => Promise<{ width?: number } | null> } | null) ?? null
+          setRefWidth(node?.width ?? 0)
+        }}
       >
+        <text class="ref-label">ref child</text>
         <text class="ref-width">{refWidth()}</text>
+        <button class="ref-query" onClick={queryRef}>query ref</button>
+        <text class="ref-query-result">{refQuery()}</text>
       </view>
 
       <view class="grid">

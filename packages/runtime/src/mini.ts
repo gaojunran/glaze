@@ -1,5 +1,6 @@
 import {
   createEffect,
+  NotReadyError,
   createRoot,
   createSignal,
   getOwner,
@@ -10,11 +11,12 @@ import {
   normalizeDataValue,
   normalizePropValue,
   GLAZE_EVENT_OPTIONS,
-  reportBindingError,
+  reportBindingError as logBindingError,
   SCALAR_BINDING_GROUP,
 } from './data.ts'
 import { listOps, listPatch } from './list.ts'
-import { withProvider } from './provider.ts'
+import { withBoundaryContexts, withProvider } from './provider.ts'
+import { createNodeRef } from './ref.ts'
 declare const Component: (options: Record<string, unknown>) => unknown
 
 import type {
@@ -27,12 +29,18 @@ import type {
 } from './types.ts'
 
 export { className, styleName } from './styles.ts'
-export { withProvider } from './provider.ts'
+export { withBoundaryContexts, withProvider } from './provider.ts'
 export { listOps, listPatch } from './list.ts'
-export type { GlazeComponentConfig, GlazeContext } from './types.ts'
+export type { GlazeComponentConfig, GlazeContext, GlazeNode } from './types.ts'
 
 export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   const propertyNames = config.properties ?? []
+  const isNotReady = (error: unknown) =>
+    error instanceof NotReadyError || (error as { name?: string } | null)?.name === 'NotReadyError'
+  const reportError = (index: number, error: unknown) => {
+    if (!config.errorBoundary) logBindingError(index, error)
+  }
+  const deferredContext = (config.boundaryContexts?.length ?? 0) > 0
   const methods: Record<string, unknown> = {}
   const handlerCount = config.handlerCount ?? 0
   for (let i = 0; i < handlerCount; i += 1) {
@@ -56,13 +64,27 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   }
 
   const properties = Object.fromEntries(
-    propertyNames.map((name) => [name, { type: null, value: null }]),
+    propertyNames.map((name) => [
+      name,
+      name === 'glazecontext' ? { type: Object, value: null } : { type: null, value: null },
+    ]),
   )
   const observers = Object.fromEntries(
     propertyNames.map((name) => [
       name,
       function observeProperty(this: { __glaze?: InstanceState | null }, value: unknown) {
-        this.__glaze?.props[name]?.[1](normalizePropValue(value))
+        const state = this.__glaze
+        state?.props[name]?.[1](normalizePropValue(value))
+        if (
+          name === 'glazecontext' &&
+          state &&
+          deferredContext &&
+          !state.mounted &&
+          state.props.glazecontext?.[0]() != null
+        ) {
+          mount(this, state)
+          if (state.active) attach(this, state)
+        }
       },
     ]),
   )
@@ -88,6 +110,11 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     state.refs.length = 0
     state.initial.length = 0
     state.previous.length = 0
+    state.pendingAsync.clear()
+    state.errorBindings.clear()
+    state.error = undefined
+    state.loading[1](false)
+    state.errored[1](false)
     state.owner = null
 
     state.dispose = createRoot((dispose) => {
@@ -102,6 +129,8 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           ref(index, fn) {
             state.refs[index] = { id: `glaze-r${index}`, fn }
           },
+          loading: () => state.loading[0](),
+          errored: () => state.errored[0](),
         },
         state.propsProxy!,
       )
@@ -118,7 +147,15 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         } catch (error) {
           // One async or broken binding must not prevent the component from
           // rendering the remaining values.
-          reportBindingError(index, error)
+          if (isNotReady(error)) {
+            state.pendingAsync.add(index)
+            state.loading[1](true)
+          } else {
+            state.errorBindings.add(index)
+            state.error = error
+            state.errored[1](true)
+          }
+          reportError(index, error)
         }
       })
       component.setData(initial)
@@ -232,6 +269,10 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     }
 
     const applyBinding = (index: number, value: unknown) => {
+      state.pendingAsync.delete(index)
+      state.loading[1](state.pendingAsync.size > 0)
+      state.errorBindings.delete(index)
+      state.errored[1](state.errorBindings.size > 0)
       const key = listBindings[index]
       // Scalar bindings in one effect group are recomputed together. Skip the
       // unchanged ones so one signal write only produces its own data path,
@@ -260,18 +301,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       state.previous[index] = snapshotValue(index, value)
     }
 
-    const refs = state.refs.filter(Boolean)
-    if (refs.length > 0) {
-      const query =
-        (component as { createSelectorQuery?: () => any }).createSelectorQuery?.() ??
-        (globalThis as unknown as { wx: any }).wx.createSelectorQuery().in(component)
-      for (const ref of refs) {
-        query.select(`#${ref.id}`).boundingClientRect((rect: unknown) => {
-          ref.fn(rect ? { id: ref.id, ...(rect as Record<string, unknown>) } : null)
-        })
-      }
-      query.exec()
-    }
+    for (const ref of state.refs.filter(Boolean)) createNodeRef(component, ref.id, ref.fn)
 
     const createBindingEffect = (index: number) => {
       const fn = state.bindings[index]
@@ -287,20 +317,36 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
             try {
               applyBinding(index, value)
             } catch (error) {
-              reportBindingError(index, error)
+              if (isNotReady(error)) {
+                state.pendingAsync.add(index)
+                state.loading[1](true)
+              } else {
+                state.errorBindings.add(index)
+                state.error = error
+                state.errored[1](true)
+              }
+              reportError(index, error)
             }
           },
           error(error) {
             // A failed compute keeps the last applied value; later changes can
             // recover, and other bindings keep their own effects running.
             first = false
-            reportBindingError(index, error)
+            if (isNotReady(error)) {
+              state.pendingAsync.add(index)
+              state.loading[1](true)
+            } else {
+              state.errorBindings.add(index)
+              state.error = error
+              state.errored[1](true)
+            }
+            reportError(index, error)
           },
         })
       } catch (error) {
         // Even a synchronous effect-creation failure must not stop the
         // remaining bindings from being created.
-        reportBindingError(index, error)
+        reportError(index, error)
       }
     }
 
@@ -332,8 +378,8 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
                 try {
                   return { index, value: state.bindings[index]!() }
                 } catch (error) {
-                  reportBindingError(index, error)
-                  return { index, value: undefined }
+                  reportError(index, error)
+                  return { index, value: undefined, failed: true }
                 }
               }),
             {
@@ -341,26 +387,38 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
                 if (first) {
                   first = false
                   const unchanged = values.every(
-                    (item) => item.value === undefined || Object.is(item.value, state.initial[item.index]),
+                    (item) =>
+                      item.failed ||
+                      item.value === undefined ||
+                      Object.is(item.value, state.initial[item.index]),
                   )
                   if (unchanged) return
                 }
                 for (const item of values) {
+                  if (item.failed) continue
                   try {
                     applyBinding(item.index, item.value)
                   } catch (error) {
-                    reportBindingError(item.index, error)
+                    reportError(item.index, error)
                   }
                 }
               },
               error(error) {
                 first = false
-                reportBindingError(group[0] ?? 0, error)
+                if (isNotReady(error)) {
+                  state.pendingAsync.add(group[0] ?? 0)
+                  state.loading[1](true)
+                } else {
+                  state.errorBindings.add(group[0] ?? 0)
+                  state.error = error
+                  state.errored[1](true)
+                }
+                reportError(group[0] ?? 0, error)
               },
             },
           )
         } catch (error) {
-          reportBindingError(group[0] ?? 0, error)
+          reportError(group[0] ?? 0, error)
         }
       }
       state.bindings.forEach((fn, index) => {
@@ -393,6 +451,11 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           dispose: null,
           mounted: false,
           active: false,
+          loading: createSignal(false),
+          errored: createSignal(false),
+          pendingAsync: new Set(),
+          errorBindings: new Set(),
+          error: undefined,
         }
         this.__glaze = state
 
@@ -430,7 +493,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           },
         )
 
-        mount(this, state)
+        if (!deferredContext) mount(this, state)
       },
 
       attached(this: any) {
@@ -438,8 +501,20 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         if (!state || state.active) return
         // Re-attaching after `detached`: the old root was disposed, so build a
         // fresh one before restoring effects.
-        if (!state.mounted) mount(this, state)
+        if (!state.mounted && !deferredContext) mount(this, state)
         state.active = true
+        attach(this, state)
+      },
+
+      ready(this: any) {
+        const state: InstanceState | undefined = this.__glaze
+        if (!state || !deferredContext || state.mounted) return
+        // A context passed through the property bridge is not available while
+        // `created` runs (the parent's first setData may land afterwards).
+        // Wait for `ready`, when the property is materialized, then build the
+        // provider chain and the component's normal setup. Without a value the
+        // providers are skipped and `useContext` falls back to its default.
+        mount(this, state)
         attach(this, state)
       },
 

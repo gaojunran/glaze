@@ -47,6 +47,7 @@ export function emitModule(ast: AnyNode, setupStatements: AnyNode[], ctx: Compil
     options.propertyNames.some((name, index) => name !== options.props[index])
       ? `  propMap: ${JSON.stringify(options.propMap)},\n`
       : ''
+  const errorBoundary = options.errorBoundary ? '  errorBoundary: true,\n' : ''
   const eventProps =
     Object.keys(options.eventProps ?? {}).length > 0
       ? `  eventProps: ${JSON.stringify(options.eventProps)},\n`
@@ -147,16 +148,31 @@ ${lines}
     return `  {\n${props}${indent(body, 4)}\n  }`
   }
 
-  const setup = ctx.blocks
+  const rawSetup = ctx.blocks
     .map((block, blockId) => (block.provider === null ? renderBlock(blockId) : ''))
     .filter(Boolean)
     .join('\n')
+
+  const boundaryContexts = options.boundaryContexts ?? []
+  const hasBoundaryContext = boundaryContexts.length > 0
+  const setup = hasBoundaryContext
+    ? `  // Values cross the mini-program property bridge; the child re-enters each
+  // provider it consumes before running its own setup.
+  withBoundaryContexts([${
+    boundaryContexts
+      .map((item) => `{ context: ${item.name}, key: ${JSON.stringify(item.key)} }`)
+      .join(', ')
+  }], ${options.propsParam}.glazecontext, () => {
+${indent(rawSetup, 4)}
+  });`
+    : rawSetup
 
   const hasProvider = ctx.blocks.some((block) => block.providerContext)
   const helpers = [...ctx.helpers]
   const runtimeImports = [
     'defineGlazeComponent',
     ...(hasProvider ? ['withProvider'] : []),
+    ...(hasBoundaryContext ? ['withBoundaryContexts'] : []),
     ...helpers,
   ].join(', ')
   return `${imports}
@@ -165,11 +181,11 @@ import { ${runtimeImports} } from "@glaze/runtime/mini";
 ${moduleStatements}
 
 export default defineGlazeComponent({
-${properties}${propMap}${eventProps}${
+${properties}${propMap}${eventProps}${errorBoundary}${
     options.bindingGroupSize === undefined
       ? ''
       : `  bindingGroupSize: ${options.bindingGroupSize},\n`
-  }  data: ${data},
+  }${hasBoundaryContext ? `  boundaryContexts: ${JSON.stringify(boundaryContexts.map((item) => ({ name: item.name, key: item.key })))},\n` : ''}  data: ${data},
   listBindings: ${JSON.stringify(listBindings)},
   handlerCount: ${ctx.events.length},
   refCount: ${ctx.refs.length},

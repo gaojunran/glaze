@@ -1,3 +1,4 @@
+import path from 'node:path'
 import * as t from '@babel/types'
 import { codeOf, containsJsx, walkAst } from './ast.ts'
 import { WXS_SOURCE } from './constants.ts'
@@ -29,15 +30,44 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
   const { ast, statements, returnIndex, jsx, propsParam, props } = parsed
 
   const contextNames = new Set<string>()
-  walkAst({ type: 'Program', body: statements }, (node) => {
+  const contextKeys = new Map<string, { key: string; imported: boolean }>()
+  walkAst(ast, (node) => {
     if (!t.isVariableDeclarator(node) || !t.isIdentifier(node.id) || !node.init) return
     if (
       t.isCallExpression(node.init) &&
       t.isIdentifier(node.init.callee, { name: 'createContext' })
     ) {
       contextNames.add(node.id.name)
+      contextKeys.set(node.id.name, {
+        key: `${options.sourceFile ?? '<inline>'}#${node.id.name}`,
+        imported: false,
+      })
     }
   })
+  for (const node of ast.program.body) {
+    if (!t.isImportDeclaration(node)) continue
+    const source = node.source.value
+    const resolved =
+      source.startsWith('.') && options.sourceFile
+        ? path.resolve(path.dirname(options.sourceFile), source)
+        : source
+    for (const specifier of node.specifiers) {
+      if (t.isImportSpecifier(specifier)) {
+        const imported = t.isIdentifier(specifier.imported)
+          ? specifier.imported.name
+          : specifier.imported.value
+        contextKeys.set(specifier.local.name, {
+          key: `${resolved}#${imported}`,
+          imported: true,
+        })
+      } else if (t.isImportDefaultSpecifier(specifier)) {
+        contextKeys.set(specifier.local.name, {
+          key: `${resolved}#default`,
+          imported: true,
+        })
+      }
+    }
+  }
 
   const ctx: CompilerContext = {
     bindings: [],
@@ -59,8 +89,12 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     inlineChildrenCount: 0,
     rootPropsParam: propsParam?.name ?? null,
     contextNames,
+    contextKeys,
+    activeProviders: [],
+    boundaryContexts: [],
     currentProvider: null,
     usesSlot: false,
+    usesErrorBoundary: false,
     namedSlots: new Set<string>(),
     usesWxs: false,
     blocks: [
@@ -135,6 +169,21 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     },
   }
 
+  // Context used by a component boundary is passed as one JSON property. The
+  // child wraps its setup in the providers it actually consumes, so a provider
+  // in the parent can reach a separate mini-program component without sharing
+  // its Solid owner.
+  walkAst({ type: 'BlockStatement', body: statements.slice(0, returnIndex) }, (node) => {
+    if (!t.isCallExpression(node) || !t.isIdentifier(node.callee, { name: 'useContext' })) return
+    const argument = node.arguments[0]
+    if (!t.isIdentifier(argument)) return
+    const entry = contextKeys.get(argument.name)
+    if (!entry?.imported) return
+    if (!ctx.boundaryContexts.some((item) => item.key === entry.key)) {
+      ctx.boundaryContexts.push({ name: argument.name, key: entry.key })
+    }
+  })
+
   const eventProps = Object.fromEntries(
     props
       .filter((name) => /^on[A-Z]/.test(name))
@@ -143,7 +192,10 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
         return [name, eventNameFor(binding?.base ?? name)]
       }),
   )
-  const plainProps = props.filter((name) => !eventProps[name])
+  const plainProps = [
+    ...props.filter((name) => !eventProps[name]),
+    ...(ctx.boundaryContexts.length > 0 ? ['glazecontext'] : []),
+  ]
   const propertyNames = plainProps.map((name) => name.toLowerCase())
   if (new Set(propertyNames).size !== propertyNames.length) {
     throw new Error('Component props collide after lowercasing to mini-program property names')
@@ -157,15 +209,19 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
   const wxml = ctx.usesWxs
     ? `<wxs module="glazeRange">${WXS_SOURCE}</wxs>${bodyWxml}`
     : bodyWxml
+  const effectivePropsParam =
+    propsParam?.name ?? (ctx.boundaryContexts.length > 0 ? '__glazeProps' : null)
   const js = emitModule(ast, statements.slice(0, returnIndex), ctx, {
     bindingGroupSize: options.bindingGroupSize,
-    propsParam: propsParam?.name ?? null,
+    propsParam: effectivePropsParam,
     props: plainProps,
     propertyNames,
     propMap,
     eventProps,
     usesSlot: ctx.usesSlot,
+    errorBoundary: ctx.usesErrorBoundary,
     namedSlots: [...ctx.namedSlots],
+    boundaryContexts: ctx.boundaryContexts,
   })
 
   return {
@@ -176,7 +232,9 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     propMap,
     eventProps,
     usesSlot: ctx.usesSlot,
+    errorBoundary: ctx.usesErrorBoundary,
     namedSlots: [...ctx.namedSlots],
+    boundaryContexts: ctx.boundaryContexts,
     components: ctx.components,
     inlineComponents: ctx.inlineComponents,
     bindingCount: ctx.bindings.length,

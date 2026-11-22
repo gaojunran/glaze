@@ -322,9 +322,55 @@ withProvider(Theme, ("dark"), () => {
 ```
 
 `withProvider` calls the Solid provider directly and drains its memo, so the
-context is active while the compiled child blocks run. This only works for
-inlined descendants: a child rendered as a separate mini-program component has
-its own Solid root and does not inherit the provider.
+context is active while the compiled child blocks run.
+
+An imported context can also cross a component boundary. The parent passes one
+`glazecontext` property that maps the context key to its value; the child emits
+`withBoundaryContexts(...)` around its setup and re-enters only the providers it
+actually reads with `useContext`:
+
+```tsx
+// theme.ts
+export const Theme = createContext('light')
+
+// Child.tsx
+const theme = useContext(Theme)
+return <text>{theme}</text>
+
+// Page.tsx
+<Theme.Provider value="cross-file">
+  <Child />
+</Theme.Provider>
+```
+
+The value travels through the mini-program property bridge, so it must be
+JSON-like. A context declared with `createContext` in the **same file** cannot
+cross a boundary (the child module has no way to reconstruct the same object);
+import it from a module instead. The value is read once when the child becomes
+ready, not re-evaluated as a reactive expression. Components that consume a
+boundary context defer their setup to `ready`, because the parent's first
+`setData` may land after the child is created.
+
+### Async boundaries
+
+Solid 2 `Loading` and `Errored` are compiled at the component root:
+
+```tsx
+<Loading fallback={<text>loading</text>}>
+  <text>{later()}</text>
+</Loading>
+<Errored fallback={<text>failed</text>}>
+  <text>{broken()}</text>
+</Errored>
+```
+
+`<Loading>` becomes a `wx:if` binding on `ctx.loading()`, which is true while
+any binding is waiting on a `NotReadyError`. `<Errored>` becomes a binding on
+`ctx.errored()`, true while any binding has failed with a non-`NotReadyError`.
+A failed binding is skipped instead of writing `undefined`, so it cannot clear
+another binding's error. The boundary is component-wide, not a nested scope;
+nested `Loading` / `Errored`, `on` dependencies, function fallbacks, and reset
+are not implemented.
 
 ### Refs
 
@@ -340,10 +386,17 @@ its own Solid root and does not inherit the provider.
 <view id="glaze-r0">
 ```
 
-After `attached`, the runtime runs
-`createSelectorQuery().select("#glaze-r0").boundingClientRect(...)` and calls the
-callback with `{ id, ...rect }` or `null`. This is a measurement facade, not a DOM
-node: it has no `focus`, `scrollIntoView`, or child traversal. An element with
+After `attached`, the runtime measures `#glaze-r0` and calls the callback with a
+node handle that also carries the initial rect fields (`width`, `height`,
+`top`, ...) or `null`. The handle exposes:
+
+- `getBoundingClientRect()` — re-measure the element;
+- `querySelector(selector)` / `querySelectorAll(selector)` — query descendants
+  scoped to this element;
+- `scrollIntoView({ duration, offset })` — page-scroll the element into view.
+
+It is still a measurement facade, not a DOM node: `focus`, `blur`, attribute
+mutation, and direct child manipulation are not available. An element with
 `ref` cannot also set `id`.
 
 ### Nested loops
@@ -615,11 +668,13 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
    their WXML lands in the parent's scope.
 2. **Named slots** require a component boundary. An inlined component can only
    use the default `props.children` slot.
-3. **Context** only reaches inlined descendants. A separate mini-program
-   component does not inherit a provider, and the provider value is read at
-   mount rather than re-evaluated as a reactive expression.
-4. **Refs** expose a measurement object, not a DOM node. `focus`,
-   `scrollIntoView`, and child traversal are not available.
+3. **Context** reaches a separate component only when the context is imported
+   from a module; a same-file `createContext` cannot cross a boundary. The
+   provider value is read once when the child becomes ready, not re-evaluated
+   as a reactive expression.
+4. **Refs** expose a node handle with measurement, descendant queries, and
+   `scrollIntoView`, not a DOM node. `focus`, `blur`, and arbitrary mutation are
+   not available.
 5. **List structure** is a `DataChange` splice for insert, delete, and middle
    replacement (`spliceArrayDataOnPath` in the fallback path). A pure move is
    expressed as delete+insert over the changed middle; there is no LIS move
@@ -642,7 +697,10 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
    that disable WXS.
 10. **Build integration** has `glaze build`, `glaze watch`, and a Vite build
    bridge. There is no mini-program HMR or incremental compile.
-11. **Svelte** has no compiler yet.
+11. **Async boundaries** (`Loading` / `Errored`) are component-wide and root
+    only; nested boundaries, `on` dependencies, function fallbacks, and reset
+    are not implemented.
+12. **Svelte** has no compiler yet.
 
 
 ## Boundary fixes from the Solid / glass-easel review

@@ -11,7 +11,8 @@ The first target is **Solid 2**. Svelte 5 is planned on the same compiler.
 ## Status
 
 Working spike: a Solid counter with inlined components, slots, custom
-events, context, refs, nested `For`, `Switch`/`Match`, `For` fallback,
+events, context (including component boundaries), ref node queries, async
+`Loading`/`Errored` boundaries, nested `For`, `Switch`/`Match`, `For` fallback,
 `Repeat`, `For keyed` modes, `Show` callbacks, nested `Repeat`/`Show`, static
 spread, destructuring, class/style helpers, per-row patches and glass-easel
 splice updates, optional Tailwind 4 compilation, `glaze build` / `glaze watch` /
