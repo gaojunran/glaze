@@ -93,8 +93,8 @@ Status: implemented.
 Previously every binding got its own `createEffect`, so a component with 50
 scalar bindings created 50 effects. The runtime now groups consecutive scalar
 bindings into batches and creates one effect per batch. The batch size is
-`bindingGroupSize` in `glaze.config`, defaulting to 8; `1` gives one effect per
-binding:
+`runtime.bindingGroupSize` in `glaze.config`, defaulting to 8; `1` gives one
+effect per binding:
 
 ```js
 createEffect(
@@ -217,6 +217,19 @@ route; append/delete stay the weak spot (+16 ms / +11 ms mean), where one
 inline row has to be materialized or removed while the native side can satisfy a
 host count earlier. Do not claim append/delete as a win until a tighter harness
 removes the selector/poll bias.
+
+## P2 — Dependency-set binding groups
+
+Status: candidate, deliberately not scheduled.
+
+A compiler-side dependency key per binding would let the runtime group bindings
+that read exactly the same signals/props, instead of slicing by index. It removes
+the "one change recomputes the other seven" cost, but unique dependency sets
+degrade to one effect per binding, and aliases, stores, context, prop proxies and
+helper calls make a sound analysis expensive. Revisit only with a benchmark page
+whose bindings contain expensive expressions and where effect creation is not the
+dominant cost. The fixed-size `runtime.bindingGroupSize` remains the current
+policy.
 
 ## P2 — LIS list moves through `spliceArrayDataOnPath`
 

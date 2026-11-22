@@ -49,11 +49,12 @@ async function replaceOutput(stagingDir: string, outputDir: string, clean: boole
 export async function buildProject(projectPath = process.cwd()) {
   const project = path.resolve(projectPath)
   const config = await loadConfig(project)
+  const bindingGroupSize = config.runtime?.bindingGroupSize
   if (
-    config.bindingGroupSize !== undefined &&
-    (!Number.isInteger(config.bindingGroupSize) || config.bindingGroupSize <= 0)
+    bindingGroupSize !== undefined &&
+    (!Number.isInteger(bindingGroupSize) || bindingGroupSize <= 0)
   ) {
-    throw new Error('Config "bindingGroupSize" must be a positive integer')
+    throw new Error('Config "runtime.bindingGroupSize" must be a positive integer')
   }
   const sourceDir = path.resolve(project, config.source)
   const outputDir = path.resolve(project, config.output)
@@ -90,7 +91,7 @@ export async function buildProject(projectPath = process.cwd()) {
       result: compileComponent(sources.get(file), {
         inline: true,
         sourceFile: file,
-        bindingGroupSize: config.bindingGroupSize,
+        bindingGroupSize,
         resolveComponent: (_name, specifier, fromFile = file) => {
           const child = resolveSourceImport(fromFile, specifier, sources)
           return child ? { source: sources.get(child), file: child } : null

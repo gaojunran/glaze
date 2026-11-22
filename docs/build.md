@@ -33,6 +33,7 @@ const config: GlazeConfig = {
   },
   static: ['static'],
   staticPages: ['pages/native/index'],
+  runtime: { bindingGroupSize: 8 },
 }
 
 export default config
@@ -46,7 +47,7 @@ export default config
 | `static` | directories whose contents are copied into the output root |
 | `staticPages` | routes already present in `static` and kept in `app.json` |
 | `clean` | replace the previous output after a successful build; defaults to `true` |
-| `bindingGroupSize` | scalar bindings per effect; a positive integer, default `8`, `1` disables grouping |
+| `runtime.bindingGroupSize` | scalar bindings per effect; a positive integer, default `8`, `1` disables grouping |
 
 Paths are validated before anything is written:
 

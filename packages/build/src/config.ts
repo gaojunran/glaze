@@ -3,14 +3,18 @@ import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+export type GlazeRuntimeConfig = {
+  bindingGroupSize?: number
+}
+
 export type GlazeConfig = {
   source: string
-  bindingGroupSize?: number
   output: string
   pages: Record<string, string>
   static?: string[]
   staticPages?: string[]
   clean?: boolean
+  runtime?: GlazeRuntimeConfig
 }
 
 export const DEFAULT_CONFIG: GlazeConfig = {

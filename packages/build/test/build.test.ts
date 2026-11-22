@@ -612,7 +612,7 @@ test('rejects a non-positive binding group size', async () => {
     config: {
       source: 'src',
       output: 'miniprogram',
-      bindingGroupSize: 0,
+      runtime: { bindingGroupSize: 0 },
       pages: { 'pages/home/index': 'App.tsx' },
     },
     files: {
@@ -620,7 +620,7 @@ test('rejects a non-positive binding group size', async () => {
     },
   })
   await Promise.all(appShell(project))
-  await assert.rejects(buildProject(project), /bindingGroupSize/)
+  await assert.rejects(buildProject(project), /runtime\.bindingGroupSize/)
 })
 
 test('passes bindingGroupSize into the emitted component', async () => {
@@ -628,7 +628,7 @@ test('passes bindingGroupSize into the emitted component', async () => {
     config: {
       source: 'src',
       output: 'miniprogram',
-      bindingGroupSize: 2,
+      runtime: { bindingGroupSize: 2 },
       pages: { 'pages/home/index': 'App.tsx' },
     },
     files: {
