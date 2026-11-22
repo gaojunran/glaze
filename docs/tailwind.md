@@ -101,15 +101,44 @@ the same Node range.
   strings containing `/` or `:` are left alone.
 - **`@apply` inside component `index.wxss` is not compiled.** Put Tailwind
   directives in the Tailwind entry. Component WXSS remains plain WXSS.
-- **Variants follow mini-program semantics.** `hover:`/`focus:`/`group-*`/
-  `peer-*` do not map 1:1 to touch UI or WXML event bubbling. Build success is
-  not proof of the intended runtime interaction; verify the specific variant.
+- **Pseudo-class variants are not translated to `hover-class`.** A probe with
+  `hover:bg-red-500`, `focus:bg-red-500`, `active:bg-red-500`,
+  `group-hover:bg-red-500` and `peer-checked:bg-red-500` under
+  `weapp-tailwindcss` target `weapp` produced no utility rule at all: the
+  candidate was accepted into the class set but its selector was dropped.
+  The supported pattern is an attribute state plus an arbitrary group variant:
+
+  ```html
+  <view class="group" hover-class="tapped">
+    <view class="group-[.tapped]:bg-yellow-400">pressed</view>
+  </view>
+  ```
+
+  `peer-[.tapped]` emits a `~` sibling selector; the upstream docs warn that
+  this can fail in mini-program CSS, so prefer avoiding `peer-*` in Glaze.
 - **One global app.wxss for now.** Subpackage-specific Tailwind roots and
   independent subpackage isolation are not implemented. Everything is paid for
   on every page that loads the main package.
-- **Preflight is global.** The Tailwind reset changes default `view`/`text`
-  box model and spacing. Customize the Tailwind entry if the reset conflicts
-  with existing WXSS.
+- **Preflight is global.** The mini-program-compatible preflight generated for
+  this example contains, among the theme variables:
+
+  ```css
+  view,text,::after,::before {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: 0 solid;
+    --tw-content: "";
+  }
+  ```
+
+  It also defines `--spacing`, font/color variables on
+  `page,.tw-root,wx-root-portal-content,:host`. It does **not** include the web
+  `html`/`body`/heading/button reset. The reset can change width/height
+  calculations for existing WXSS that relied on `content-box` or default
+  padding. Project `app.wxss` is appended after the generated CSS and can
+  override it; disabling preflight needs a `weapp-tailwindcss` `cssOptions`
+  hook, which Glaze does not expose yet.
 - **CSS compatibility still needs runtime evidence.** Tailwind 4 can emit
   modern CSS; `weapp-tailwindcss` produces the mini-program target, but the
   result should be checked in the simulator and on a device.

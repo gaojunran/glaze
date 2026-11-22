@@ -62,6 +62,19 @@ Paths are validated before anything is written:
 This protects the project from a config typo such as `output: 'src'` or
 `output: '.'` deleting source files or the project itself.
 
+## SCSS and Less
+
+The WeChat DevTools compiler plugins (`setting.useCompilerPlugins: ["sass"]`
+or `["less"]`) compile `.scss`/`.less` files that are inside the mini-program
+root into `.wxss`. Glaze does not use that source path: `styleFor()` looks for
+a sibling `.wxss`, the builder writes generated `index.wxss`, and the output is
+validated in minidev, which does not implement the DevTools compiler plugins.
+
+A `.scss`/`.less` sibling of a `.tsx` file is therefore currently ignored.
+Supporting it means compiling styles in the Glaze build (for example with the
+optional `sass`/`less` package) before writing the component, not copying the
+preprocessed file to `miniprogram/`.
+
 Tailwind is documented separately in [tailwind.md](tailwind.md).
 
 ## Build pipeline
