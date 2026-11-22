@@ -22,8 +22,9 @@ The runtime only forwards binding values:
 ```
 signal write
   └── createEffect(compute, apply)
-        └── setData({ b0: value })
-              └── WXML binding update
+        └── microtask flush
+              └── groupUpdates(replaceDataOnPath([...], value))
+                    └── WXML binding update
 ```
 
 ## Why not external components
@@ -331,7 +332,9 @@ arrays by key. If the length and key order are unchanged, it emits only changed
 fields:
 
 ```js
-setData({ "b2[0].done": false })
+this.groupUpdates(() => {
+  this.replaceDataOnPath(["b2", 0, "done"], false)
+})
 ```
 
 When the key structure changes, the runtime does not send the whole array. It
@@ -357,10 +360,11 @@ The runtime picks the smallest prefix/suffix change:
 - reorder or replace a middle range: one splice that deletes the old middle and
   inserts the new middle.
 
-Same-length updates with unchanged key order still use field paths, e.g.
-`setData({ "b2[0].done": false })`. If `spliceArrayDataOnPath` is unavailable
-(e.g. a non-glass-easel runtime), the runtime falls back to
-`setData({ b2: nextArray })`.
+Same-length updates with unchanged key order still use field paths, now via
+`replaceDataOnPath(["b2", 0, "done"], false)` inside `groupUpdates`. If
+`replaceDataOnPath`/`groupUpdates` are unavailable, the runtime falls back to
+`setData({ "b2[0].done": false })`; if `spliceArrayDataOnPath` is unavailable,
+it falls back to `setData({ b2: nextArray })`.
 
 Events inside a loop get an index marker:
 
@@ -438,8 +442,10 @@ Component `props` is a Proxy with `ownKeys`, `has`, and
 it. `splitProps` was removed in Solid 2; use `omit` for the rest object.
 
 Binding writes are merged in a microtask: several signals updated in one event
-produce one `setData` call. The initial values still go through one synchronous
-`setData` before the first paint.
+produce one flush. The flush uses one `groupUpdates` with a
+`replaceDataOnPath` call per changed path, or one `setData` when those
+glass-easel primitives are unavailable. The initial values still go through one
+synchronous `setData` before the first paint.
 
 ### Generated runtime
 
@@ -464,8 +470,9 @@ defineGlazeComponent({
 3. runs `setup`, then evaluates every binding once and `setData`s the initial
    values before the first paint;
 4. in `attached`, creates one `createEffect(compute, apply)` per binding and
-   sends later values to `setData({ bN: value })`; if a prop changed between
-   `created` and `attached`, the first effect run sends the corrected value;
+   sends later values to a batched `replaceDataOnPath` flush (falling back to
+   `setData`); if a prop changed between `created` and `attached`, the first
+   effect run sends the corrected value;
 5. disposes the root in `detached`.
 
 ## Solid 2 note: burst events

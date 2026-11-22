@@ -1,8 +1,9 @@
 # Performance backlog
 
 These are glass-easel-specific optimizations for standard Solid code. The
-component-dense benchmark, the shared runtime module and P0 pure-component
-inlining are implemented and measured below; the P1 optimizations are not.
+component-dense benchmark, the shared runtime module, P0 pure-component
+inlining and the `replaceDataOnPath` flush are implemented and measured below;
+binding-effect batching is not.
 
 ## Why the current benchmark is not enough
 
@@ -103,21 +104,32 @@ single-field update latency.
 
 ## P1 — Skip path parsing with `replaceDataOnPath`
 
+Status: implemented.
+
 The compiler already knows every data path. `setData` parses each string path at
 runtime (`parseSinglePath`); `replaceDataOnPath(pathArray, value)` plus
-`groupUpdates` avoids that.
-
-Candidate:
+`groupUpdates` avoids that. The runtime now keeps a pending key/value map and,
+when both methods exist, flushes it as:
 
 ```js
 this.groupUpdates(() => {
   this.replaceDataOnPath(["b0"], value0)
-  this.replaceDataOnPath(["b1"], value1)
+  this.replaceDataOnPath(["b3", 0, "done"], value1)
 })
 ```
 
-This is a deterministic micro-optimization and should not change semantics.
-Keep `setData` for the fallback path and for runtimes without these methods.
+`dataPath()` converts the generated keys (`b0`, `b3[0].done`) into path arrays.
+If either primitive is missing, the runtime falls back to the old
+`setData(pending)` path. This does not batch effects; that remains the other P1
+item above.
+
+Measured on the component-dense route after the change: Glaze first render
+3635/3625/3612 ms (mean 3624), first-row update 31/28/28 ms (mean 29), append
+190/195/193 ms, delete 184/188/198 ms. The same-session native means were 3597
+ms first render, 33 ms update, 179 ms append and 182 ms delete. These are within
+the run-to-run spread of the P0 table, so this change is not claimed as a
+wall-time win; it removes `parseSinglePath` work deterministically and keeps the
+old `setData` fallback.
 
 ## P2 — LIS list moves through `spliceArrayDataOnPath`
 

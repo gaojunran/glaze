@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test, { after } from 'node:test'
 import { createSignal } from 'solid-js'
-import { defineGlazeComponent, listOps, listPatch } from '../src/mini.ts'
+import { dataPath, defineGlazeComponent, listOps, listPatch } from '../src/mini.ts'
 
 const originalComponent = globalThis.Component
 globalThis.Component = (config) => config
@@ -12,16 +12,18 @@ after(() => {
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-function createInstance(def, properties = {}) {
+function createInstance(def, properties = {}, { paths = false } = {}) {
   const calls = []
   const ops = []
   const events = []
+  const pathCalls = []
   const instance = {
     properties,
     __glaze: null,
     calls,
     ops,
     events,
+    pathCalls,
     setData(data) {
       calls.push(data)
     },
@@ -34,6 +36,9 @@ function createInstance(def, properties = {}) {
     spliceArrayDataOnPath(path, index, del, inserts) {
       ops.push({ path, index, del, inserts })
     },
+  }
+  if (paths) {
+    instance.replaceDataOnPath = (path, value) => pathCalls.push([path, value])
   }
   def.lifetimes.created.call(instance)
   return instance
@@ -185,6 +190,58 @@ test('effect compute errors stay isolated to their binding', async () => {
   } finally {
     log.restore()
   }
+})
+
+test('parses generated data paths into replaceDataOnPath segments', () => {
+  assert.deepEqual(dataPath('b0'), ['b0'])
+  assert.deepEqual(dataPath('b3[0].done'), ['b3', 0, 'done'])
+  assert.deepEqual(dataPath('b3[12]'), ['b3', 12])
+})
+
+test('batches scalar updates through replaceDataOnPath when available', async () => {
+  let setCount
+  const def = defineGlazeComponent({
+    data: { b0: null, b1: null },
+    setup(ctx) {
+      const [count, set] = createSignal(0)
+      setCount = set
+      ctx.bind(0, () => count())
+      ctx.bind(1, () => count() * 2)
+    },
+  })
+
+  const instance = createInstance(def, {}, { paths: true })
+  def.lifetimes.attached.call(instance)
+
+  setCount(1)
+  await tick()
+
+  assert.equal(instance.calls.length, 1)
+  assert.deepEqual(instance.pathCalls, [
+    [['b0'], 1],
+    [['b1'], 2],
+  ])
+})
+
+test('uses replaceDataOnPath for list field patches too', async () => {
+  let setItems
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    setup(ctx) {
+      const [items, set] = createSignal([{ id: 1, done: false }])
+      setItems = set
+      ctx.bind(0, () => items())
+    },
+  })
+
+  const instance = createInstance(def, {}, { paths: true })
+  def.lifetimes.attached.call(instance)
+
+  setItems([{ id: 1, done: true }])
+  await tick()
+
+  assert.deepEqual(instance.pathCalls, [[['b0', 0, 'done'], true]])
 })
 
 test('list bindings remember a shallow snapshot of the previous array', async () => {

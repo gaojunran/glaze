@@ -183,6 +183,31 @@ const normalizePropValue = (value: unknown): unknown => (value === null ? undefi
 // Mini-program `setData` rejects `undefined`; WXML renders `null` as empty.
 const normalizeDataValue = (value: unknown): unknown => (value === undefined ? null : value)
 
+/** Internal helper, exported for unit tests. */
+export function dataPath(key: string): (string | number)[] {
+  const path: (string | number)[] = []
+  let index = 0
+  while (index < key.length) {
+    if (key[index] === '.') {
+      index += 1
+      continue
+    }
+    if (key[index] === '[') {
+      const end = key.indexOf(']', index)
+      if (end < 0) throw new Error(`Invalid data path: ${key}`)
+      const segment = key.slice(index + 1, end)
+      path.push(/^\d+$/.test(segment) ? Number(segment) : segment)
+      index = end + 1
+      continue
+    }
+    let end = index
+    while (end < key.length && key[end] !== '.' && key[end] !== '[') end += 1
+    path.push(key.slice(index, end))
+    index = end
+  }
+  return path
+}
+
 function reportBindingError(index: number, error: unknown): void {
   // Async resources below a binding legitimately throw while settling; only
   // surface unexpected failures so they do not disappear behind the guard.
@@ -305,6 +330,17 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         const pending = state.pending
         state.pending = {}
         if (!state.active || Object.keys(pending).length === 0) return
+        if (
+          typeof component.replaceDataOnPath === 'function' &&
+          typeof component.groupUpdates === 'function'
+        ) {
+          component.groupUpdates(() => {
+            for (const [key, value] of Object.entries(pending)) {
+              component.replaceDataOnPath(dataPath(key), value)
+            }
+          })
+          return
+        }
         component.setData(pending)
       }
       if (typeof queueMicrotask === 'function') queueMicrotask(flush)
