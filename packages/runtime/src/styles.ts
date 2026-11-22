@@ -21,3 +21,8 @@ export function styleName(value: unknown): string {
     .map(([key, item]) => `${key.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`)}:${item}`)
     .join(';')
 }
+
+
+export function textValue(value: unknown): unknown {
+  return typeof value === 'boolean' ? '' : value
+}

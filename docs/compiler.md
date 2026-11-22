@@ -800,3 +800,28 @@ Run on 2026-11-22 in the repository workspace:
 The simulator still prints `wx:key` performance warnings for the intentional
 `keyed={false}` and keyless object-list examples; they are warnings, not
 rendering failures, and the reasoning is recorded above.
+
+### Expression and attribute hardening
+
+- Inline expressions in loop attributes are emitted with single-quoted string
+  literals. Any remaining double quote (inside string content, regex or template
+  text) becomes `\u0022`, because WXML attribute values themselves are
+  double-quoted.
+- Generated event wrappers use `__glazeEvent`, so a loop item or callback
+  parameter named `event` cannot produce a duplicate `const event`.
+- `data-glaze-index*` is reserved for loop index restoration; a user-provided
+  attribute with the same name is a compile error.
+- Boolean expression children are wrapped in the runtime `textValue` helper;
+  WXML would otherwise render the strings `true` / `false`, while Solid renders
+  nothing.
+- Template literals that depend on a loop value are rejected with a readable
+  error instead of crashing Babel's generator.
+- A `ref` inside `Show`, `Switch`, `Match` or their fallbacks is rejected, not
+  silently measured once.
+- `useContext` is collected from the whole function body, including JSX, so a
+  context read in JSX still crosses a component boundary.
+- Solid control-flow tags are only treated as built-ins when they are imported
+  from `solid-js` (or not imported at all for backward compatibility); a local
+  `Show`/`Switch` import is compiled as a normal component.
+- JSX text normalization trims indentation on the first and last non-empty
+  lines without removing intentional spaces around expressions.

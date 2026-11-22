@@ -31,8 +31,11 @@ export function pushScopeIndexAttrs(attrs, scope) {
   for (let cursor = scope; cursor; cursor = cursor.parent) {
     if (cursor.direct) continue
     const attr = cursor.level === 0 ? 'data-glaze-index' : `data-glaze-index${cursor.level}`
-    if (!attrs.some((item) => item.startsWith(`${attr}=`))) {
-      attrs.push(`${attr}="{{${cursor.index}}}"`)
+    const generated = `${attr}="{{${cursor.index}}}"`
+    const existing = attrs.find((item) => item.startsWith(`${attr}=`))
+    if (!existing) attrs.push(generated)
+    else if (existing !== generated) {
+      throw new Error(`"${attr}" is reserved by Glaze for loop index restoration`)
     }
   }
 }
@@ -95,18 +98,26 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
   if ((name === 'Loading' || name === 'Errored') && ctx.imports.get(name) === 'solid-js') {
     return wrapDirectives(compileAsyncBoundary(node, ctx, scope, name), extraAttrs)
   }
-  if (name === 'Show') return wrapDirectives(compileShow(node, ctx, scope), extraAttrs)
-  if (name === 'For') return wrapDirectives(compileFor(node, ctx, scope), extraAttrs)
-  if (name === 'Switch') return wrapDirectives(compileSwitch(node, ctx, scope), extraAttrs)
-  if (name === 'Repeat') return wrapDirectives(compileRepeat(node, ctx, scope), extraAttrs)
-  if (name === 'Match') {
-    throw new Error('<Match> must be a direct child of <Switch>')
+  const controlSource = ctx.imports.get(name)
+  const isControl =
+    controlSource === 'solid-js' || (controlSource === undefined && !ctx.knownImports.has(name))
+  if (isControl) {
+    if (name === 'Show') return wrapDirectives(compileShow(node, ctx, scope), extraAttrs)
+    if (name === 'For') return wrapDirectives(compileFor(node, ctx, scope), extraAttrs)
+    if (name === 'Switch') return wrapDirectives(compileSwitch(node, ctx, scope), extraAttrs)
+    if (name === 'Repeat') return wrapDirectives(compileRepeat(node, ctx, scope), extraAttrs)
+    if (name === 'Match') {
+      throw new Error('<Match> must be a direct child of <Switch>')
+    }
   }
   if (name === 'slot') {
     const slotName = getAttribute(node, 'name')
     const value = slotName && slotName.value && t.isStringLiteral(slotName.value)
       ? slotName.value.value
       : null
+    if (slotName && !value) {
+      throw new Error('Named slot requires a string literal name')
+    }
     if (value) ctx.namedSlots.add(value)
     else ctx.usesSlot = true
   }
@@ -123,7 +134,7 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
     if (!attrName) throw new Error('Unsupported JSX attribute name')
     if (attrName === 'key') continue
     if (attrName === 'ref') {
-      if (scope) {
+      if (scope || ctx.refForbidden > 0) {
         throw new Error('ref inside <For>, <Show> or <Match> is not supported yet')
       }
       if (
@@ -354,6 +365,7 @@ export function compileProvider(node, ctx, scope) {
 }
 
 export function compileExpressionChild(expression, ctx, scope) {
+  if (t.isJSXEmptyExpression(expression)) return ''
   if (
     ctx.inlineChildren != null &&
     ctx.inlinePropsParam &&
@@ -413,6 +425,20 @@ export function compileExpressionChild(expression, ctx, scope) {
     throw new Error('JSX values are not supported in expressions; use a JSX branch or child')
   }
   if (scope) return `{{${inlineExpression(expression, scope, ctx)}}}`
+  // Solid renders nothing for boolean children; WXML would render the strings
+  // "true"/"false" from a raw binding. Only expressions that can evaluate to a
+  // boolean need the wrapper; a plain numeric/string binding keeps its shape.
+  const booleanish =
+    t.isLogicalExpression(expression) ||
+    t.isConditionalExpression(expression) ||
+    (t.isUnaryExpression(expression) && expression.operator === '!') ||
+    (t.isBinaryExpression(expression) &&
+      ['==', '===', '!=', '!==', '<', '<=', '>', '>='].includes(expression.operator))
+  if (booleanish) {
+    ctx.addHelper('textValue')
+    const index = ctx.addBindingCode(`textValue(${codeOf(expression)})`)
+    return `{{b${index}}}`
+  }
   const index = ctx.addBinding(expression)
   return `{{b${index}}}`
 }

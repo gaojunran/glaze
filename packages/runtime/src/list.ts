@@ -62,7 +62,8 @@ export function listPatch(
   for (let index = 0; index < next.length; index += 1) {
     const item = next[index]
     const before = previous[index]
-    if (!before || !Object.is(keyOf(before, key), keyOf(item, key))) return null
+    if (!before || !item || typeof before !== 'object' || typeof item !== 'object') return null
+    if (!Object.is(keyOf(before, key), keyOf(item, key))) return null
 
     if (before === item) continue
     for (const field of Object.keys(item)) {

@@ -120,9 +120,10 @@ the same Node range.
   `hover-class` is a native WXML attribute, so a hyphenated JSX attribute is
   copied to WXML unchanged (`<view hover-class="tapped">`). A camelCase
   `hoverClass` is not rewritten; use the WXML spelling.
-- **One global app.wxss for now.** Subpackage-specific Tailwind roots and
-  independent subpackage isolation are not implemented. Everything is paid for
-  on every page that loads the main package.
+- **One global app.wxss for now.** Class escaping runs on the `components/`
+  tree of every package, but subpackage-specific roots and independent
+  subpackage isolation are not implemented. An independent subpackage cannot
+  see the root `app.wxss`, so its utilities need a package-local solution.
 - **Preflight is global.** The mini-program-compatible preflight generated for
   this example contains, among the theme variables:
 

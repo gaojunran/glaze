@@ -683,3 +683,95 @@ test('derives Loading from Solid pending state across commit and refetch', async
   assert.equal(instance.calls.at(-1).b0, 'value-1')
   assert.equal(instance.calls.at(-1).b1, false)
 })
+
+test('clears pending when a boundary binding fails instead of resolving', async () => {
+  let setPhase
+  const def = defineGlazeComponent({
+    errorBoundary: true,
+    asyncStatus: [
+      { index: 1, kind: 'loading', boundary: 0 },
+      { index: 2, kind: 'error', boundary: 0 },
+    ],
+    data: { b0: null, b1: null, b2: null },
+    setup(ctx) {
+      const [phase, set] = createSignal(0)
+      setPhase = set
+      ctx.bind(0, () => {
+        if (phase() === 0) throw new NotReadyError()
+        throw new Error('network down')
+      }, 0)
+      ctx.bind(1, () => ctx.loading(0))
+      ctx.bind(2, () => ctx.errored(0))
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  const merged = () => Object.assign({}, ...instance.calls)
+  assert.equal(merged().b1, true)
+
+  setPhase(1)
+  await tick()
+  await tick()
+  assert.equal(merged().b2, true)
+  assert.equal(merged().b1, false)
+})
+
+test('a context-consuming component rebuilds its root when re-attached', async () => {
+  let setups = 0
+  let handled = 0
+  let setCount
+  const def = defineGlazeComponent({
+    properties: ['glazecontext'],
+    propMap: { glazecontext: 'glazecontext' },
+    boundaryContexts: [{ name: 'Ctx', key: 'ctx' }],
+    handlerCount: 1,
+    data: { b0: null, b1: null },
+    setup(ctx) {
+      setups += 1
+      const [count, set] = createSignal(0)
+      setCount = set
+      const doubled = createMemo(() => count() * 2)
+      ctx.bind(0, () => count())
+      ctx.bind(1, () => doubled())
+      ctx.event(0, () => {
+        handled += 1
+      })
+    },
+  })
+  const instance = createInstance(def, { glazecontext: {} })
+  def.lifetimes.attached.call(instance)
+  def.lifetimes.ready.call(instance)
+  await tick()
+
+  def.lifetimes.detached.call(instance)
+  def.lifetimes.attached.call(instance)
+  await tick()
+
+  assert.equal(setups, 2)
+  def.methods.e0.call(instance, {})
+  assert.equal(handled, 1)
+  setCount(2)
+  await tick()
+  const merged = () => Object.assign({}, ...instance.calls)
+  assert.equal(merged().b0, 2)
+  assert.equal(merged().b1, 4)
+})
+
+test('keyed lists of primitive items still reach the data layer', async () => {
+  let setNums
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'x' },
+    setup(ctx) {
+      const [nums, set] = createSignal([1, 2])
+      setNums = set
+      ctx.bind(0, () => nums())
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  setNums([1, 3])
+  await tick()
+  assert.deepEqual(instance.calls.at(-1), { b0: [1, 3] })
+})

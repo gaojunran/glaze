@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { GlazeConfig, GlazeTailwindConfig } from './config.ts'
+import { normalizeSubpackageRoot } from './paths.ts'
 import { assertPortableWxss, rewriteWxssUrls } from './styles.ts'
 
 const CLASS_ATTRIBUTE = /\bclass\s*=\s*(?:"([^"]*)"|'([^']*)')/g
@@ -88,13 +89,26 @@ export async function applyTailwind(
   const compiler = createCompiler({})
 
   try {
-    const componentDir = path.join(stagingDir, 'components')
-    const wxmlFiles = existsSync(componentDir)
-      ? await collectFiles(componentDir, ['.wxml'])
-      : []
-    const jsFiles = existsSync(componentDir)
-      ? await collectFiles(componentDir, ['.js'])
-      : []
+    const componentDirs = [
+      path.join(stagingDir, 'components'),
+      ...(config.subpackages ?? []).map((entry) =>
+        path.join(stagingDir, normalizeSubpackageRoot(entry.root), 'components'),
+      ),
+    ]
+    const wxmlFiles = (
+      await Promise.all(
+        componentDirs.map((dir) =>
+          existsSync(dir) ? collectFiles(dir, ['.wxml']) : Promise.resolve([]),
+        ),
+      )
+    ).flat()
+    const jsFiles = (
+      await Promise.all(
+        componentDirs.map((dir) =>
+          existsSync(dir) ? collectFiles(dir, ['.js']) : Promise.resolve([]),
+        ),
+      )
+    ).flat()
     const wxml = await Promise.all(wxmlFiles.map((file) => readFile(file, 'utf8')))
     const candidates = new Set(tailwind.safelist ?? [])
     for (const source of wxml) {

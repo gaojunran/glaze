@@ -40,7 +40,7 @@ test('keeps module-level constants in the generated module', () => {
   const result = compileComponent(source)
   assert.match(result.js, /const items =/)
   assert.match(result.js, /ctx\.bind\(0, \(\) => \(count\(\)\)\)/)
-  assert.match(result.js, /ctx\.event\(0, \(event\) => \(\(\) => setCount/)
+  assert.match(result.js, /ctx\.event\(0, \(__glazeEvent\) => \(\(\) => setCount/)
 })
 
 test('rejects an unsupported nested component', () => {
@@ -93,9 +93,9 @@ test('compiles events inside For with index lookup', () => {
   `)
 
   assert.match(result.wxml, /data-glaze-index="\{\{index\}\}"/)
-  assert.match(result.js, /const index = Number\(event\.currentTarget\.dataset\.glazeIndex\)/)
+  assert.match(result.js, /const index = Number\(__glazeEvent\.currentTarget\.dataset\.glazeIndex\)/)
   assert.match(result.js, /const item = \(items\)\[index\]/)
-  assert.match(result.js, /return \(\(\) => setCount\(item\.id\)\)\(event\)/)
+  assert.match(result.js, /return \(\(\) => setCount\(item\.id\)\)\(__glazeEvent\)/)
 })
 
 test('inlines relative imports recursively', () => {
@@ -196,7 +196,7 @@ test('inlines a stateful imported component and merges solid-js imports', () => 
   const solidImports = result.js.match(/from ['\"]solid-js['\"]/g) ?? []
   assert.equal(solidImports.length, 1)
   assert.match(result.js, /const \[n, setN\] = createSignal\(1\)/)
-  assert.match(result.js, /ctx\.event\(0, \(event\) => \(\(\) => setN/)
+  assert.match(result.js, /ctx\.event\(0, \(__glazeEvent\) => \(\(\) => setN/)
 })
 
 test('emits bind, catch, mut-bind and capture event variants', () => {
@@ -1435,4 +1435,181 @@ test('compiles an Errored function fallback with an error accessor', () => {
   assert.match(result.wxml, /\{\{error\.message\}\}/)
   assert.match(result.js, /ctx\.bind\(0, \(\) => \(ctx\.errorArray\(0\)\)\)/)
   assert.match(result.js, /ctx\.bind\(2, \(\) => \(broken\(\)\), 0\)/)
+})
+
+test('keeps double-quoted loop expressions out of WXML attribute delimiters', () => {
+  const result = compileComponent(`
+    import { For, Show } from 'solid-js'
+    export default function Page(props) {
+      return (
+        <For each={props.items} key="id">
+          {(item) => (
+            <Show when={item.status === "done"}>
+              <text class={item.done ? "done" : ""}>{item.title}</text>
+            </Show>
+          )}
+        </For>
+      )
+    }
+  `)
+  assert.doesNotMatch(result.wxml, /="\{\{[^"]*"[^"]*"\}\}"/)
+  assert.match(result.wxml, /wx:if="\{\{item\.status === 'done'\}\}"/)
+  assert.match(result.wxml, /class="\{\{item\.done \? 'done' : ''\}\}"/)
+})
+
+test('keeps loop item names that collide with the generated event parameter', () => {
+  const result = compileComponent(`
+    import { For } from 'solid-js'
+    export default function Page(props) {
+      return (
+        <For each={props.events} key="id">
+          {(event) => <text onClick={() => console.log(event)}>{event.id}</text>}
+        </For>
+      )
+    }
+  `)
+  assert.match(result.js, /ctx\.event\(0, \(__glazeEvent\) => \{/)
+  assert.match(result.js, /const event = \(props\.events\)\[__glazeIndex\]/)
+  assert.doesNotMatch(result.js, /\(event\) => \{[\s\S]*const event =/)
+})
+
+test('rejects a user data-glaze-index attribute inside a loop', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        import { For } from 'solid-js'
+        export default function Page(props) {
+          return (
+            <For each={props.items} key="id">
+              {(item) => (
+                <button data-glaze-index={item.id} onClick={() => console.log(item)}>x</button>
+              )}
+            </For>
+          )
+        }
+      `),
+    /data-glaze-index.*reserved/,
+  )
+})
+
+test('trims multiline JSX text indentation without touching inline expression spacing', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return (
+        <view>
+          <button class="status-toggle">
+            cycle status
+          </button>
+          <text>Hello {props.value}!</text>
+        </view>
+      )
+    }
+  `)
+  assert.match(result.wxml, /<button class="status-toggle">cycle status<\/button>/)
+  assert.match(result.wxml, /Hello \{\{b0\}\}!/)
+})
+
+test('detects a boundary context read in JSX, not only in setup', () => {
+  const result = compileComponent(
+    `
+      import { createSignal, useContext } from 'solid-js'
+      import { Theme } from './theme'
+      export default function Child() {
+        const [n] = createSignal(0)
+        return <view>{n()}{useContext(Theme)}<slot /></view>
+      }
+    `,
+    { sourceFile: '/project/src/Child.tsx' },
+  )
+  assert.deepEqual(result.boundaryContexts, [
+    { name: 'Theme', key: '/project/src/theme#Theme' },
+  ])
+  assert.match(result.js, /withBoundaryContexts\(/)
+  assert.match(result.js, /properties: \["glazecontext"\]/)
+})
+
+test('rejects loop template literals with a readable error', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        import { For } from 'solid-js'
+        export default function Page() {
+          return <For each={[1]}>{(x) => <view class={\`item \${x}\`} />}</For>
+        }
+      `),
+    /Template literals inside/,
+  )
+})
+
+test('rejects ref inside a Show body', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        import { Show } from 'solid-js'
+        export default function Page(props) {
+          return <Show when={props.open}><view ref={() => {}} /></Show>
+        }
+      `),
+    /ref inside/,
+  )
+})
+
+test('does not render boolean expression children as text', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return <text>{props.on && 'x'}</text>
+    }
+  `)
+  assert.match(result.wxml, /<text>\{\{b0\}\}<\/text>/)
+  assert.match(result.js, /textValue\(props\.on && 'x'\)/)
+})
+
+test('drops empty JSX expression children instead of emitting invalid JS', () => {
+  const empty = compileComponent(`
+    export default function Page() {
+      return <view>{}</view>
+    }
+  `)
+  assert.match(empty.wxml, /<view \/>|<view><\/view>/)
+  assert.doesNotMatch(empty.js, /\(\) => \(\)/)
+  const comment = compileComponent(`
+    export default function Page() {
+      return <view>{/* note */}</view>
+    }
+  `)
+  assert.doesNotMatch(comment.wxml, /\{\{b0\}\}/)
+})
+
+test('keeps a non-breaking space as JSX text', () => {
+  const result = compileComponent(`
+    export default function Page() {
+      return <view><text>a</text>\u00a0<text>b</text></view>
+    }
+  `)
+  assert.match(result.wxml, /\u00a0/)
+})
+
+test('rejects key together with keyed', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        import { For } from 'solid-js'
+        export default function Page(props) {
+          return <For each={props.items} key="id" keyed={false}>{(item) => <view>{item.id}</view>}</For>
+        }
+      `),
+    /both key and keyed/,
+  )
+})
+
+test('rejects a dynamic named slot', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Page(props) {
+          return <slot name={props.name} />
+        }
+      `),
+    /slot requires a string literal/,
+  )
 })

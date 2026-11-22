@@ -77,6 +77,7 @@ export type InstanceState = {
   owner: ReturnType<typeof getOwner>
   dispose: (() => void) | null
   mounted: boolean
+  everMounted: boolean
   active: boolean
   loadingSignals: Map<number, [() => boolean, (value: boolean) => void]>
   errorSignals: Map<number, [() => boolean, (value: boolean) => void]>

@@ -124,7 +124,8 @@ miniprogram/
   components/glaze-*/    compiled Solid components
   glaze-runtime/index.js shared Solid + Glaze runtime
   pages/native/...       static pages copied from static/
-  <subpackage>/          subpackage pages, components and its own runtime
+  <subpackage>/          subpackage pages and components; normal packages
+                         share the main runtime, independent ones copy it
 ```
 
 A page is a thin wrapper over a compiled component. That keeps the page itself
@@ -182,11 +183,12 @@ subpackages: [
 ]
 ```
 
-Components are grouped by the package their **source file** lives in. A
-subpackage gets its own `components/` and `glaze-runtime/index.js`, and its
-component bundles use relative `require()` paths inside that package. This is
-required for independent subpackages, which cannot require main-package
-JavaScript.
+Components are grouped by the package their **source file** lives in. Every
+package gets its own `components/` directory. A normal subpackage's bundles
+`require()` the main `glaze-runtime/index.js` by a relative path; only an
+`independent: true` package gets its own runtime copy, because it cannot require
+main-package JavaScript. The shared shim is built once from the union of imports
+across all packages that use the main runtime.
 
 Ownership rules:
 
@@ -203,9 +205,13 @@ does so is a build error.
 
 Limitations:
 
-- global Tailwind styles are still written once at the output root; use a
-  `static` entry with `subpackage` for package-local assets;
+- global Tailwind styles are still written once at the output root, so an
+  independent subpackage cannot see them; use a `static` entry with
+  `subpackage` for package-local assets;
+- component class escaping is applied to every package's `components/` tree;
 - a component cannot be shared by two packages when either is independent;
+- page routes are normalized and rejected when they contain `..`, so a page
+  cannot write outside the staged output;
 - `require()` paths are checked by the build tests and e2e, because the
   platform build does not fail on a wrong relative path (it fails at runtime
   with a blank page).
@@ -354,7 +360,8 @@ Every rebuild reloads the config with a cache-busting query, so editing
 `glaze.config.mts` takes effect without restarting the watcher. When the config
 changes `source`, the watcher targets are rebuilt as well.
 
-`watch` passes the changed paths to the builder. The builder keeps the compiled
+Builds for the same project are serialized in-process, so the Vite plugin and
+`watch` cannot race the atomic output swap. `watch` passes the changed paths to the builder. The builder keeps the compiled
 result of each TSX file keyed by mtime and size, recompiles only changed files
 and reuses cached results for the rest. If an inlined child changes, the
 dependency graph marks its parents for recompilation too, because the parent
@@ -394,9 +401,9 @@ output on failure, `clean: false` merging, reachability, output-name collisions,
 Windows separators, WXSS portability, `staticPages` deduplication, app shell
 warnings, config reloads, CLI help, generated `styleIsolation`, the shared
 runtime file, relative `require()` resolution, namespace-import rejection,
-subpackage ownership and runtime placement, page config merging, and
-`static`/runtime collisions. The current suite has 41 builder tests; compiler
-has 70, runtime 23, shared 2. The runtime also covers first-pending, refetch
+subpackage ownership and runtime placement, page config merging, route
+validation, and `static`/runtime collisions. The current suite has 48 builder
+tests; compiler has 82, runtime 26, shared 2. The runtime also covers first-pending, refetch
 pending, and error recovery for a memoized async binding.
 
 Real simulator run (nine cases, including asset loading through

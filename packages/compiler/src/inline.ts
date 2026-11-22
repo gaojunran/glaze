@@ -1,4 +1,5 @@
 import * as t from '@babel/types'
+import path from 'node:path'
 import {
   codeOf,
   containsJsx,
@@ -202,6 +203,12 @@ export function inlineComponent(node, ctx, scope, name, source) {
   if (usesSlotElement(child.jsx)) return null
   const inLoop = Boolean(scope)
   if (inLoop && !isLoopInlineEligible(child)) return null
+  const usedAsComponent = new Set<string>()
+  walkAst(child.jsx, (item) => {
+    if (t.isJSXElement(item) && t.isJSXIdentifier(item.openingElement.name)) {
+      usedAsComponent.add(item.openingElement.name.name)
+    }
+  })
   const body = child.ast.program.body
   for (const node of body) {
     if (!t.isImportDeclaration(node)) continue
@@ -235,6 +242,20 @@ export function inlineComponent(node, ctx, scope, name, source) {
       if (existing !== undefined && existing !== node.source.value) return null
       ctx.imports.set(local, node.source.value)
       ctx.knownImports.add(local)
+    }
+    // A relative import that is only used in JSX is handled by the component
+    // resolver. Anything else (a config object, helper, etc.) still needs a
+    // real import in the generated parent module, rewritten from the child's
+    // directory to the parent's directory.
+    if (ctx.currentFile && locals.some((local) => !usedAsComponent.has(local))) {
+      const childDir = path.dirname(childFile)
+      const parentDir = path.dirname(ctx.currentFile)
+      const absolute = path.resolve(childDir, node.source.value)
+      let relative = path.relative(parentDir, absolute).split(path.sep).join('/')
+      if (!relative.startsWith('.')) relative = `./${relative}`
+      const cloned = t.cloneNode(node, true)
+      cloned.source = t.stringLiteral(relative)
+      ctx.extraImports.push(codeOf(cloned))
     }
   }
   if (

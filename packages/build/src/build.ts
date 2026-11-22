@@ -16,6 +16,7 @@ import {
 import path from 'node:path'
 import { loadConfig, collectTsx, resolveSourceImport } from './config.ts'
 import {
+  hasRouteTraversal,
   isInside,
   kebabCase,
   normalizeRoute,
@@ -54,7 +55,28 @@ const compileCache = new Map<string, { fingerprint: string; entry: any }>()
 let compileCacheTag = ''
 const dependencyGraph = new Map<string, Set<string>>()
 
+const buildQueues = new Map<string, Promise<void>>()
+
 export async function buildProject(
+  projectPath = process.cwd(),
+  options: { changedFiles?: string[] } = {},
+) {
+  const project = path.resolve(projectPath)
+  const previous = buildQueues.get(project) ?? Promise.resolve()
+  let release
+  const gate = new Promise<void>((resolve) => (release = resolve))
+  const current = previous.then(() => gate)
+  buildQueues.set(project, current)
+  await previous.catch(() => {})
+  try {
+    return await buildProjectInternal(project, options)
+  } finally {
+    release!()
+    if (buildQueues.get(project) === current) buildQueues.delete(project)
+  }
+}
+
+async function buildProjectInternal(
   projectPath = process.cwd(),
   options: { changedFiles?: string[] } = {},
 ) {
@@ -66,6 +88,9 @@ export async function buildProject(
     (!Number.isInteger(bindingGroupSize) || bindingGroupSize <= 0)
   ) {
     throw new Error('Config "runtime.bindingGroupSize" must be a positive integer')
+  }
+  if (config.static != null && !Array.isArray(config.static)) {
+    throw new Error('Config "static" must be an array')
   }
   validateTailwindConfig(project, config)
   const sourceDir = path.resolve(project, config.source)
@@ -86,9 +111,13 @@ export async function buildProject(
   const pageEntries = []
   const routes = new Set()
   const addPage = (route, relative, owner) => {
+    if (hasRouteTraversal(route)) {
+      throw new Error(`Invalid page route: ${route}`)
+    }
     const file = path.resolve(sourceDir, relative)
     if (!sources.has(file)) throw new Error(`Page source not found: ${relative}`)
     const normalized = normalizeRoute(route)
+    if (!normalized) throw new Error(`Invalid page route: ${route}`)
     if (routes.has(normalized)) throw new Error(`Duplicate page route: ${normalized}`)
     routes.add(normalized)
     pageEntries.push({ route: normalized, file, owner })
@@ -118,6 +147,9 @@ export async function buildProject(
     }
   }
   if (pageEntries.length === 0) throw new Error('glaze.config.mjs does not declare any pages')
+  if (!pageEntries.some((entry) => entry.owner == null)) {
+    throw new Error('At least one main-package page is required')
+  }
   const knownRoutes = new Set([
     ...routes,
     ...(config.staticPages ?? []).map((route) => normalizeRoute(route)),
@@ -138,6 +170,9 @@ export async function buildProject(
       throw new Error(`Page config for "${route}" must be an object`)
     }
   }
+  const pageConfigForRoute = new Map(
+    Object.entries(config.pageConfig ?? {}).map(([route, value]) => [normalizeRoute(route), value]),
+  )
   const ownerOf = (file) => {
     const owner = [...subpackages]
       .sort((left, right) => right.root.length - left.root.length)
@@ -435,7 +470,11 @@ export async function buildProject(
       let group = componentGroups.get(key)
       if (group) return group
       const base = owner ? path.join(stagingDir, owner.root) : stagingDir
-      const sharedPath = path.join(base, SHARED_MODULE)
+      // A normal subpackage can require the main package's JavaScript. Only an
+      // independent subpackage needs its own runtime copy.
+      const sharedOwner = owner && owner.independent ? owner : null
+      const sharedBase = sharedOwner ? path.join(stagingDir, sharedOwner.root) : stagingDir
+      const sharedPath = path.join(sharedBase, SHARED_MODULE)
       if (existsSync(sharedPath) || existsSync(path.dirname(sharedPath))) {
         throw new Error(
           `Output file collision: ${SHARED_MODULE} already exists in the staged output`,
@@ -565,9 +604,19 @@ export async function buildProject(
       }
     }
 
+    const sharedGroups = new Map()
     for (const group of componentGroups.values()) {
-      const sharedTexts = [...group.js.keys()].map((file) => compiled.get(file).result.js)
-      for (const input of group.inputs) {
+      let shared = sharedGroups.get(group.sharedPath)
+      if (!shared) {
+        shared = { js: [], inputs: new Set() }
+        sharedGroups.set(group.sharedPath, shared)
+      }
+      shared.js.push(...[...group.js.keys()].map((file) => compiled.get(file).result.js))
+      for (const input of group.inputs) shared.inputs.add(input)
+    }
+    for (const [sharedPath, shared] of sharedGroups) {
+      const sharedTexts = [...shared.js]
+      for (const input of shared.inputs) {
         try {
           sharedTexts.push(await readFile(input, 'utf8'))
         } catch {
@@ -576,9 +625,11 @@ export async function buildProject(
       }
       const sharedImports = collectSharedImports(sharedTexts)
       if (sharedImports.size > 0) {
-        await mkdir(path.dirname(group.sharedPath), { recursive: true })
-        await buildSharedModule(sharedImports, group.sharedPath)
+        await mkdir(path.dirname(sharedPath), { recursive: true })
+        await buildSharedModule(sharedImports, sharedPath)
       }
+    }
+    for (const group of componentGroups.values()) {
       for (const [file, output] of group.js) {
         await writeFile(path.join(group.dir, names.get(file), 'index.js'), output)
       }
@@ -595,7 +646,7 @@ export async function buildProject(
         path.join(pageDir, `${pageName}.js`),
         `Page({\n  data: {},\n})\n`,
       )
-      const pageConfig = config.pageConfig?.[route] ?? {}
+      const pageConfig = pageConfigForRoute.get(route) ?? {}
       const usingComponents = {
         ...(pageConfig.usingComponents as Record<string, string> | undefined),
         'glaze-page': outputFor(owner, file, outName),
@@ -614,8 +665,10 @@ export async function buildProject(
     const appJsonSource = path.join(sourceDir, 'app.json')
     const appJsonFile = path.join(stagingDir, 'app.json')
     const appJson = existsSync(appJsonSource)
-      ? JSON.parse(await readFile(appJsonSource, 'utf8'))
+      ? JSON.parse((await readFile(appJsonSource, 'utf8')).replace(/^\uFEFF/, ''))
       : { componentFramework: 'glass-easel', window: { glassEaselWebview: true } }
+    delete appJson.subpackages
+    delete appJson.subPackages
     const routeList = []
     const seenRoutes = new Set()
     for (const entry of pageEntries) {

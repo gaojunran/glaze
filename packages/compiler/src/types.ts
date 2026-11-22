@@ -113,6 +113,7 @@ export type CompilerContext = {
   currentFile: string | null
   inlineStack: string[]
   guards: string[]
+  refForbidden: number
   inline: boolean
   resolveComponent: CompileOptions['resolveComponent'] | null
   addBinding(expression: AnyNode, listKey?: string | null): number
@@ -120,6 +121,7 @@ export type CompilerContext = {
   addBindingCode(code: string, listKey?: string | null): number
   guardCode(code: string): string
   withGuard<T>(guard: string | null, fn: () => T): T
+  withRefForbidden<T>(fn: () => T): T
   addHelper(name: string): void
   addWxs(): void
   addRef(expression: AnyNode): number

@@ -1,5 +1,5 @@
 import * as t from '@babel/types'
-import { codeOf, isStaticPropertyKey, skipChildKey } from './ast.ts'
+import { codeOf, isStaticPropertyKey, skipChildKey, wxmlCodeOf } from './ast.ts'
 import type { AnyNode, CompilerContext, Scope } from './types.ts'
 
 export function patternAliases(pattern, base, aliases = {}) {
@@ -108,12 +108,19 @@ export function mergeAliases(patternAliasesValue, locals) {
 export function inferKeyedField(fn) {
   const param = t.isIdentifier(fn.params[0]) ? fn.params[0].name : null
   if (!param) return null
-  const body = t.isBlockStatement(fn.body)
+  let body = t.isBlockStatement(fn.body)
     ? (() => {
         const ret = fn.body.body.find((item) => t.isReturnStatement(item))
         return ret?.argument ?? null
       })()
     : fn.body
+  while (
+    t.isTSNonNullExpression(body) ||
+    t.isTSAsExpression(body) ||
+    t.isTSSatisfiesExpression(body)
+  ) {
+    body = body.expression
+  }
   if (!body || !t.isMemberExpression(body)) return null
   if (!t.isIdentifier(body.object, { name: param })) return null
   if (body.computed) {
@@ -129,7 +136,7 @@ export function inlineExpression(expression, scope, ctx) {
     t.isBooleanLiteral(expression) ||
     t.isNullLiteral(expression)
   ) {
-    return codeOf(expression)
+    return wxmlCodeOf(expression)
   }
   const rewritten = rewriteAccessorCalls(expression, scope)
   if (!dependsOnLoop(rewritten, scope)) {
@@ -137,7 +144,7 @@ export function inlineExpression(expression, scope, ctx) {
   }
   const hoisted = hoistLoopExpression(rewritten, scope, ctx)
   validateInline(hoisted, scope)
-  return codeOf(hoisted)
+  return wxmlCodeOf(hoisted)
 }
 
 export function isLoopName(name, scope) {
@@ -188,6 +195,11 @@ export function isHoistable(node) {
 export function hoistLoopExpression(expression, scope, ctx) {
   const visit = (node, isRoot) => {
     if (!node || typeof node !== 'object') return node
+    if (t.isTemplateLiteral(node) && dependsOnLoop(node, scope)) {
+      throw new Error(
+        'Template literals inside <For> or <Show> are not supported yet; build the string with + instead',
+      )
+    }
     if (!isRoot && isHoistable(node) && !dependsOnLoop(node, scope)) {
       return t.identifier(`b${ctx.addBinding(node)}`)
     }
@@ -199,6 +211,7 @@ export function hoistLoopExpression(expression, scope, ctx) {
     if (t.isIdentifier(node)) return node
     for (const key of t.VISITOR_KEYS[node.type] ?? []) {
       if (skipChildKey(node, key)) continue
+      if (t.isTemplateLiteral(node) && key === 'quasis') continue
       const value = node[key]
       if (Array.isArray(value)) {
         node[key] = value.map((child) => visit(child, false))

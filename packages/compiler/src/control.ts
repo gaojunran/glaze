@@ -217,15 +217,19 @@ export function compileShow(node, ctx, scope) {
 
   const condition = conditionExpression(when, ctx, scope)
   const guard = scope ? null : codeOf(when)
-  const thenNode = ctx.withGuard(guard, () =>
-    children.length === 1
-      ? compileNode(children[0], ctx, scope, [`wx:if="{{${condition}}}"`])
-      : `<block wx:if="{{${condition}}}">${compileChildren(children, ctx, scope)}</block>`,
+  const thenNode = ctx.withRefForbidden(() =>
+    ctx.withGuard(guard, () =>
+      children.length === 1
+        ? compileNode(children[0], ctx, scope, [`wx:if="{{${condition}}}"`])
+        : `<block wx:if="{{${condition}}}">${compileChildren(children, ctx, scope)}</block>`,
+    ),
   )
 
   if (!fallback) return thenNode
-  const elseNode = ctx.withGuard(guard ? `!(${guard})` : null, () =>
-    compileNode(fallback, ctx, scope, ['wx:else']),
+  const elseNode = ctx.withRefForbidden(() =>
+    ctx.withGuard(guard ? `!(${guard})` : null, () =>
+      compileNode(fallback, ctx, scope, ['wx:else']),
+    ),
   )
   return `${thenNode}${elseNode}`
 }
@@ -289,10 +293,12 @@ export function compileSwitch(node, ctx, scope) {
       : [whenCodes[index], ...whenCodes.slice(0, index).map((item) => `!(${item})`)]
           .map((item) => `(${item})`)
           .join(' && ')
-    output += ctx.withGuard(guard, () =>
-      body.length === 1
-        ? compileNode(body[0], ctx, scope, [directive])
-        : `<block ${directive}>${compileChildren(body, ctx, scope)}</block>`,
+    output += ctx.withRefForbidden(() =>
+      ctx.withGuard(guard, () =>
+        body.length === 1
+          ? compileNode(body[0], ctx, scope, [directive])
+          : `<block ${directive}>${compileChildren(body, ctx, scope)}</block>`,
+      ),
     )
   })
 
@@ -305,8 +311,10 @@ export function compileSwitch(node, ctx, scope) {
     const guard = scope
       ? null
       : whenCodes.map((item) => `!(${item})`).join(' && ')
-    output += ctx.withGuard(guard, () =>
-      compileNode(expression, ctx, scope, ['wx:else']),
+    output += ctx.withRefForbidden(() =>
+      ctx.withGuard(guard, () =>
+        compileNode(expression, ctx, scope, ['wx:else']),
+      ),
     )
   }
 
@@ -319,6 +327,9 @@ export function compileFor(node, ctx, scope) {
 
   const keyAttr = getAttribute(node, 'key')
   const keyedAttr = getAttribute(node, 'keyed')
+  if (keyAttr && keyedAttr) {
+    throw new Error('<For> cannot use both key and keyed')
+  }
   let keyed: boolean | 'fn' = true
   let keyedField: string | null = null
   if (keyedAttr) {

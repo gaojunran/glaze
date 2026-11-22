@@ -1419,3 +1419,171 @@ export default function Sub() {
   const outputs = await readdir(path.join(componentDir, 'assets'))
   assert.equal(outputs.length, 1)
 })
+
+test('applies pageConfig written in a non-normalized route form', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { '/pages/home/index': 'App.tsx' },
+      pageConfig: { '/pages/home/index': { navigationBarTitleText: 'Home' } },
+    },
+    files: {
+      'src/App.tsx': 'export default function App() { return <view /> }\n',
+    },
+  })
+  await Promise.all(appShell(project))
+  await buildProject(project)
+  const json = JSON.parse(
+    await readFile(path.join(project, 'miniprogram/pages/home/index.json'), 'utf8'),
+  )
+  assert.equal(json.navigationBarTitleText, 'Home')
+})
+
+test('rejects a page route that escapes the output directory', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { '../../../escape': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': 'export default function App() { return <view /> }\n',
+    },
+  })
+  await Promise.all(appShell(project))
+  await assert.rejects(buildProject(project), /Invalid page route/)
+})
+
+test('keeps a non-component relative import from an inlined child', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'pages/App.tsx' },
+    },
+    files: {
+      'src/pages/App.tsx': `import Header from '../components/Header'
+export default function App() { return <view><Header /></view> }
+`,
+      'src/components/Header.tsx': `import Labels from './Labels'
+export default function Header() { return <text>{Labels.title}</text> }
+`,
+      'src/components/Labels.ts': `export default { title: 'hello' }\n`,
+    },
+  })
+  await Promise.all(appShell(project))
+  await buildProject(project)
+  const bundle = await readFile(
+    path.join(project, 'miniprogram/components/glaze-pages-app/index.js'),
+    'utf8',
+  )
+  assert.match(bundle, /hello/)
+})
+
+test('a normal subpackage shares the main runtime', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      subpackages: [{ root: 'pkg', pages: { 'pages/sub/index': 'pkg/Sub.tsx' } }],
+    },
+    files: {
+      'src/App.tsx': `import { createSignal } from 'solid-js'
+export default function App() {
+  const [n] = createSignal(0)
+  return <view>{n()}</view>
+}
+`,
+      'src/pkg/Sub.tsx': `import { createSignal } from 'solid-js'
+export default function Sub() {
+  const [n] = createSignal(0)
+  return <view>{n()}</view>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+  await buildProject(project)
+
+  assert.equal(await exists(path.join(project, 'miniprogram/glaze-runtime/index.js')), true)
+  assert.equal(await exists(path.join(project, 'miniprogram/pkg/glaze-runtime/index.js')), false)
+  const bundle = await readFile(
+    path.join(project, 'miniprogram/pkg/components/glaze-pkg-sub/index.js'),
+    'utf8',
+  )
+  assert.match(bundle, /\.\.\/\.\.\/\.\.\/glaze-runtime\/index\.js/)
+})
+
+test('replaces stale app.json subpackage declarations and accepts a BOM', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': 'export default function App() { return <view /> }\n',
+    },
+  })
+  await writeProjectFile(
+    project,
+    'src/app.json',
+    `\uFEFF${JSON.stringify({
+      componentFramework: 'glass-easel',
+      window: {},
+      subPackages: [{ root: 'stale', pages: ['pages/old/index'] }],
+    })}\n`,
+  )
+  await Promise.all([
+    writeProjectFile(project, 'src/app.js', 'App({})\n'),
+    writeProjectFile(project, 'src/app.wxss', 'page { background: #fff; }\n'),
+  ])
+  await buildProject(project)
+  const appJson = JSON.parse(
+    await readFile(path.join(project, 'miniprogram/app.json'), 'utf8'),
+  )
+  assert.equal(appJson.subPackages, undefined)
+  assert.deepEqual(appJson.pages, ['pages/home/index'])
+})
+
+test('rejects a non-array static config', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+      static: 'assets',
+    },
+    files: {
+      'src/App.tsx': 'export default function App() { return <view /> }\n',
+    },
+  })
+  await Promise.all(appShell(project))
+  await assert.rejects(buildProject(project), /static.*array/)
+})
+
+test('serializes concurrent builds of the same project', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': 'export default function App() { return <view /> }\n',
+    },
+  })
+  await Promise.all(appShell(project))
+  const results = await Promise.all([
+    buildProject(project),
+    buildProject(project),
+    buildProject(project),
+  ])
+  assert.equal(results.length, 3)
+  const appJson = JSON.parse(
+    await readFile(path.join(project, 'miniprogram/app.json'), 'utf8'),
+  )
+  assert.deepEqual(appJson.pages, ['pages/home/index'])
+})

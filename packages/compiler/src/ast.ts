@@ -21,7 +21,7 @@ export const normalizeText = (value) => {
   let first = -1
   let last = -1
   for (let i = 0; i < lines.length; i += 1) {
-    if (lines[i].trim() !== '') {
+    if (lines[i].replace(/[ \t\r\n]+/g, '') !== '') {
       if (first === -1) first = i
       last = i
     }
@@ -30,8 +30,8 @@ export const normalizeText = (value) => {
   const parts = []
   for (let i = first; i <= last; i += 1) {
     let line = lines[i]
-    if (i !== first) line = line.replace(/^\s+/, '')
-    if (i !== last) line = line.replace(/\s+$/, '')
+    if (i !== first || first > 0) line = line.replace(/^[ \t]+/, '')
+    if (i !== last || last < lines.length - 1) line = line.replace(/[ \t]+$/, '')
     if (line !== '') parts.push(line)
   }
   return parts.join(' ')
@@ -95,6 +95,18 @@ export const getExpression = (attr: any): any => {
 }
 
 export const codeOf = (node) => generate(node).code
+
+// WXML attribute values are double-quoted. Keep generated expressions free of
+// raw double quotes: single-quoted string literals are preferred, and any quote
+// that survives (string content, regex, template text) is emitted as `\u0022`.
+export const wxmlCodeOf = (node) => {
+  const copy = t.cloneNode(node, true)
+  walkAst(copy, (item) => {
+    if (t.isStringLiteral(item)) delete item.extra
+  })
+  return generate(copy, { jsescOption: { quotes: 'single' } })
+    .code.replace(/"/g, '\\u0022')
+}
 
 const eventNameFor = (prop) => {
   const rest = prop.slice(2)

@@ -14,10 +14,12 @@ export async function watchProject(projectPath = process.cwd(), options: any = {
   let closed = false
   let changed = new Set<string>()
 
-  const isIgnored = (name) => {
-    if (name.includes('.tmp')) return true
-    if (currentConfig.output && name.includes(currentConfig.output)) return true
-    return !/\.(tsx?|jsx?|mjs|mts|cts|json|wxml|wxss|scss|less|css)$/.test(name)
+  const isIgnored = (base, name) => {
+    const full = path.resolve(base, name.toString())
+    const output = currentConfig.output ? path.resolve(project, currentConfig.output) : null
+    if (full === output || (output && full.startsWith(`${output}${path.sep}`))) return true
+    if (full.split(path.sep).includes('.tmp')) return true
+    return !/\.(tsx?|jsx?|mjs|mts|cts|json|wxml|wxss|scss|less|css)$/.test(name.toString())
   }
 
   const schedule = (filename?: string, base = project) => {
@@ -64,7 +66,7 @@ export async function watchProject(projectPath = process.cwd(), options: any = {
               schedule(undefined, base)
               return
             }
-            if (isIgnored(filename.toString())) return
+            if (isIgnored(base, filename.toString())) return
             schedule(filename.toString(), base)
           }),
         )

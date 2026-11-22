@@ -86,11 +86,11 @@ export function emitModule(ast: AnyNode, setupStatements: AnyNode[], ctx: Compil
           ? codeOf(rewriteAccessorCalls(event.ast, event.scope, true))
           : event.code
         const call = event.custom
-          ? `(${code})(event.detail)`
-          : `(${code})(event)`
+          ? `(${code})(__glazeEvent.detail)`
+          : `(${code})(__glazeEvent)`
         if (!event.scope) {
-          if (!event.custom) return `    ctx.event(${index}, (event) => (${code})(event));`
-          return `    ctx.event(${index}, (event) => ${call});`
+          if (!event.custom) return `    ctx.event(${index}, (__glazeEvent) => (${code})(__glazeEvent));`
+          return `    ctx.event(${index}, (__glazeEvent) => ${call});`
         }
         const chain = []
         for (let cursor = event.scope; cursor; cursor = cursor.parent) {
@@ -102,7 +102,7 @@ export function emitModule(ast: AnyNode, setupStatements: AnyNode[], ctx: Compil
               return `      const ${scope.eventItem ?? scope.item} = (${scope.direct});`
             }
             const key = scope.level === 0 ? 'glazeIndex' : `glazeIndex${scope.level}`
-            const indexLine = `      const ${scope.index} = Number(event.currentTarget.dataset.${key});`
+            const indexLine = `      const ${scope.index} = Number(__glazeEvent.currentTarget.dataset.${key});`
             if (scope.isIndexRepeat) {
               const offset = scope.offset ? ` + (${scope.offset})` : ''
               return scope.item === scope.index
@@ -112,7 +112,7 @@ export function emitModule(ast: AnyNode, setupStatements: AnyNode[], ctx: Compil
             return `${indexLine}\n      const ${scope.item} = (${scope.jsSource ?? scope.source})[${scope.index}];`
           })
           .join('\n')
-        return `    ctx.event(${index}, (event) => {
+        return `    ctx.event(${index}, (__glazeEvent) => {
 ${lines}
       return ${call};
     });`

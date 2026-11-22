@@ -4,10 +4,18 @@ export { kebabCase }
 
 /** Normalize a route the way app.json expects it. */
 export const normalizeRoute = (route) =>
-  route.replace(/^\//, '').replace(/\.(tsx|wxml)$/, '')
+  route
+    .replace(/\\/g, '/')
+    .replace(/^\.?\//, '')
+    .replace(/\/+/g, '/')
+    .replace(/\/+$/, '')
+    .replace(/\.(tsx|wxml)$/, '')
 
 export const normalizeSubpackageRoot = (root) =>
-  root.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+  root.replace(/\\/g, '/').replace(/^\.?\//, '').replace(/^\/+|\/+$/g, '')
+
+export const hasRouteTraversal = (route) =>
+  route.split(/[\\/]/).some((segment) => segment === '..')
 
 /**
  * Normalize a path relative to the source root.

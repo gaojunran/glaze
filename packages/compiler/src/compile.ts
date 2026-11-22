@@ -113,6 +113,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     currentFile: options.sourceFile ?? null,
     inlineStack: options.sourceFile ? [options.sourceFile] : [],
     guards: [],
+    refForbidden: 0,
     inline: options.inline ?? false,
     resolveComponent: options.resolveComponent ?? null,
     addBinding(expression, listKey = null) {
@@ -157,6 +158,14 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
         this.guards.pop()
       }
     },
+    withRefForbidden(fn) {
+      this.refForbidden += 1
+      try {
+        return fn()
+      } finally {
+        this.refForbidden -= 1
+      }
+    },
     addHelper(name) {
       this.helpers.add(name)
     },
@@ -179,16 +188,19 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
   // child wraps its setup in the providers it actually consumes, so a provider
   // in the parent can reach a separate mini-program component without sharing
   // its Solid owner.
-  walkAst({ type: 'BlockStatement', body: statements.slice(0, returnIndex) }, (node) => {
-    if (!t.isCallExpression(node) || !t.isIdentifier(node.callee, { name: 'useContext' })) return
-    const argument = node.arguments[0]
-    if (!t.isIdentifier(argument)) return
-    const entry = contextKeys.get(argument.name)
-    if (!entry?.imported) return
-    if (!ctx.boundaryContexts.some((item) => item.key === entry.key)) {
-      ctx.boundaryContexts.push({ name: argument.name, key: entry.key })
-    }
-  })
+  const collectBoundaryContexts = (root) =>
+    walkAst(root, (node) => {
+      if (!t.isCallExpression(node) || !t.isIdentifier(node.callee, { name: 'useContext' })) return
+      const argument = node.arguments[0]
+      if (!t.isIdentifier(argument)) return
+      const entry = contextKeys.get(argument.name)
+      if (!entry?.imported) return
+      if (!ctx.boundaryContexts.some((item) => item.key === entry.key)) {
+        ctx.boundaryContexts.push({ name: argument.name, key: entry.key })
+      }
+    })
+  collectBoundaryContexts({ type: 'BlockStatement', body: statements.slice(0, returnIndex) })
+  collectBoundaryContexts(jsx)
 
   const eventProps = Object.fromEntries(
     props
