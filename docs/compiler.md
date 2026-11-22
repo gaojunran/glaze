@@ -157,7 +157,9 @@ becomes
 
 There is no child component instance, props property bridge, child Solid root
 or child `setData`. Event props are substituted too, so the parent handler runs
-with the loop index reconstructed from `data-glaze-index`.
+with the loop index reconstructed from `data-glaze-index`; the example's
+`RemoveButton` row action is a pure component inside `For` and is covered by
+the simulator e2e.
 
 The eligibility check is deliberately narrow: the child must return JSX as its
 only statement and may not call `createSignal`, `createMemo`, `createEffect`,

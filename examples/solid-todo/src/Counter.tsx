@@ -4,6 +4,7 @@ import Card from './Card'
 import Header from './Header'
 import Nested from './Nested'
 import Panel from './Panel'
+import RemoveButton from './RemoveButton'
 import PropProbe from './PropProbe'
 import SlotCard from './SlotCard'
 import ThemeLabel from './ThemeLabel'
@@ -168,14 +169,11 @@ export default function Counter() {
                   <Show when={todo().title}>
                     {(value) => <text class="nested-show-nonkeyed">{value()}</text>}
                   </Show>
-                  <button
-                    class="remove"
+                  <RemoveButton
                     onClick={() =>
                       setTodos((items) => items.filter((item) => item.id !== todo().id))
                     }
-                  >
-                    x
-                  </button>
+                  />
                 </Panel>
               )
             }}
