@@ -394,6 +394,19 @@ Boundaries inside a loop are rejected because their condition would need a
 per-row binding. `on` dependencies and reset are not implemented; an `Errored`
 fallback function may take only the error accessor.
 
+Remaining async work, deliberately left for a later pass:
+
+- No Solid boundary tree and no boundary-output projection. First pending and
+  real errors are captured by the runtime; only refetch pending uses Solid
+  `isPending`.
+- `Errored` reset, `Loading on`, error-value reset, and boundary parent/child
+  status aggregation are not implemented.
+- `asyncStatus` condition bindings are projected directly with a microtask.
+  This keeps them out of a held effect, but it has not been checked on a real
+  device for visible intermediate frames.
+- Async refetch behavior is covered by a runtime unit test, not by a real-device
+  smoke test. minidev only proves the generated output loads and settles.
+
 ### Refs
 
 `ref` on a native element generates a stable id and a node query:
