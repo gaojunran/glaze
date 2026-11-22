@@ -26,9 +26,16 @@ const route = option('route')
 const neutral = option('neutral')
 const rootSelector = option('root')
 const runs = Number(option('runs', '3'))
+const rowCount = Number(option('count', '1000'))
 const updateSelector = option('update')
 const titleSelector = option('title', '#title')
+const rowSelector = option('row', '.row')
+const firstTextSelector = option('first-text', '.row-title')
 const reverseSelector = option('reverse', '.reverse')
+const toggleSelector = option('toggle')
+const insertSelector = option('insert')
+const deleteSelector = option('delete')
+const doneSelector = option('done', '.row-done')
 const lastTitle = option('last')
 const timeout = Number(option('timeout', '120000'))
 
@@ -64,40 +71,73 @@ async function measure(mp) {
   const page = await mp.currentPage()
   const root = rootSelector ? await waitFor(rootSelector, () => page.$(rootSelector)) : page
 
-  await waitFor('1000 rows', async () => (await root.$$('.row')).length === 1000)
-  const firstRow = async () => (await root.$$('.row'))[0]
-  const title = await waitFor('first row title', async () => {
-    const row = await firstRow()
-    return row && row.$('.row-title')
-  })
-  await waitFor('first row text', async () => (await title.text()).length > 0)
-
-  const firstRender = Date.now() - started
-  let update
-  if (updateSelector) {
-    const before = await (await page.$(titleSelector)).text()
-    const button = await waitFor(updateSelector, () => page.$(updateSelector))
-    const updateStarted = Date.now()
-    await button.tap()
-    await waitFor('updated title', async () => {
-      const current = await page.$(titleSelector)
-      return current && (await current.text()) !== before
+  await waitFor(`${rowCount} rows`, async () => (await root.$$(rowSelector)).length === rowCount)
+  const firstRow = async () => (await root.$$(rowSelector))[0]
+  if (firstTextSelector) {
+    const title = await waitFor('first row title', async () => {
+      const row = await firstRow()
+      return row && row.$(firstTextSelector)
     })
-    update = Date.now() - updateStarted
+    await waitFor('first row text', async () => (await title.text()).length > 0)
   }
 
-  const reverse = await waitFor(reverseSelector, () => root.$(reverseSelector))
-  const reverseStarted = Date.now()
-  await reverse.tap()
-  await waitFor('reversed first row', async () => {
-    const row = await firstRow()
-    const text = row && (await (await row.$('.row-title')).text())
-    if (!text) return false
-    return lastTitle ? text === lastTitle : text !== (await title.text())
-  })
-  const reverseMs = Date.now() - reverseStarted
+  const firstRender = Date.now() - started
+  const controls = rootSelector ? root : page
+  const tap = async (selector, waitForResult, label) => {
+    const button = await waitFor(selector, () => controls.$(selector))
+    const started = Date.now()
+    await button.tap()
+    await waitFor(label, waitForResult)
+    return Date.now() - started
+  }
 
-  return { firstRender, update, reverse: reverseMs }
+  let update
+  if (updateSelector) {
+    const before = await (await controls.$(titleSelector)).text()
+    update = await tap(updateSelector, async () => {
+      const current = await controls.$(titleSelector)
+      return current && (await current.text()) !== before
+    }, 'updated title')
+  }
+
+  let toggle
+  if (toggleSelector) {
+    const first = await firstRow()
+    const before = await (await first.$(doneSelector)).text()
+    toggle = await tap(toggleSelector, async () => {
+      const row = await firstRow()
+      const current = row && (await row.$(doneSelector))
+      return current && (await current.text()) !== before
+    }, 'toggled first row')
+  }
+
+  let insert
+  if (insertSelector) {
+    const before = (await root.$$(rowSelector)).length
+    insert = await tap(insertSelector, async () => (await root.$$(rowSelector)).length === before + 1, 'inserted row')
+  }
+
+  let deleteRow
+  if (deleteSelector) {
+    const before = (await root.$$(rowSelector)).length
+    deleteRow = await tap(deleteSelector, async () => (await root.$$(rowSelector)).length === before - 1, 'deleted row')
+  }
+
+  let reverseMs
+  if (!args.includes('--skip-reverse')) {
+    const reverse = await waitFor(reverseSelector, () => controls.$(reverseSelector))
+    const reverseStarted = Date.now()
+    await reverse.tap()
+    await waitFor('reversed first row', async () => {
+      const row = await firstRow()
+      const text = row && firstTextSelector && (await (await row.$(firstTextSelector)).text())
+      if (!text) return false
+      return lastTitle ? text === lastTitle : text !== (await title.text())
+    })
+    reverseMs = Date.now() - reverseStarted
+  }
+
+  return { firstRender, update, toggle, insert, delete: deleteRow, reverse: reverseMs }
 }
 
 const mp = await automator.connect(`ws://127.0.0.1:${port}/automator`)

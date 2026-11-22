@@ -11,6 +11,12 @@
 			"style": {
 				"navigationBarTitleText": "blank"
 			}
+		},
+		{
+			"path": "pages/fine/index",
+			"style": {
+				"navigationBarTitleText": "fine"
+			}
 		}
 	],
 	"globalStyle": {

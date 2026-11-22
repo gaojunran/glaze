@@ -1,0 +1,4 @@
+.bench { display: flex; flex-direction: column; }
+.row { height: 20px; }
+.row-title { font-size: 12px; }
+.row-done { font-size: 10px; color: #666; }

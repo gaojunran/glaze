@@ -6,6 +6,7 @@ const config: GlazeConfig = {
   pages: {
     'pages/index/index': 'Counter.tsx',
     'pages/bench/index': 'Bench.tsx',
+    'pages/bench-fine/index': 'FineBench.tsx',
     'pages/bench-components/index': 'BenchComponents.tsx',
     'pages/bench-edges/index': 'BenchEdges.tsx',
     'pages/reactive/index': 'ReactiveCases.tsx',
@@ -20,6 +21,7 @@ const config: GlazeConfig = {
   css: { tailwind: { input: 'src/tailwind.css' } },
   staticPages: [
     'pages/native/index',
+    'pages/native-fine/index',
     'pages/native-components/index',
     'pages/native-edges/index',
   ],

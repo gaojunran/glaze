@@ -1,7 +1,8 @@
 {
   "pages": [
     "pages/home/index",
-    "pages/blank/index"
+    "pages/blank/index",
+    "pages/fine/index"
   ],
   "window": {
     "navigationBarTitleText": "Vue Mini bench",
