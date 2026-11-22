@@ -5,7 +5,7 @@ type BenchRowProps = {
 
 export default function BenchRow(props: BenchRowProps) {
   return (
-    <view class="bench-row">
+    <view class="bench-row pure-row">
       <text class="pure-title">{props.title}</text>
       <text class={{ 'pure-state': true, done: props.done }}>
         {props.done ? 'done' : 'todo'}

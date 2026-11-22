@@ -199,10 +199,112 @@ test('inlines a stateful imported component and merges solid-js imports', () => 
   assert.match(result.js, /ctx\.event\(0, \(event\) => \(\(\) => setN/)
 })
 
-test('keeps a component boundary inside For', () => {
+test('inlines a pure component inside For', () => {
   const item = `
     export default function Item(props) {
       return <text>{props.title}</text>
+    }
+  `
+  const result = compileComponent(
+    `
+      import Item from './Item'
+
+      export default function Page() {
+        const items = [{ title: 'a' }]
+        return (
+          <For each={items} key="title">
+            {(entry) => <Item title={entry.title} />}
+          </For>
+        )
+      }
+    `,
+    {
+      inline: true,
+      resolveComponent: (name) => (name === 'Item' ? item : null),
+    },
+  )
+
+  assert.match(result.wxml, /<block wx:for="\{\{b0\}\}"[^>]*><text>\{\{entry\.title\}\}<\/text><\/block>/)
+  assert.deepEqual(result.components, [])
+  assert.deepEqual(result.inlineComponents, [{ name: 'Item', source: './Item' }])
+})
+
+test('inlines a pure component with an event inside For', () => {
+  const row = `
+    export default function Row(props) {
+      return (
+        <view>
+          <text>{props.title}</text>
+          <button onClick={() => props.onPick(props.title)}>pick</button>
+        </view>
+      )
+    }
+  `
+  const result = compileComponent(
+    `
+      import Row from './Row'
+
+      export default function Page() {
+        const items = [{ title: 'a' }]
+        return (
+          <For each={items} key="title">
+            {(entry) => <Row title={entry.title} onPick={(value) => console.log(value)} />}
+          </For>
+        )
+      }
+    `,
+    {
+      inline: true,
+      resolveComponent: (name) => (name === 'Row' ? row : null),
+    },
+  )
+
+  assert.doesNotMatch(result.wxml, /<row/)
+  assert.match(result.wxml, /bindtap="e0"/)
+  assert.match(result.js, /const entry = \(items\)\[__glazeIndex\]/)
+  assert.match(result.js, /entry\.title/)
+  assert.deepEqual(result.components, [])
+  assert.deepEqual(result.inlineComponents, [{ name: 'Row', source: './Row' }])
+})
+
+test('inlines default children through a pure component inside For', () => {
+  const card = `
+    export default function Card(props) {
+      return <view class="card">{props.children}</view>
+    }
+  `
+  const result = compileComponent(
+    `
+      import Card from './Card'
+
+      export default function Page() {
+        const items = [{ title: 'a' }]
+        return (
+          <For each={items} key="title">
+            {(entry) => <Card><text>{entry.title}</text></Card>}
+          </For>
+        )
+      }
+    `,
+    {
+      inline: true,
+      resolveComponent: (name) => (name === 'Card' ? card : null),
+    },
+  )
+
+  assert.doesNotMatch(result.wxml, /<card/)
+  assert.match(result.wxml, /<text>\{\{entry\.title\}\}<\/text>/)
+  assert.deepEqual(result.components, [])
+  assert.deepEqual(result.inlineComponents, [{ name: 'Card', source: './Card' }])
+})
+
+test('keeps a stateful component boundary inside For', () => {
+  const item = `
+    import { createSignal } from 'solid-js'
+
+    export default function Item(props) {
+      const [count] = createSignal(0)
+      return <text>{count()}{props.title}</text>
     }
   `
   const result = compileComponent(

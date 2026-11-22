@@ -43,7 +43,7 @@ export default function BenchComponents() {
       <view class="list">
         <For each={rows()} keyed={(row) => row.id}>
           {(row) => (
-            <BenchRow class="pure-row" title={row().title} done={row().done} />
+            <BenchRow title={row().title} done={row().done} />
           )}
         </For>
       </view>

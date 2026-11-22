@@ -1,8 +1,8 @@
 # Performance backlog
 
 These are glass-easel-specific optimizations for standard Solid code. The
-component-dense benchmark and the shared runtime module are implemented and
-measured below; the compiler optimizations (P0/P1) are not implemented yet.
+component-dense benchmark, the shared runtime module and P0 pure-component
+inlining are implemented and measured below; the P1 optimizations are not.
 
 ## Why the current benchmark is not enough
 
@@ -33,8 +33,8 @@ about that shape.
 
 ## P0 — Inline pure components inside `For`
 
-Status: not implemented. Expected to be the only change with a potentially
-order-of-magnitude effect on component-dense pages.
+Status: implemented. The compiler inlines a pure child directly into the loop
+template; a stateful child keeps the component boundary.
 
 Today a `TodoItem` row updates through:
 
@@ -185,21 +185,20 @@ and measurable improvement on the 1000-component cases. A flat-row improvement
 is not evidence for P0.
 
 Status: the component-dense baseline below implements the second and third rows
-of this table (`bench/components.cjs`). The P0 inlining experiment is still not
-implemented.
+of this table (`bench/components.cjs`). It was measured before P0; the P0 result
+is recorded separately below.
 
 ## Component-dense baseline
 
 Measured 2026-11-22 on the local minidev checkout. This is the control for the
-P0 inlining work, not a test of it: pure rows stay real component boundaries
-because the compiler only inlines a component outside `<For>` (`inlineComponent`
-returns early when a loop scope exists).
+P0 inlining work: at that commit pure rows stayed real component boundaries
+because the compiler only inlined a component outside `<For>`.
 
 ### Routes and shapes
 
 | Route | Pure rows | Stateful rows |
 | --- | --- | --- |
-| Glaze `pages/bench-components/index` | 1000 `BenchRow` components | 1000 `BenchStateRow` components |
+| Glaze `pages/bench-components/index` | 1000 `BenchRow` rows (boundary before P0, inlined after) | 1000 `BenchStateRow` components |
 | Native `pages/native-components/index` | 1000 `bench-row` components | 1000 `bench-state-row` components |
 
 - Glaze pure row (`src/BenchRow.tsx`): props `title`/`done`, no signals, memo,
@@ -244,7 +243,7 @@ Environment: minidev 0.18.0 (`400d69e`, 2026-11-22), Node v22.23.0, pnpm
 Three runs per route, in one server session. The harness reLaunches a neutral
 page (`pages/index/index`) between runs and that reLaunch is not timed.
 
-### Results
+### Results before P0 (control)
 
 All values are milliseconds. `first render` runs from `reLaunch` until 1000
 pure hosts and 1000 state hosts exist and their first inner titles are readable.
@@ -264,11 +263,34 @@ Counts verified every run on both routes: 1000 pure rows, 1000 state rows,
 1001 after append, 1000 after delete; the first state count moved `0 -> 1` and
 the first pure state moved `todo -> done`.
 
+### Results after P0 inlining
+
+The same routes and harness were rerun after pure `BenchRow` inlining. State
+rows still cross a real component boundary; pure rows are now native WXML in the
+loop.
+
+| Case | Glaze runs | Glaze mean | Native runs | Native mean |
+| --- | --- | --- | --- | --- |
+| First render (2000 rows) | 3612, 3589, 3658 | 3620 | 3601, 3540, 3572 | 3571 |
+| First pure row update | 32, 28, 29 | 30 | 33, 33, 44 | 37 |
+| State row click | 27, 23, 23 | 24 | 24, 25, 24 | 24 |
+| Append one pure row | 198, 211, 220 | 210 | 182, 177, 175 | 178 |
+| Delete first pure row | 181, 183, 224 | 196 | 179, 179, 190 | 183 |
+
+Counts and first-row transitions were verified exactly as in the control. The
+Glaze first-render gap falls from +165 ms to +49 ms (about 1.4% over native), and
+Glaze's own first render drops by ~173 ms. Update and click stay at the polling
+floor. Append/delete rose by about 20 ms/13 ms versus the control in this run;
+those operations still send the parent list and are not evidence of a P0
+regression, but they need a dedicated measurement before claiming an
+improvement.
+
 ### Interpretation
 
-- First render costs about 4.5% more on Glaze (3793 ms vs 3628 ms mean, +165 ms).
-  Both pages create 2000 real custom-component instances, so the component
-  boundary itself is not an order-of-magnitude penalty in this shape.
+- Before P0, first render cost about 4.5% more on Glaze (3793 ms vs 3628 ms
+  mean, +165 ms). After P0 it is about 1.4% (3620 ms vs 3571 ms, +49 ms). The
+  remaining difference is largely the 1000 stateful rows, which must keep a
+  component boundary.
 - Update, click, append and delete are all within the automator/CDP round-trip
   floor plus polling granularity (10 ms for text, 50 ms for counts). The 24 ms
   vs 34 ms update difference is about one poll interval and is not evidence of a
@@ -281,12 +303,15 @@ the first pure state moved `todo -> done`.
 
 ### Measurement compromises
 
-- **Shadow roots are not pierced by page-level selectors.** `page.$$('.pure-title')`
-  returns 0 for both routes because each row lives in a custom component. The
-  harness marks hosts with classes (`.pure-row`, `.state-row`) passed from the
-  page, counts those hosts, then queries `.pure-title`, `.pure-state`,
-  `.state-count` and `.state-bump` from a host element. This measures the same
-  DOM nodes, but the raw page selector is not the one in the protocol text.
+- **Shadow roots are not pierced by page-level selectors.** In the pre-P0
+  control, `page.$$('.pure-title')` returned 0 because each pure row lived in a
+  custom component. The harness marks hosts with classes (`.pure-row`,
+  `.state-row`) passed from the page, counts those hosts, then queries
+  `.pure-title`, `.pure-state`, `.state-count` and `.state-bump` from a host
+  element. After P0 the pure rows are inlined, so `.pure-row` is the root view
+  and the same element-scoped queries still work; state rows remain component
+  hosts. This measures the same DOM nodes, but the raw page selector is not the
+  one in the protocol text.
 - **A repeated Glaze run can surface a stale first row.** The harness can read
   `done` on the first row after `reLaunch` before the new tree settles. It
   re-queries hosts and normalizes the first row to `todo` outside the timed

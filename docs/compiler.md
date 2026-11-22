@@ -70,6 +70,7 @@ First-wave support:
 | `style` object | `styleName(...)` binding, or inline WXML segments inside `For` |
 | imported component `<TodoItem title={...} />` | `<todo-item title="{{...}}" />` + `usingComponents` |
 | stateless component outside `For` | inlined into the parent's WXML and setup |
+| pure component inside `For` / `Show` / `Match` | inlined into the loop template with props substituted per row |
 | `props.name` in the child | a mini-program property + a child signal |
 
 Anything outside this subset is a compile error. Silent fallback would hide the
@@ -121,7 +122,9 @@ inlined are not emitted.
 
 A component imported from a relative file is inlined when all of these hold:
 
-- it is not inside a `For` (no loop scope);
+- outside a loop it only needs the conditions below; inside a `For`/`Show`/
+  `Match` it must also be a **pure projection of its props** (no setup
+  statements and no state, lifecycle, context or ref usage);
 - it does not resolve back into the component currently being inlined (a
   recursion guard records the file on the inline stack; a self-reference falls
   back to a component boundary);
@@ -131,8 +134,40 @@ A component imported from a relative file is inlined when all of these hold:
 - if it has children, it renders `props.children` exactly once (default slot);
 - it does not contain `<slot>` elements (those need a real component boundary).
 
-The child's setup runs in a block inside the parent's Solid root, and its props
-become getters over the parent's expressions:
+Inside a loop, a pure child is inlined directly into the loop template instead
+of creating a component block. Each `props.name` use is replaced by the parent
+attribute expression, so WXML sees loop values directly:
+
+```tsx
+<For each={items()} keyed={(item) => item.id}>
+  {(item) => <Row title={item().title} done={item().done} />}
+</For>
+```
+
+becomes
+
+```xml
+<block wx:for="{{b0}}" wx:for-item="item" wx:for-index="__glazeIndex" wx:key="id">
+  <view class="row">
+    <text>{{item.title}}</text>
+    <text class="{{item.done ? 'done' : ''}}">{{item.done ? 'done' : 'todo'}}</text>
+  </view>
+</block>
+```
+
+There is no child component instance, props property bridge, child Solid root
+or child `setData`. Event props are substituted too, so the parent handler runs
+with the loop index reconstructed from `data-glaze-index`.
+
+The eligibility check is deliberately narrow: the child must return JSX as its
+only statement and may not call `createSignal`, `createMemo`, `createEffect`,
+`createStore`, `onMount`, `onCleanup`, `onSettled`, `useContext` or any other
+state/lifecycle helper; it may not contain `ref` or `<slot>`. A stateful child
+keeps the component boundary. Parent `class`/`style` attributes on a component
+that is inlined are not forwarded to the child root.
+
+Outside a loop, the child's setup runs in a block inside the parent's Solid
+root, and its props become getters over the parent's expressions:
 
 ```js
 {

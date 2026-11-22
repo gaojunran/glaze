@@ -834,8 +834,164 @@ function usesSlotElement(node) {
   return found
 }
 
+const LOOP_IMPURE_SOLID = new Set([
+  'createSignal',
+  'createMemo',
+  'createEffect',
+  'createRenderEffect',
+  'createComputed',
+  'createDeferred',
+  'createReaction',
+  'createSelector',
+  'createResource',
+  'createStore',
+  'createMutable',
+  'modifyMutable',
+  'createRoot',
+  'runWithOwner',
+  'getOwner',
+  'useContext',
+  'onMount',
+  'onCleanup',
+  'onSettled',
+  'createContext',
+  'batch',
+  'flush',
+])
+
+/**
+ * A component may be inlined inside a loop only when it is a pure projection
+ * of its props: no setup statements, no state/lifecycle/context calls. Keeping
+ * this check before any import mutation makes the fallback boundary side-effect
+ * free.
+ */
+function isLoopInlineEligible(child) {
+  if (child.returnIndex !== 0) return false
+  const impureNames = new Set(LOOP_IMPURE_SOLID)
+  for (const node of child.ast.program.body) {
+    if (!t.isImportDeclaration(node)) continue
+    if (!node.source.value.startsWith('solid-js')) continue
+    for (const specifier of node.specifiers) {
+      if (!t.isImportSpecifier(specifier)) continue
+      const imported = specifier.imported.name ?? specifier.imported.value
+      if (impureNames.has(imported)) return false
+    }
+  }
+  let impure = false
+  walkAst(child.fn, (node) => {
+    if (
+      t.isCallExpression(node) &&
+      t.isIdentifier(node.callee) &&
+      impureNames.has(node.callee.name)
+    ) {
+      impure = true
+    }
+    if (t.isJSXAttribute(node) && t.isJSXIdentifier(node.name, { name: 'ref' })) {
+      impure = true
+    }
+  })
+  return !impure
+}
+
+/**
+ * Replace `props.name` in an inlined child with the parent expression supplied
+ * by the JSX attribute. `props.children` is left in place so the existing
+ * inline-children path can substitute the compiled parent WXML.
+ */
+function substituteInlineProps(node, propsParam, propMap, name) {
+  if (!propsParam) return node
+  const visit = (value) => {
+    if (!value || typeof value !== 'object') return value
+    if (t.isMemberExpression(value) || t.isOptionalMemberExpression(value)) {
+      if (t.isIdentifier(value.object, { name: propsParam })) {
+        if (value.computed || !t.isIdentifier(value.property)) {
+          throw new Error(
+            `<${name}> uses a computed props access; use props.name instead`,
+          )
+        }
+        const propName = value.property.name
+        if (propName === 'children') return value
+        const expression = propMap.get(propName)
+        return expression ? t.cloneNode(expression, true) : t.identifier('undefined')
+      }
+    }
+    if (t.isIdentifier(value, { name: propsParam })) {
+      throw new Error(
+        `<${name}> uses the props object as a whole; pass individual props instead`,
+      )
+    }
+    for (const key of t.VISITOR_KEYS[value.type] ?? []) {
+      if (skipChildKey(value, key)) continue
+      const child = value[key]
+      if (Array.isArray(child)) {
+        value[key] = child.map((item) => visit(item))
+      } else if (child && typeof child === 'object') {
+        value[key] = visit(child)
+      }
+    }
+    return value
+  }
+  return visit(node)
+}
+
+function inlineComponentInLoop(
+  ctx,
+  scope,
+  name,
+  source,
+  child,
+  childFile,
+  propGetters,
+  childrenWxml,
+  hasChildren,
+) {
+  const propMap = new Map(propGetters.map((getter) => [getter.name, getter.expression]))
+  const jsx = substituteInlineProps(
+    t.cloneNode(child.jsx, true),
+    child.propsParam?.name ?? null,
+    propMap,
+    name,
+  )
+
+  const previousChildren = ctx.inlineChildren
+  const previousPropsParam = ctx.inlinePropsParam
+  const previousUsed = ctx.inlineChildrenUsed
+  const previousCount = ctx.inlineChildrenCount
+  const previousFile = ctx.currentFile
+  ctx.inlineChildren = childrenWxml
+  ctx.inlinePropsParam = child.propsParam?.name ?? null
+  ctx.inlineChildrenUsed = false
+  ctx.inlineChildrenCount = 0
+  ctx.currentFile = childFile
+
+  let wxml
+  let childrenUsed = false
+  let childrenCount = 0
+  try {
+    wxml = compileNode(jsx, ctx, scope)
+    childrenUsed = ctx.inlineChildrenUsed
+    childrenCount = ctx.inlineChildrenCount
+  } finally {
+    ctx.currentFile = previousFile
+    ctx.inlineChildren = previousChildren
+    ctx.inlinePropsParam = previousPropsParam
+    ctx.inlineChildrenUsed = previousUsed
+    ctx.inlineChildrenCount = previousCount
+  }
+
+  if (hasChildren && !childrenUsed) {
+    throw new Error(`<${name}> does not render props.children`)
+  }
+  if (childrenCount > 1) {
+    throw new Error(`<${name}> renders props.children more than once`)
+  }
+
+  ctx.inlineComponents.push({ name, source, ...(childFile ? { file: childFile } : {}) })
+  return wxml
+}
+
 function inlineComponent(node, ctx, scope, name, source) {
-  if (!ctx.inline || scope || !ctx.resolveComponent) return null
+  if (!ctx.inline || !ctx.resolveComponent) return null
 
   const resolved = ctx.resolveComponent(name, source, ctx.currentFile)
   const childSource = typeof resolved === 'string' ? resolved : resolved?.source
@@ -852,6 +1008,8 @@ function inlineComponent(node, ctx, scope, name, source) {
     return null
   }
   if (usesSlotElement(child.jsx)) return null
+  const inLoop = Boolean(scope)
+  if (inLoop && !isLoopInlineEligible(child)) return null
   const body = child.ast.program.body
   for (const node of body) {
     if (!t.isImportDeclaration(node)) continue
@@ -914,7 +1072,7 @@ function inlineComponent(node, ctx, scope, name, source) {
     if (containsJsx(expression)) {
       throw new Error('JSX values are not supported in component props; use children instead')
     }
-    propGetters.push({ name: attrName, code: codeOf(expression) })
+    propGetters.push({ name: attrName, code: codeOf(expression), expression })
   }
 
   if (propGetters.length > 0 && !child.propsParam) return null
@@ -922,6 +1080,20 @@ function inlineComponent(node, ctx, scope, name, source) {
   const hasChildren = node.children.some((child) => !isWhitespaceText(child))
   if (hasChildren && !child.propsParam) return null
   const childrenWxml = hasChildren ? compileChildren(node.children, ctx, scope) : ''
+
+  if (inLoop) {
+    return inlineComponentInLoop(
+      ctx,
+      scope,
+      name,
+      source,
+      child,
+      childFile,
+      propGetters,
+      childrenWxml,
+      hasChildren,
+    )
+  }
 
   const blockId = ctx.blocks.length
   ctx.blocks.push({
