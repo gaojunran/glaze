@@ -570,10 +570,8 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       if (!fn || Object.hasOwn(listBindings, index) || statusIndexes.has(index)) return
       scalarIndexes.push(index)
     })
-    const hasAsyncBoundary = state.bindingBoundaries.some((boundary) => boundary != null)
-    const groupSize = hasAsyncBoundary
-      ? 1
-      : Number.isInteger(config.bindingGroupSize) && config.bindingGroupSize! > 0
+    const groupSize =
+      Number.isInteger(config.bindingGroupSize) && config.bindingGroupSize! > 0
         ? config.bindingGroupSize!
         : SCALAR_BINDING_GROUP
     const scalarGroups: number[][] = []
