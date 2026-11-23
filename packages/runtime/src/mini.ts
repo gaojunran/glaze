@@ -377,7 +377,12 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           // The initial pass already committed a value, so the boundary status
           // effect below may probe `isPending` for a later refetch.
           if (state.bindingBoundaries[index] != null || state.bindingErrorBoundaries[index] != null) state.settled[index] = true
-          initial[`b${index}`] = normalizeDataValue(value)
+          // Platform path updates mutate the data object in place. List data
+          // must not alias the signal array, or the next page instance would
+          // inherit a row mutated by the previous one.
+          initial[`b${index}`] = normalizeDataValue(
+            isListBinding(index) ? snapshotValue(index, value) : value,
+          )
         } catch (error) {
           // One async or broken binding must not prevent the component from
           // rendering the remaining values.

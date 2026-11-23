@@ -14,14 +14,14 @@ the same-harness Glaze/native suite in `docs/optimizations.md`.
 | App | Stack | Build | Routes |
 | --- | --- | --- | --- |
 | `apps/vue-mini` | `@vue-mini/core 1.2.16`, official create-vue-mini build | `pnpm install && pnpm build` | `pages/home/index` (flat), `pages/fine/index` (rich rows), `pages/components/index` (500 row components) |
-| `apps/taro` | Taro 4.3.3, React 18, **Vite compiler** | `pnpm install && pnpm build:weapp` | `pages/index/index`, `pages/fine/index` |
+| `apps/taro` | Taro 4.3.3, React 18, **Vite compiler** | `pnpm install && pnpm build:weapp` | `pages/index/index`, `pages/fine/index`, `pages/components/index` |
 | `apps/uni-app` | uni-app Vue3 Vite preset `3.0.0-5030420261029002` | `pnpm install && pnpm build:mp-weixin` | `pages/index/index`, `pages/fine/index`, `pages/components/index` |
 | Glaze | `examples/solid-todo` | repository `pnpm build` | `pages/bench/index`, `pages/bench-fine/index`, `pages/bench-component-rows/index`, `pages/bench-component-rows-pure/index` |
 | Native | `examples/solid-todo/src/static/pages/*` | repository `pnpm build` | `pages/native/index`, `pages/native-fine/index`, `pages/native-component-rows/index` |
 
 The **flat** pages render 1000 `.row` elements and expose `#title`, `#update`
-and `.reverse`. The Glaze/native flat pages only have `.reverse`; their update
-actions differ and are not compared there.
+and `.reverse` in every implementation. Glaze/native use `.bump`/`.tick` class
+selectors instead of ids for the optional scalar bump control.
 
 The **fine** pages render 5000 `.row` elements. Each row also carries
 `extra: 'x'.repeat(2000)`, which is data, not rendered text. They expose:
@@ -46,8 +46,9 @@ component instead, to show the cost of that boundary. They expose:
 - `#last` — text of the last row title, used to wait for the update
 
 Because the row text lives inside each child component's shadow root, the
-runner counts the `.row-card` host elements and uses `--first-text ''` for this
-page. Pass `--last-text '#last'` to the runner for `#update-all`.
+runner counts the `.row-card` host elements. Use `.row-title` for `--first-text`
+and `#last` for `--last-text`; the automator reaches the host text through the
+shadow root.
 
 ## Run a fixture
 
@@ -86,36 +87,45 @@ Then measure. `NODE_PATH` must point at the minidev SDK that contains
 `minidev-automator`:
 
 ```bash
-# Flat page, 1000 rows
+# Flat page, 1000 rows, every action
 NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
   --port 9440 --route /pages/home/index --neutral /pages/blank/index \
-  --update '#update' --last 'Row 999' --runs 3
+  --count 1000 --update '#update' --last 'Row 999' --runs 3
 ```
 
 ```bash
-# Rich-row page, 5000 rows, one field update only
+# Rich-row page, 5000 rows, all actions
 NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
   --port 9440 --route /pages/fine/index --neutral /pages/blank/index \
-  --count 5000 --update '#update' --skip-reverse --runs 3
+  --count 5000 --bump '#bump' --update '#update' --toggle '#toggle' \
+  --insert '#insert' --delete '#delete' --last 'Row 4999' --runs 3
 ```
 
-For Glaze use `--root '#app'`; native has no root selector:
+Glaze pages use `--root '#app'`; native has no root selector. Pass the matching
+tick selectors because the flat Glaze/native pages use classes:
 
 ```bash
-node bench/frameworks/run.mjs --port 9446 --route /pages/bench-fine/index \
-  --neutral /pages/index/index --root '#app' --count 5000 \
-  --update '#update' --skip-reverse --runs 3
-node bench/frameworks/run.mjs --port 9446 --route /pages/native-fine/index \
-  --neutral /pages/index/index --count 5000 \
-  --update '#update' --skip-reverse --runs 3
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
+  --port 9446 --route /pages/bench/index --neutral /pages/index/index \
+  --root '#app' --count 1000 --bump '.bump' --tick '.tick' \
+  --update '#update' --last 'Item 999' --runs 3
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
+  --port 9446 --route /pages/bench-fine/index --neutral /pages/index/index \
+  --root '#app' --count 5000 --bump '#bump' --update '#update' \
+  --toggle '#toggle' --insert '#insert' --delete '#delete' --last 'Row 4999' --runs 3
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
+  --port 9446 --route /pages/native-fine/index --neutral /pages/index/index \
+  --count 5000 --bump '#bump' --update '#update' --toggle '#toggle' \
+  --insert '#insert' --delete '#delete' --last 'Row 4999' --runs 3
 ```
 
 ```bash
-# Component page, 500 stateful row components, all titles update
+# Component page, 500 stateful row components
 NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
   --port 9440 --route /pages/components/index --neutral /pages/blank/index \
-  --count 500 --row '.row-card' --first-text '' \
-  --update-all '#update-all' --skip-reverse --runs 3
+  --count 500 --row '.row-card' --first-text '.row-title' \
+  --update '#update' --update-all '#update-all' --title '#title' \
+  --last-text '#last' --skip-reverse --runs 3
 ```
 
 For the Glaze stateful and pure variants, use the same command with
@@ -134,107 +144,73 @@ actually rendered.
 
 ## Observed on 2026-11-23
 
+All numbers below are **three runs on a fresh minidev server**, after a neutral
+page `reLaunch` before every timed route. Ranges are min–max of the three runs.
+The machine is the development host, not a phone; first render includes routing
+and automator round-trips.
+
 ### Flat 1000-row page
 
-Three runs with the neutral route; Glaze/native use the existing flat
-benchmark. `—` means the page does not expose the same action.
+| Implementation | First render | Scalar bump | First-row update | Reverse 1000 rows |
+| --- | ---: | ---: | ---: | ---: |
+| Glaze | 3294–3310 ms | 53 ms | **53–54 ms** | 233–240 ms |
+| Native WXML | 3265–3324 ms | 53–54 ms | **53–54 ms** | 236–258 ms |
+| Vue Mini 1.2.16 | 3255–3283 ms | 53–55 ms | **53–55 ms** | 229–265 ms |
+| Taro 4.3.3 (Vite) | 3252–3282 ms | 80–83 ms | **80–83 ms** | 644–699 ms |
+| uni-app Vue3 Vite | 3261–3311 ms | 54–60 ms | **53–60 ms** | 231–244 ms |
 
-| Implementation | First render | First-row update | Reverse 1000 rows |
-| --- | ---: | ---: | ---: |
-| Glaze | 3295–3302 ms | — | 223–234 ms |
-| Native WXML | 3311–3346 ms | — | 226–238 ms |
-| Vue Mini 1.2.16 | 3281–3306 ms | 53–60 ms | 233–238 ms |
-| Taro 4.3.3 (Vite) | 3235–3308 ms | 76–81 ms | 618–627 ms |
-| uni-app Vue3 Vite | 3268–3293 ms | 52–54 ms | 230–256 ms |
-
-This is the case where **Vue Mini and Glaze look basically identical**. The
-payload is small and the list is shallow, so Vue Mini's whole-array `setData`
-is cheap.
+The flat page stays the case where every implementation is close. Updates are at
+the simulator's ~50 ms polling floor, so only Taro's reverse is clearly slower.
 
 ### Rich-row page: 5000 rows, 2 KB extra per row
 
-This isolates Vue Mini's coarse top-level binding. Vue Mini deep-watches
-`rows`; changing one row rewrites the whole 5000-row array. Glaze/native update
-one path; uni-app's data diff emits one array index.
+| Implementation | First render | Bump | Single-field update | Toggle first | Insert first | Delete first | Reverse |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Glaze | 4498–4587 ms | 54 ms | **54 ms** | 352–382 ms | 778–894 ms | 807–960 ms | 1532–1699 ms |
+| Native WXML | 4303–4522 ms | 53–54 ms | **54 ms** | 355–375 ms | 806–839 ms | 741–857 ms | 1548–1635 ms |
+| Vue Mini 1.2.16 | 4234–4465 ms | 53–63 ms | **126–141 ms** | 415–440 ms | 811–850 ms | 827–865 ms | 1631–1752 ms |
+| Taro 4.3.3 (Vite) | 3940–4016 ms | 391–1296 ms | **414–442 ms** | 761–774 ms | 2388–2554 ms | 2651–2788 ms | 5632–6002 ms |
+| uni-app Vue3 Vite | 4216–4385 ms | 54 ms | **58–59 ms** | 332–357 ms | 700–736 ms | 681–741 ms | 1516–1673 ms |
 
-| Implementation | First render | Single-field update | Toggle first | Insert first | Delete first | Reverse |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Glaze | 4372 ms | **55 ms** | 351 ms | 820 ms | 746 ms | 1535 ms |
-| Native WXML | 4366 ms | **55 ms** | 348 ms | 749 ms | 757 ms | 1519 ms |
-| Vue Mini 1.2.16 | 4216–4348 ms | **115–131 ms** | 392–403 ms | 772–784 ms | 771–869 ms | 1546–1583 ms |
-| Taro 4.3.3 (Vite) | 3929 ms | 472 ms | — | — | — | — |
-| uni-app Vue3 Vite | 4212 ms | **63 ms** | — | — | — | — |
-
-Vue runs are three runs; Glaze/native/Taro/uni are single runs. `—` means that
-action was not measured for this note.
-
-The only clear Vue Mini weakness here is the **single-field update**: ~2.1–2.4×
-native/Glaze. The cause is visible in the runtime: `definePage` deep-watches the
-top-level `rows` ref and calls `setData({ rows: deepToRaw(rows.value) })`.
-Rendered text is only one row field, but the serialized payload is all 5000 rows.
-Glaze/native update a path such as `rows[0].title`; uni-app's render data diff
-finds one changed array index.
-
-Toggle is a smaller version of the same effect (one field in one row, still a
-whole-array Vue payload). Insert/delete/reverse do not isolate Vue Mini: native
-also replaces the array there, and Glaze's `spliceArrayDataOnPath` does not
-produce a visible win in this simulator. Taro is slow on every mutation because
-its WXML is a generic recursive template tree rather than a direct `wx:for`
-list.
-
-Caveats:
-
-- First render includes page routing and automator round-trips; it is not a
-  device timing.
-- `extra` is intentionally not rendered; it isolates the cost of carrying rich
-  row data. It is still a realistic row shape for pages with nested metadata.
-- Vue Mini can call `this.setData` manually with a path in a method, but its
-  default top-level binding does not do that. That manual optimization is not
-  what the framework does automatically.
-- Taro's Webpack5 compiler did not register the page in minidev: the appservice
-  threw `ReferenceError: Cannot access '_raf' before initialization` and
-  `rootCompPath=pages/index/index not found`. The fixture therefore uses Taro's
-  Vite compiler. Do not compare the Webpack5 variant until that is fixed.
-- Vue Mini needs an immutable array replacement (`rows.value = [...rows.value]`)
-  for list changes; in-place mutation is not a reliable trigger.
-- minidev can retain stale DOM across `reLaunch`; always use the neutral route
-  and treat small update differences as noise.
-- A scalar-only `#bump` on this 5000-row page measured 55 ms for both Vue Mini
-  and uni-app (single runs). That is at the simulator polling floor, so it does
-  not mean uni-app's full-data diff is free; it means this harness cannot
-  resolve it without a larger payload or a data-diff counter.
-- No `setData` count or byte metric is available here. The rich-row update is
-  the wall-clock proxy for that missing metric.
+Vue Mini's single-field update remains ~2.3–2.6× native/Glaze because its
+top-level `rows` watcher sends the whole 5000-row array; uni-app's render-data
+diff sends one path and stays close to native. Taro is slow on every list
+mutation because its generic recursive WXML template and node tree have to be
+rebuilt. Taro's `#bump` outlier (1296 ms in one run) is noise; its update column
+is stable across runs.
 
 ### Component page: 500 stateful row components
 
-Three runs each. `#update` changes one row; `#update-all` changes every row's
-`title` prop. Native uses one parent `setData`; the framework pages update 500
-child components.
-
 | Implementation | First render | One child update | All 500 child updates |
 | --- | ---: | ---: | ---: |
-| Native WXML | 3237–3303 ms | 54 ms | **54 ms** |
-| uni-app Vue3 Vite | 3280–3318 ms | 55 ms | **59–66 ms** |
-| Vue Mini 1.2.16 | 3259–3311 ms | 56 ms | 120–138 ms |
-| Glaze, stateful row (before prop projection) | 3350–3371 ms | 54 ms | 199–222 ms |
-| Glaze, stateful row (after prop projection) | 3262–3317 ms | 53–55 ms | 131–144 ms |
-| Glaze, pure row inline | 3183–3201 ms | — | **54–56 ms** |
+| Native WXML | 3316–3348 ms | 54–55 ms | **54 ms** |
+| uni-app Vue3 Vite | 3335–3372 ms | 53–56 ms | **61–70 ms** |
+| Vue Mini 1.2.16 | 3332–3371 ms | 54–57 ms | 133–152 ms |
+| Taro 4.3.3 (Vite) | 3205–3228 ms | 118–132 ms | 156–172 ms |
+| Glaze, stateful row | 3291–3359 ms | **53–54 ms** | 130–153 ms |
+| Glaze, pure row inline | 3233–3269 ms | — | **54–59 ms** |
 
-This is the opposite of the earlier assumption that uni-app's component
-boundary would dominate. On 500 simple stateful components, uni-app is close to
-native; Vue Mini is roughly 2–2.5× slower on all-row updates because each child's
-top-level `label` watcher calls its own `setData`; Glaze's **stateful** boundary
-was slower before prop projection, improved by about 30–35% after it, and its
-**pure** row inline path is back at native speed. Prop projection still leaves
-500 real property writes, so it does not reach native; only inlining removes the
-boundaries.
+Keeping a real child boundary costs one props/data round-trip per row. uni-app
+and Glaze stateful are close on one row, but all-row updates separate them:
+Glaze's stateful row is 130–153 ms after prop projection, uni-app 61–70 ms,
+Vue Mini 133–152 ms, Taro 156–172 ms. Inlining a pure row removes the boundary
+entirely and returns to native speed. Taro's one-child update is also slower
+than the others, which matches its recursive template/tree cost.
 
-The benchmark therefore separates two costs:
+## Repeated-run correctness
 
-- inlining pure components removes the per-row boundary entirely (Glaze `-pure`);
-- keeping a stateful boundary costs a per-child data/props round-trip, and the
-  exact cost differs by runtime (uni 59–66, Vue Mini 120–138, Glaze 199–222).
+A 3-run benchmark exposed a real runtime bug: the mini-program platform applies
+`replaceDataOnPath` by mutating the component data object in place. The initial
+`setData` of generated `bN` data keys assigned the signal's list array directly,
+so a later `rows[0].title` path update also mutated the application's source
+array. Re-running the same page then started from contaminated module data
+(`Row 0 1` instead of `Row 0`).
+
+`mount` now clones every list binding value once before it enters component
+data. The first render already snapshots list values for diffing, so this adds
+one extra copy per list binding at mount and leaves the update path unchanged.
+A regression test (`initial list data is detached from the source array`) locks
+the behavior: mutating the component data copy does not change the source row.
 
 ## Scope
 

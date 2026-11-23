@@ -249,6 +249,28 @@ test('uses replaceDataOnPath for list field patches too', async () => {
   assert.deepEqual(instance.pathCalls, [[['b0', 0, 'done'], true]])
 })
 
+test('initial list data is detached from the source array', () => {
+  const row = { id: 1, title: 'first' }
+  const rows = [row]
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    setup(ctx) {
+      ctx.bind(0, () => rows)
+    },
+  })
+
+  const instance = createInstance(def)
+  const initial = instance.calls[0].b0
+  assert.notEqual(initial, rows)
+  assert.notEqual(initial[0], row)
+
+  // A platform path update mutates the data object in place. It must not
+  // reach the array or row objects owned by application state.
+  initial[0].title = 'mutated by platform'
+  assert.equal(row.title, 'first')
+})
+
 test('list bindings remember a shallow snapshot of the previous array', async () => {
   const first = { id: 1, done: false }
   const second = { id: 2, done: false }

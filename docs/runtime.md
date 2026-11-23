@@ -73,6 +73,20 @@ nested object value travels whole. Prototype-less data and cycles are handled;
 class instances beyond arrays, dates and regular expressions are copied as plain
 objects, so replace such a row instead of mutating it.
 
+### Initial list data must not alias app state
+
+The platform applies `replaceDataOnPath` by mutating the component data object
+in place. When the runtime `setData`s generated `bN` keys, glass-easel stores the
+array reference directly for those new data fields, so a later field patch such
+as `['b0', 0, 'title']` would also mutate the signal's source array. Re-entering
+the page then started from data already changed by the previous run.
+
+`mount` now sends a fresh `snapshotList` copy for every list binding. The initial
+pass already snapshots the value for diffing, so this is one extra copy per list
+binding at mount; update paths are unchanged. The regression test
+`initial list data is detached from the source array` mutates the data copy and
+asserts the source row is untouched.
+
 ### Loading on and Errored reset
 
 `ctx.loadingOn(boundary, read)` creates a runtime effect for the `on`

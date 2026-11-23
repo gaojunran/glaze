@@ -1,7 +1,9 @@
 <view class="bench">
   <view class="bar">
     <text class="tick">{{tick}}</text>
+    <text id="title">{{items[0].title}}</text>
     <button class="bump" bindtap="bump">bump</button>
+    <button id="update" class="update" bindtap="updateFirst">update</button>
     <button class="reverse" bindtap="reverse">reverse</button>
   </view>
   <view class="list">
