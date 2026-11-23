@@ -1,0 +1,10 @@
+<view class="row-card">
+  <text class="row-title">{{a}}</text>
+  <text class="prop">{{b}}</text>
+  <text class="prop">{{c}}</text>
+  <text class="prop">{{d}}</text>
+  <text class="prop">{{e}}</text>
+  <text class="prop">{{f}}</text>
+  <text class="prop">{{g}}</text>
+  <text class="prop">{{h}}</text>
+</view>

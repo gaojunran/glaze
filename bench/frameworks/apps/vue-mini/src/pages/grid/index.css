@@ -1,0 +1,4 @@
+.bench { display: flex; flex-direction: column; }
+.grid-row { display: flex; height: 20px; align-items: center; }
+.cell { font-size: 10px; }
+.cell-value { font-size: 10px; }

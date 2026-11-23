@@ -1,0 +1,4 @@
+.bench { display: flex; flex-direction: column; }
+.scalars { display: flex; flex-wrap: wrap; }
+.scalar { width: 40px; height: 20px; }
+.scalar-value { font-size: 12px; }

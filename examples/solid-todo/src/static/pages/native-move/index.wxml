@@ -1,0 +1,15 @@
+<view class="bench">
+  <text id="tick">{{tick}}</text>
+  <text id="title">{{rows[0].title}}</text>
+  <text id="tag">{{rows[0].meta.tag}}</text>
+  <button id="deep" class="deep" bindtap="updateDeep">deep</button>
+  <button id="rotate" class="rotate" bindtap="rotate">rotate</button>
+  <button id="reverse" class="reverse" bindtap="reverse">reverse</button>
+  <view class="list">
+    <view class="row" wx:for="{{rows}}" wx:for-item="row" wx:key="id">
+      <text class="row-title">{{row.title}}</text>
+      <text class="row-done">{{row.done}}</text>
+      <text class="row-tag">{{row.meta.tag}}</text>
+    </view>
+  </view>
+</view>

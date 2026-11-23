@@ -23,6 +23,30 @@
 			"style": {
 				"navigationBarTitleText": "components"
 			}
+		},
+		{
+			"path": "pages/scalars/index",
+			"style": {
+				"navigationBarTitleText": "scalars"
+			}
+		},
+		{
+			"path": "pages/grid/index",
+			"style": {
+				"navigationBarTitleText": "grid"
+			}
+		},
+		{
+			"path": "pages/move/index",
+			"style": {
+				"navigationBarTitleText": "move"
+			}
+		},
+		{
+			"path": "pages/props/index",
+			"style": {
+				"navigationBarTitleText": "props"
+			}
 		}
 	],
 	"globalStyle": {

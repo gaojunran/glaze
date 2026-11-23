@@ -1,0 +1,11 @@
+<view class="bench">
+  <text id="cell-value">{{ rows[0].cells[0].value }}</text>
+  <text id="last-cell">{{ rows[0].cells[24].value }}</text>
+  <button id="cell" class="cell-btn" bindtap="updateCell">cell</button>
+  <button id="row" class="row-btn" bindtap="updateRow">row</button>
+  <view wx:for="{{ rows }}" wx:for-item="row" wx:key="id" class="grid-row">
+    <text wx:for="{{ row.cells }}" wx:for-item="cell" wx:key="id" class="cell">
+      <text class="cell-value">{{ cell.value }}</text>
+    </text>
+  </view>
+</view>

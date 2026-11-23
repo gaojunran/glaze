@@ -1,0 +1,5 @@
+{
+  "usingComponents": {
+    "props-row": "/components/props-row/index"
+  }
+}

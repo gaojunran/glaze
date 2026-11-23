@@ -13,11 +13,11 @@ the same-harness Glaze/native suite in `docs/optimizations.md`.
 
 | App | Stack | Build | Routes |
 | --- | --- | --- | --- |
-| `apps/vue-mini` | `@vue-mini/core 1.2.16`, official create-vue-mini build | `pnpm install && pnpm build` | `pages/home/index` (flat), `pages/fine/index` (rich rows), `pages/components/index` (500 row components) |
-| `apps/taro` | Taro 4.3.3, React 18, **Vite compiler** | `pnpm install && pnpm build:weapp` | `pages/index/index`, `pages/fine/index`, `pages/components/index` |
-| `apps/uni-app` | uni-app Vue3 Vite preset `3.0.0-5030420261029002` | `pnpm install && pnpm build:mp-weixin` | `pages/index/index`, `pages/fine/index`, `pages/components/index` |
-| Glaze | `examples/solid-todo` | repository `pnpm build` | `pages/bench/index`, `pages/bench-fine/index`, `pages/bench-component-rows/index`, `pages/bench-component-rows-pure/index` |
-| Native | `examples/solid-todo/src/static/pages/*` | repository `pnpm build` | `pages/native/index`, `pages/native-fine/index`, `pages/native-fine-projected/index`, `pages/native-component-rows/index` |
+| `apps/vue-mini` | `@vue-mini/core 1.2.16`, official create-vue-mini build | `pnpm install && pnpm build` | `pages/home/index` (flat), `pages/fine/index` (rich rows), `pages/components/index` (500 row components), `pages/scalars/index`, `pages/grid/index`, `pages/move/index`, `pages/props/index` |
+| `apps/taro` | Taro 4.3.3, React 18, **Vite compiler** | `pnpm install && pnpm build:weapp` | `pages/index/index`, `pages/fine/index`, `pages/components/index`, `pages/scalars/index`, `pages/grid/index`, `pages/move/index`, `pages/props/index` |
+| `apps/uni-app` | uni-app Vue3 Vite preset `3.0.0-5030420261029002` | `pnpm install && pnpm build:mp-weixin` | `pages/index/index`, `pages/fine/index`, `pages/components/index`, `pages/scalars/index`, `pages/grid/index`, `pages/move/index`, `pages/props/index` |
+| Glaze | `examples/solid-todo` | repository `pnpm build` | `pages/bench/index`, `pages/bench-fine/index`, `pages/bench-component-rows/index`, `pages/bench-component-rows-pure/index`, `pages/bench-scalars/index`, `pages/bench-grid/index`, `pages/bench-move/index`, `pages/bench-props/index` |
+| Native | `examples/solid-todo/src/static/pages/*` | repository `pnpm build` | `pages/native/index`, `pages/native-fine/index`, `pages/native-fine-projected/index`, `pages/native-component-rows/index`, `pages/native-scalars/index`, `pages/native-grid/index`, `pages/native-move/index`, `pages/native-props/index` |
 
 The **flat** pages render 1000 `.row` elements and expose `#title`, `#update`
 and `.reverse` in every implementation. Glaze/native use `.bump`/`.tick` class
@@ -221,6 +221,82 @@ Glaze's stateful row is 130–153 ms after prop projection, uni-app 61–70 ms,
 Vue Mini 133–152 ms, Taro 156–172 ms. Inlining a pure row removes the boundary
 entirely and returns to native speed. Taro's one-child update is also slower
 than the others, which matches its recursive template/tree cost.
+
+### Complex cases (2026-11-23)
+
+These pages deliberately move away from one flat list. All numbers are three
+runs on one minidev server, after a neutral-page reLaunch, with the same
+framework build used for the other tables. The first render still includes
+routing; compare implementations within a case, not across cases.
+
+**Scalars** — 16 independent scalar bindings in one page; `#bump` increments all
+of them.
+
+| Implementation | First render | Bump all 16 |
+| --- | ---: | ---: |
+| Native WXML | 3090–3134 ms | 54–55 ms |
+| uni-app Vue3 Vite | 3094–3108 ms | 53–56 ms |
+| Vue Mini 1.2.16 | 3093–3102 ms | 53–54 ms |
+| Taro 4.3.3 (Vite) | 3092–3105 ms | 54 ms |
+| Glaze | 3097–3108 ms | 53–54 ms |
+
+No separation: one microtask/setData update is below the simulator's polling
+floor for every framework.
+
+**Grid** — 80 rows × 25 cells = 2000 cells, nested loops. `#cell` changes one
+cell; `#row` changes all 25 cells in row 0.
+
+| Implementation | First render | One cell | Row (25 cells) |
+| --- | ---: | ---: | ---: |
+| Native WXML | 3297–3301 ms | 53–54 ms | 53–54 ms |
+| uni-app Vue3 Vite | 3303–3356 ms | 53–57 ms | 54–56 ms |
+| Vue Mini 1.2.16 | 3280–3285 ms | 54 ms | 54 ms |
+| Taro 4.3.3 (Vite) | 3163–3189 ms | 137–146 ms | 131–140 ms |
+| Glaze | 3314–3335 ms | 54–55 ms | 53–54 ms |
+
+Glaze, native, Vue Mini and uni-app stay at the floor. Taro's recursive template
+and node-tree diff make even a 25-cell row update ~2.5× slower.
+
+**Move** — 2000 keyed rows. `#deep` changes only row 0 `meta.tag`; `#rotate`
+moves the last row to the front (first title becomes `Row 1999`).
+
+| Implementation | First render | Deep field | Rotate |
+| --- | ---: | ---: | ---: |
+| Native WXML | 3686–3732 ms | 52–54 ms | 350–353 ms |
+| uni-app Vue3 Vite | 3643–3728 ms | 53–54 ms | 367–405 ms |
+| Vue Mini 1.2.16 | 3695–3852 ms | 68–73 ms | 384–407 ms |
+| Taro 4.3.3 (Vite) | 3484–3499 ms | 252–262 ms | 1620–1768 ms |
+| Glaze | 3656–3699 ms | 53–55 ms | 343–353 ms |
+
+Glaze is at native time for both a nested field change and a keyed move; Vue
+Mini's whole-list watcher and Taro's recursive template are the visible costs.
+This is the opposite of the fine-page payload case: here Glaze's field patch /
+splice path is the efficient one.
+
+**Props** — 500 real child components, each with 8 props (`a`..`h`) plus local
+state. `#update` changes all 8 props of row 0; `#update-all` changes all 8 props
+of every row.
+
+| Implementation | First render | Update one row | Update all 500 × 8 props |
+| --- | ---: | ---: | ---: |
+| Native WXML | 3396–3406 ms | 54–56 ms | **101–112 ms** |
+| uni-app Vue3 Vite | 3419–3471 ms | 53–54 ms | **117–132 ms** |
+| Vue Mini 1.2.16 | 3394–3442 ms | 54–60 ms | 629–696 ms |
+| Taro 4.3.3 (Vite) | 3226–3268 ms | 190–212 ms | 475–490 ms |
+| Glaze | 3413–3531 ms | 53–54 ms | **781–829 ms** |
+
+This is the clear Glaze weakness in this batch. With 500 child boundaries,
+one-row updates are fine, but changing 8 props in every child is 7–8× native
+and uni-app. A diagnostic variant that changed only `a` in every row took
+140–153 ms, so the cost tracks the number of changed props per child. Forcing
+the parent list binding to replace the whole array instead of emitting field
+paths did not improve it (776–833 ms), so the number of list `DataChange` paths
+is not the explanation by itself.
+
+The likely lever is to coalesce a component's props into fewer property writes,
+or to batch child property updates. An object-prop variant (one `row` object
+instead of eight properties) is the next experiment; it is not implemented or
+claimed here.
 
 ## Repeated-run correctness
 

@@ -698,3 +698,25 @@ Verified on every run:
   `9 pages, 20 components`; `staticPages` adds two native route entries to
   `app.json` (11 route entries total), but the build's page counter counts Glaze
   page entries only.
+
+## Complex-case audit (2026-11-23)
+
+`bench/frameworks` now contains four extra cross-framework cases: 16 independent
+scalars, an 80×25 nested grid, a 2000-row keyed rotate plus nested field change,
+and 500 child components carrying 8 props. The full method, commands and ranges
+are in `bench/frameworks/README.md`.
+
+The first three cases show Glaze at native time: scalar updates are at the
+automator floor, the grid cell/row updates are 53–55 ms, and the 2000-row keyed
+rotate is 343–353 ms versus native 350–353 ms. Taro is the visible outlier on
+the grid (131–146 ms) and rotate (1620–1768 ms).
+
+The multi-prop component case is a real Glaze weakness. Changing all 8 props in
+500 child components takes 781–829 ms, versus native 101–112 ms and uni-app
+117–132 ms; Vue Mini is 629–696 ms and Taro 475–490 ms. A diagnostic variant
+that changed only one prop in every child took 140–153 ms, so the cost scales
+with the number of changed props per child, not just with the number of child
+instances. A local experiment that forced the list binding to replace the whole
+array instead of emitting field paths did not improve it (776–833 ms). The next
+lever to test is coalescing props into one object property or batching child
+property updates; neither is implemented yet.

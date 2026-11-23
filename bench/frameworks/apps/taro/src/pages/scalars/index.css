@@ -1,0 +1,3 @@
+.bench { display: flex; flex-direction: column; }
+.scalar { font-size: 10px; }
+.scalar-value { font-size: 10px; color: #666; }
