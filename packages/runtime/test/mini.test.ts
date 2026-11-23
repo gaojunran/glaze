@@ -896,3 +896,25 @@ test('keyed lists of primitive items still reach the data layer', async () => {
   await tick()
   assert.deepEqual(instance.calls.at(-1), { b0: [1, 3] })
 })
+
+test('props are read-only at runtime', () => {
+  let observed
+  const def = defineGlazeComponent({
+    properties: ['title'],
+    data: {},
+    setup(ctx, props) {
+      observed = props
+      ctx.bind(0, () => props.title)
+    },
+  })
+  createInstance(def, { title: 'Hello' })
+
+  assert.equal(observed.title, 'Hello')
+  assert.throws(() => {
+    observed.title = 'Changed'
+  }, /read-only/)
+  assert.throws(() => {
+    delete observed.title
+  }, /read-only/)
+  assert.equal(observed.title, 'Hello')
+})

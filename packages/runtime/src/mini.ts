@@ -732,6 +732,21 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
               (Object.hasOwn(eventProps, key) ||
                 Object.hasOwn(propMap, key) ||
                 Object.hasOwn(state.props, key)),
+            set: () => {
+              throw new TypeError(
+                'Glaze props are read-only; assign to a local signal or store instead',
+              )
+            },
+            deleteProperty: () => {
+              throw new TypeError(
+                'Glaze props are read-only; assign to a local signal or store instead',
+              )
+            },
+            defineProperty: () => {
+              throw new TypeError(
+                'Glaze props are read-only; assign to a local signal or store instead',
+              )
+            },
             ownKeys: () => [...new Set([...sourceNames, ...Object.keys(eventProps)])],
             getOwnPropertyDescriptor: (_, key: string | symbol) =>
               typeof key === 'string' &&

@@ -1,5 +1,6 @@
 import { parse } from '@babel/parser'
 import * as t from '@babel/types'
+import { walkAst } from './ast.ts'
 import type { AnyNode } from './types.ts'
 
 export type ParsedComponent = {
@@ -28,7 +29,10 @@ export function parseComponent(source: string): ParsedComponent {
     throw new Error('Destructuring props is not reactive; use props.name instead')
   }
   const props = propsParam ? collectProps(propsParam.name, fn.body) : []
-  if (propsParam) rejectHostProps(propsParam.name, fn.body)
+  if (propsParam) {
+    rejectHostProps(propsParam.name, fn.body)
+    rejectPropsWrites(fn, propsParam.name)
+  }
 
   const statements = functionStatements(fn)
   const returnIndex = statements.findIndex((node) => t.isReturnStatement(node))
@@ -43,6 +47,27 @@ export function parseComponent(source: string): ParsedComponent {
   }
 
   return { ast, fn, statements, returnIndex, jsx, propsParam, props }
+}
+
+const isDirectPropsTarget = (node, name) =>
+  t.isIdentifier(node, { name }) ||
+  (t.isMemberExpression(node) && t.isIdentifier(node.object, { name }))
+
+// Solid's props object exposes getters without setters, so assigning a prop
+// field throws in a module build. Glaze must not silently swallow that write:
+// the runtime props Proxy cannot know which side effects the user expected.
+function rejectPropsWrites(fn, name) {
+  walkAst(fn, (node) => {
+    if (
+      (t.isAssignmentExpression(node) && isDirectPropsTarget(node.left, name)) ||
+      (t.isUpdateExpression(node) && isDirectPropsTarget(node.argument, name)) ||
+      (t.isUnaryExpression(node) && node.operator === 'delete' && isDirectPropsTarget(node.argument, name))
+    ) {
+      throw new Error(
+        `"${name}" is read-only; assign to a local signal or store instead of mutating a prop`,
+      )
+    }
+  })
 }
 
 export function findComponentFunction(ast: AnyNode): AnyNode | null {

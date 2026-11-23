@@ -163,6 +163,24 @@ generated in the parent module, and it can read a parent prop. A provider value
 is also emitted in the parent module, so `value={props.current}` needs the same
 treatment.
 
+### Props are inputs, not state
+
+Solid's component props are getter-only in a module build: assigning a declared
+prop field throws a `TypeError`. Glaze enforces the same rule instead of silently
+swallowing the write. A direct write such as `props.count = 1`, `props.count++`
+or `delete props.count` is a compile error:
+
+```text
+"props" is read-only; assign to a local signal or store instead of mutating a prop
+```
+
+The runtime `props` Proxy also throws on `set`, `deleteProperty` and
+`defineProperty`, because aliases (`const p = props`) and indirect calls
+(`Object.assign(props, ...)`) cannot be rejected reliably at compile time.
+Mutating a nested object held by a prop (`props.user.name = ...`) is still
+allowed, matching Solid, but it is not reactive; replace the prop object instead
+of mutating it when the parent must observe the change.
+
 The compiler emits `propSignals: []` when every prop is WXML-only, or a list of
 the property names that are read by JS. When all props are read it omits the
 field and the runtime keeps the old behavior. The scan is deliberately

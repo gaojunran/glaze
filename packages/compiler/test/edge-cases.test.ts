@@ -1323,3 +1323,35 @@ test('does not project an inline child prop onto a same-named parent prop', () =
   assert.doesNotMatch(result.wxml, /<text>\{\{title\}\}<\/text>/)
   assert.match(result.wxml, /<text>\{\{b\d+\}\}<\/text>/)
 })
+
+test('rejects direct writes to props', () => {
+  const cases = [
+    `export default function Page(props) { props.count = 1; return <view /> }`,
+    `export default function Page(props) { props.count += 1; return <view /> }`,
+    `export default function Page(props) { props.count++; return <view /> }`,
+    `export default function Page(props) { delete props.count; return <view /> }`,
+    `export default function Page(props) { return <button onClick={() => { props['count'] = 1 }} /> }`,
+  ]
+  for (const source of cases) {
+    assert.throws(() => compileComponent(source), /read-only|Computed prop access/)
+  }
+})
+
+test('allows mutating a nested object held by a prop', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return <button onClick={() => { props.user.name = 'Grace' }} />
+    }
+  `)
+  assert.ok(result.js.includes("props.user.name = 'Grace'"))
+})
+
+test('does not reject a module helper that mutates its own props parameter', () => {
+  const result = compileComponent(`
+    function helper(props) { props.value = 1 }
+    export default function Page() {
+      return <view>{helper.toString()}</view>
+    }
+  `)
+  assert.ok(result.js.includes('helper.toString()'))
+})
