@@ -238,6 +238,8 @@ test('cross-file context reaches a component boundary', async (miniProgram) => {
   await expect(app).toMatchText('.title', 'Context boundary')
   const xml = await app.outerWxml()
   await expect(xml).toContain('class="context-boundary">cross-file')
+  // The palette text lives in the child shadow root, which page selectors do
+  // not cross; the object-context update path is covered by runtime tests.
 })
 
 test('ref facade queries a child node inside the component', async (miniProgram) => {
@@ -260,6 +262,10 @@ test('async Loading and Errored boundaries render fallbacks and resolved values'
   await expect(app).toMatchText('.async-value', 'async-ready')
   await expect(app).toMatchText('.nested-value', 'async-ready')
   await expect(app).toMatchText('.async-error', 'boom')
+  await expect(app).toMatchText('.async-flaky', 'flaky')
+  await (await app.$('.async-reset')).tap()
+  await page.waitFor(400)
+  await expect(app).toMatchText('.async-flaky-value', 'recovered')
 })
 
 test('independent subpackage loads its own runtime and updates state', async (miniProgram) => {

@@ -326,6 +326,7 @@ export function inlineComponent(node, ctx, scope, name, source) {
   }
   ctx.blocks.push({
     setup: child.statements.slice(0, child.returnIndex),
+    effects: [],
     propsParam: child.propsParam?.name ?? null,
     propGetters,
     provider: ctx.currentProvider,

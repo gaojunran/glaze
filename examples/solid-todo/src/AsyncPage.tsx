@@ -1,4 +1,4 @@
-import { createMemo, Errored, Loading } from 'solid-js'
+import { createMemo, createSignal, Errored, Loading } from 'solid-js'
 
 export default function AsyncPage() {
   const later = createMemo(async () => {
@@ -7,6 +7,11 @@ export default function AsyncPage() {
   })
   const broken = createMemo(() => {
     throw new Error('boom')
+  })
+  const [flakyAttempt, setFlakyAttempt] = createSignal(0)
+  const flaky = createMemo(() => {
+    if (flakyAttempt() === 0) throw new Error('flaky')
+    return 'recovered'
   })
 
   return (
@@ -22,6 +27,24 @@ export default function AsyncPage() {
       </Loading>
       <Errored fallback={(error) => <text class="async-error">{error().message}</text>}>
         <text class="async-broken">{broken()}</text>
+      </Errored>
+      <Errored
+        fallback={(error, reset) => (
+          <view class="async-retry">
+            <text class="async-flaky">{error().message}</text>
+            <button
+              class="async-reset"
+              onClick={() => {
+                setFlakyAttempt(1)
+                reset()
+              }}
+            >
+              retry
+            </button>
+          </view>
+        )}
+      >
+        <text class="async-flaky-value">{flaky()}</text>
       </Errored>
     </view>
   )

@@ -145,6 +145,25 @@ export const walkAst = (node, visit) => {
  * exactly the cases where the mini-program runtime diverges from Solid.
  */
 
+/** Rename free identifier references in a cloned AST (used for generated callback helpers). */
+export function renameIdentifiers(node, from, to) {
+  const cloned = t.cloneNode(node, true)
+  const visit = (current, parent) => {
+    if (!current || typeof current.type !== 'string') return
+    if (t.isIdentifier(current, { name: from }) && !isStaticPropertyKey(current, parent)) {
+      current.name = to
+      return
+    }
+    for (const key of t.VISITOR_KEYS[current.type] ?? []) {
+      const value = current[key]
+      if (Array.isArray(value)) value.forEach((child) => visit(child, current))
+      else visit(value, current)
+    }
+  }
+  visit(cloned, null)
+  return cloned
+}
+
 export function skipChildKey(node, key) {
   if (t.isMemberExpression(node) && key === 'property' && !node.computed) return true
   if (t.isObjectProperty(node) && key === 'key' && !node.computed) return true

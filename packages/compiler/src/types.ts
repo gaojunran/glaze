@@ -27,6 +27,7 @@ export type ContextProvider = { name: string; key: string; imported: boolean; co
 export type BoundaryContext = { name: string; key: string }
 export type Block = {
   setup: AnyNode[]
+  effects: string[]
   propsParam: string | null
   propGetters: PropGetter[]
   provider: number | null
@@ -127,6 +128,8 @@ export type CompilerContext = {
   notePropReads(expression: AnyNode | AnyNode[]): void
   addEvent(expression: AnyNode, scope?: Scope | null, custom?: boolean): number
   addBindingCode(code: string, listKey?: string | null, reads?: AnyNode | AnyNode[] | null): number
+  addEffectCode(code: string, reads?: AnyNode | AnyNode[] | null): void
+  addSetupStatement(statement: AnyNode): void
   guardCode(code: string): string
   withGuard<T>(guard: string | null, fn: () => T): T
   withRefForbidden<T>(fn: () => T): T

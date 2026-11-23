@@ -57,12 +57,13 @@ glass-easel 组件，不替换平台渲染器。
   （含回调与 `fallback`）、`Switch`/`Match`、`Repeat`、解构、静态 spread、
   `class`/`style` 辅助函数；
 - 组件：props、默认与具名 slot、自定义事件（含 `catch`/`capture`/`mut-bind`）、
-  递归内联保护、跨组件边界的 context、ref 测量与节点查询；
+  递归内联保护、跨组件边界的 context（对象值保持响应式）、ref 测量、节点查询、
+  focus/blur 与属性访问；
 - 异步：memo 化的 async binding、带嵌套边界的 `Loading`/`Errored`、
-  pending/error 投影；
+  `Loading on`、`Errored` reset、pending/error 投影；
 - 构建：页面、分包（含独立分包）、页面级配置、共享 runtime、静态资源、
   Tailwind 4、SCSS/Less、增量 `watch`、Vite 桥接和单文件 snippet；
-- 验证：409 个单元测试（shared 2、runtime 90、compiler 197、build 120）、
+- 验证：468 个单元测试（shared 2、runtime 100、compiler 246、build 120）、
   glass-easel 渲染测试和 9 个 minidev e2e 用例。
 
 已知限制记录在 [编译器](docs/compiler.md)、[构建](docs/build.md) 和

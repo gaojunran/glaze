@@ -1,8 +1,17 @@
 import type { GlazeNode, GlazeNodeRect } from './types.ts'
 
+type QueryNode = {
+  focus?: () => void
+  blur?: () => void
+  getAttribute?: (name: string) => unknown
+  setAttribute?: (name: string, value: unknown) => void
+  scrollIntoView?: (options?: unknown) => void
+}
+
 type Query = {
   select(selector: string): {
     boundingClientRect(callback: (rect: GlazeNodeRect | null) => void): Query
+    node?(callback: (node: QueryNode | null) => void): Query
   }
   selectViewport(): { scrollOffset(callback: (offset: { scrollTop?: number }) => void): Query }
   selectAll(selector: string): {
@@ -17,6 +26,22 @@ const selectorQuery = (component: unknown): Query => {
   const wx = (globalThis as { wx?: { createSelectorQuery?: () => { in(scope: unknown): Query } } }).wx
   return wx!.createSelectorQuery!().in(component)
 }
+
+const queryNode = (component: unknown, selector: string) =>
+  new Promise<QueryNode | null>((resolve) => {
+    try {
+      const ref = selectorQuery(component).select(selector)
+      if (typeof ref.node !== 'function') {
+        resolve(null)
+        return
+      }
+      ref
+        .node((node) => resolve(node ?? null))
+        .exec()
+    } catch {
+      resolve(null)
+    }
+  })
 
 const measure = (component: unknown, selector: string) =>
   new Promise<GlazeNodeRect | null>((resolve) => {
@@ -68,7 +93,34 @@ const createNode = (
       const rects = await measureAll(component, input)
       return rects.map((item, position) => createNode(component, input, item, position))
     },
+    async focus() {
+      const node = await queryNode(component, selector)
+      if (!node || typeof node.focus !== 'function') return false
+      node.focus()
+      return true
+    },
+    async blur() {
+      const node = await queryNode(component, selector)
+      if (!node || typeof node.blur !== 'function') return false
+      node.blur()
+      return true
+    },
+    async getAttribute(name: string) {
+      const node = await queryNode(component, selector)
+      return node && typeof node.getAttribute === 'function' ? node.getAttribute(name) : undefined
+    },
+    async setAttribute(name: string, value: unknown) {
+      const node = await queryNode(component, selector)
+      if (!node || typeof node.setAttribute !== 'function') return false
+      node.setAttribute(name, value)
+      return true
+    },
     async scrollIntoView(options = {}) {
+      const node = await queryNode(component, selector)
+      if (node && typeof node.scrollIntoView === 'function') {
+        node.scrollIntoView(options)
+        return true
+      }
       const self = await measureSelf()
       if (!self || typeof (globalThis as { wx?: { pageScrollTo?: unknown } }).wx?.pageScrollTo !== 'function') {
         return false

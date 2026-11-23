@@ -134,6 +134,7 @@ ${lines}
     const block = ctx.blocks[blockId]
     const body = [
       block.setup.map((node) => codeOf(node)).join('\n'),
+      block.effects.join('\n'),
       renderRefs(blockId),
       renderBindings(blockId),
       renderEvents(blockId),
@@ -147,7 +148,7 @@ ${lines}
         .filter(Boolean)
         .join('\n')
       const inner = [body, children].filter(Boolean).join('\n')
-      return `  {\n    withProvider(${block.providerContext}, (${block.providerValue}), () => {\n${indent(inner, 6)}\n    });\n  }`
+      return `  {\n    withProvider(${block.providerContext}, (${block.providerValue}), () => {\n${indent(inner, 6)}\n    }, () => (${block.providerValue}));\n  }`
     }
 
     const props = block.propsParam
@@ -174,7 +175,7 @@ ${lines}
     boundaryContexts
       .map((item) => `{ context: ${item.name}, key: ${JSON.stringify(item.key)} }`)
       .join(', ')
-  }], ${options.propsParam}.glazecontext, () => {
+  }], () => ${options.propsParam}.glazecontext, () => {
 ${indent(rawSetup, 4)}
   });`
     : rawSetup

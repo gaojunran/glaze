@@ -131,6 +131,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     blocks: [
       {
         setup: statements.slice(0, returnIndex),
+        effects: [],
         propsParam: null,
         propGetters: [],
         provider: null,
@@ -201,6 +202,13 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
       const index = this.events.length
       this.events.push({ code: codeOf(expression), ast: expression, scope, custom, block: this.currentBlock })
       return index
+    },
+    addEffectCode(code, reads = null) {
+      if (reads) this.notePropReads(reads)
+      this.blocks[this.currentBlock].effects.push(code)
+    },
+    addSetupStatement(statement) {
+      this.blocks[this.currentBlock].setup.push(statement)
     },
     addBindingCode(code, listKey = null, reads = null) {
       if (reads) this.notePropReads(reads)

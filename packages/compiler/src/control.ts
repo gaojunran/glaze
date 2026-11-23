@@ -1,5 +1,12 @@
 import * as t from '@babel/types'
-import { codeOf, getAttribute, getExpression, isWhitespaceText } from './ast.ts'
+import {
+  codeOf,
+  containsJsx,
+  getAttribute,
+  getExpression,
+  isWhitespaceText,
+  renameIdentifiers,
+} from './ast.ts'
 import { conditionExpression } from './attributes.ts'
 import { projectExpression } from './projection.ts'
 import { compileChildren, compileNode } from './elements.ts'
@@ -117,7 +124,12 @@ export function compileShowCallback(node, ctx, scope, when, keyed, fn, fallback)
 
 export function compileAsyncBoundary(node, ctx, scope, kind) {
   if (scope) throw new Error(`<${kind}> inside a loop is not supported yet`)
-  if (getAttribute(node, 'on')) throw new Error(`<${kind}> does not support the "on" prop yet`)
+  const onAttr = getAttribute(node, 'on')
+  const on = onAttr ? getExpression(onAttr) : null
+  if (on && kind !== 'Loading') throw new Error('<Errored> does not support the "on" prop')
+  if (on && (containsJsx(on) || t.isJSXElement(on) || t.isJSXFragment(on))) {
+    throw new Error('<Loading> on must be a JS expression')
+  }
   const fallbackAttr = getAttribute(node, 'fallback')
   const fallback = getExpression(fallbackAttr)
   if (kind === 'Errored' && !fallback) throw new Error('<Errored> requires a fallback')
@@ -126,6 +138,9 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
   const outerBoundary = ctx.currentAsyncBoundary
   const boundary = ctx.nextAsyncBoundary
   ctx.nextAsyncBoundary += 1
+  if (on) {
+    ctx.addEffectCode(`ctx.loadingOn(${boundary}, () => (${codeOf(on)}))`, on)
+  }
 
   const isFunctionFallback =
     fallback && (t.isArrowFunctionExpression(fallback) || t.isFunctionExpression(fallback))
@@ -140,8 +155,8 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
   if (isFunctionFallback && kind !== 'Errored') {
     throw new Error('<Loading> fallback must be JSX')
   }
-  if (isFunctionFallback && fallback.params.length > 1) {
-    throw new Error('<Errored> fallback reset is not supported yet')
+  if (isFunctionFallback && fallback.params.length > 2) {
+    throw new Error('<Errored> fallback takes at most an error accessor and a reset function')
   }
 
   let fallbackContent = ''
@@ -150,7 +165,36 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
     if (!param || !t.isIdentifier(param)) {
       throw new Error('<Errored> fallback must take an error accessor')
     }
-    const callback = callbackBody(fallback, '<Errored>', [param.name])
+    const resetParam = fallback.params[1]
+    if (resetParam && !t.isIdentifier(resetParam)) {
+      throw new Error('<Errored> reset parameter must be an identifier')
+    }
+    const resetName = resetParam && t.isIdentifier(resetParam) ? resetParam.name : null
+    const resetAlias = resetName ? `__glazeReset${boundary}` : null
+    const renamed =
+      resetName && resetAlias
+        ? renameIdentifiers(fallback, resetName, resetAlias)
+        : fallback
+    if (resetAlias) {
+      ctx.addSetupStatement(
+        t.variableDeclaration('const', [
+          t.variableDeclarator(
+            t.identifier(resetAlias),
+            t.arrowFunctionExpression(
+              [],
+              t.callExpression(
+                t.memberExpression(t.identifier('ctx'), t.identifier('reset')),
+                [t.numericLiteral(boundary)],
+              ),
+            ),
+          ),
+        ]),
+      )
+    }
+    const callback = callbackBody(renamed, '<Errored>', [
+      param.name,
+      ...(resetAlias ? [resetAlias] : []),
+    ])
     if (!t.isJSXElement(callback.jsx) && !t.isJSXFragment(callback.jsx)) {
       throw new Error('<Errored> fallback function must return JSX')
     }
@@ -159,7 +203,7 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
       item: param.name,
       index: '__glazeErrorIndex',
       source: `b${values}`,
-      jsSource: `b${values}`,
+      jsSource: `ctx.errorArray(${boundary})`,
       parent: null,
       level: 0,
       itemAccessor: true,

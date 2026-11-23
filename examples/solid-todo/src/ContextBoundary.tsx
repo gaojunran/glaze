@@ -1,7 +1,14 @@
 import { useContext } from 'solid-js'
-import { Theme } from './theme'
+import { Palette, Theme } from './theme'
 
 export default function ContextBoundary() {
   const theme = useContext(Theme)
-  return <view><slot /><text class="context-boundary">{theme}</text></view>
+  const palette = useContext(Palette)
+  return (
+    <view>
+      <slot />
+      <text class="context-boundary">{theme}</text>
+      <text class="context-color">{palette.color}</text>
+    </view>
+  )
 }

@@ -7,6 +7,20 @@ const keyOf = (item: unknown, key: string) =>
 
 const isObjectItem = (item: unknown) => item !== null && typeof item === 'object'
 
+/**
+ * Copy each row one level deep. A plain array slice keeps the same row
+ * objects, so `items[0].done = true` followed by a new array would compare
+ * equal against itself. Copying the row fields makes a direct field mutation
+ * visible to `listPatch`; nested objects still follow the immutable update
+ * rule.
+ */
+export function snapshotList(value: unknown): unknown {
+  if (!Array.isArray(value)) return value
+  return value.map((item) =>
+    isObjectItem(item) && !Array.isArray(item) ? { ...(item as object) } : item,
+  )
+}
+
 /** Internal helper, exported for unit tests. */
 export function listOps(previous: unknown, next: unknown, key: string): ListOp[] | null {
   if (!Array.isArray(previous) || !Array.isArray(next)) return null

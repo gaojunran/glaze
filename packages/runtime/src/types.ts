@@ -24,6 +24,10 @@ export type GlazeNode = GlazeNodeRect & {
   getBoundingClientRect(): Promise<GlazeNodeRect | null>
   querySelector(selector: string): Promise<GlazeNode | null>
   querySelectorAll(selector: string): Promise<GlazeNode[]>
+  focus(): Promise<boolean>
+  blur(): Promise<boolean>
+  getAttribute(name: string): Promise<unknown>
+  setAttribute(name: string, value: unknown): Promise<boolean>
   scrollIntoView(options?: { duration?: number; offset?: number }): Promise<boolean>
 }
 
@@ -37,6 +41,8 @@ export type GlazeContext = {
   bind(index: number, fn: GlazeBinding, asyncBoundary?: number | null): void
   event(index: number, fn: GlazeEventHandler): void
   ref(index: number, fn: (node: unknown) => void): void
+  loadingOn(boundary: number, fn: () => unknown): void
+  reset(boundary: number): void
   loading(boundary: number): boolean
   errored(boundary: number): boolean
   error(boundary: number): unknown
@@ -69,6 +75,7 @@ export type InstanceState = {
   previous: unknown[]
   pending: DataChange[]
   asyncPending: Map<number, Set<number>>
+  loadingOn: Map<number, () => unknown>
   settled: boolean[]
   statusVersion: [() => number, (value: number) => void]
   applyStatus: ((index: number, value: unknown) => void) | null
@@ -88,6 +95,7 @@ export type InstanceState = {
   errorBindings: Map<number, Map<unknown, Set<number>>>
   errorValues: Map<number, Map<unknown, unknown>>
   errorValueSignals: Map<number, [() => unknown, (value: unknown) => void]>
+  resetSignals: Map<number, [() => number, (value: number) => void]>
   asyncStatus?: { index: number; kind: 'loading' | 'error'; boundary: number }[]
   error: unknown
 }

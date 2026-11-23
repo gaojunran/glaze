@@ -63,13 +63,14 @@ Working spike, not a production framework. It covers:
   destructuring, static spread, `class`/`style` helpers;
 - components: props, default and named slots, custom events (including
   `catch`/`capture`/`mut-bind`), recursive inlining protection, context across
-  component boundaries, ref measurement and node queries;
+  component boundaries (object values stay reactive), ref measurement, node
+  queries, focus/blur and attribute access;
 - async: memoized async bindings, `Loading`/`Errored` with nested boundaries,
-  pending/error projection;
+  `Loading on`, `Errored` reset, pending/error projection;
 - build: pages, subpackages (including independent), per-page config, shared
   runtime, assets, Tailwind 4, SCSS/Less, incremental `watch`, Vite bridge and
   single-file snippets;
-- validation: 409 unit tests (shared 2, runtime 90, compiler 197, build 120),
+- validation: 468 unit tests (shared 2, runtime 100, compiler 246, build 120),
   glass-easel rendering tests and 9 minidev e2e cases.
 
 Known limits are documented in [Compiler](docs/compiler.md),

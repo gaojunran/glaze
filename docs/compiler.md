@@ -501,10 +501,19 @@ return <text>{theme}</text>
 The value travels through the mini-program property bridge, so it must be
 JSON-like. A context declared with `createContext` in the **same file** cannot
 cross a boundary (the child module has no way to reconstruct the same object);
-import it from a module instead. The value is read once when the child becomes
-ready, not re-evaluated as a reactive expression. Components that consume a
-boundary context defer their setup to `ready`, because the parent's first
-`setData` may land after the child is created.
+import it from a module instead. Components that consume a boundary context
+defer their setup to `ready`, because the parent's first `setData` may land
+after the child is created.
+
+A context value that is an object is wrapped in a reader proxy: providers pass
+the expression twice, once as the captured value and once as a `read` callback,
+and the child re-enters the provider with an accessor over `props.glazecontext`.
+Property reads therefore follow later updates without remounting the child tree.
+A primitive context value keeps the value captured when the provider ran; wrap
+it in an object or a signal-backed store when it must change. The proxy keeps
+the object identity stable, binds methods to the current value, and forwards
+`Object.keys`; it is not a replacement for a store, and destructuring
+(`const { color } = useContext(...)`) snapshots the current properties.
 
 ### Async boundaries
 
@@ -546,21 +555,34 @@ value. The fallback is rendered through a single-element `wx:for`, so `error()`
 is rewritten to the WXML loop item and the dependency graph itself stays in JS.
 
 Boundaries inside a loop are rejected because their condition would need a
-per-row binding. `on` dependencies and reset are not implemented; an `Errored`
-fallback function may take only the error accessor.
+per-row binding. `Loading on` and an `Errored` reset function are supported;
+boundary parent/child aggregation is not.
+
+Async behavior that is implemented:
+
+- `Loading on` compiles to `ctx.loadingOn(boundary, ...)`. A change after mount
+  shows the fallback again only when a read under the boundary is actually
+  pending; there is no held frame, so a change with nothing pending does
+  nothing.
+- `Errored` fallbacks may take `(error, reset)`. `reset` bumps a per-boundary
+  signal read by every binding memo, clears the boundary's pending/error maps,
+  and retries the failed expressions.
+- Error objects are normalized to `{ name, message }` before crossing the WXML
+  data bridge; `error()` reads that normalized value.
 
 Remaining async work, deliberately left for a later pass:
 
 - No Solid boundary tree and no boundary-output projection. First pending and
   real errors are captured by the runtime; only refetch pending uses Solid
   `isPending`.
-- `Errored` reset, `Loading on`, error-value reset, and boundary parent/child
-  status aggregation are not implemented.
+- Boundary parent/child status aggregation is not implemented; each boundary
+  reports only the bindings whose nearest boundary is itself.
 - `asyncStatus` condition bindings are projected directly with a microtask.
   This keeps them out of a held effect, but it has not been checked on a real
   device for visible intermediate frames.
-- Async refetch behavior is covered by a runtime unit test, not by a real-device
-  smoke test. minidev only proves the generated output loads and settles.
+- Async refetch behavior and `Loading on` are covered by runtime unit tests,
+  not by a real-device smoke test. minidev only proves the generated output
+  loads and settles.
 
 ### Refs
 
@@ -859,19 +881,21 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
 2. **Named slots** require a component boundary. An inlined component can only
    use the default `props.children` slot.
 3. **Context** reaches a separate component only when the context is imported
-   from a module; a same-file `createContext` cannot cross a boundary. The
-   provider value is read once when the child becomes ready, not re-evaluated
-   as a reactive expression.
-4. **Refs** expose a node handle with measurement, descendant queries, and
-   `scrollIntoView`, not a DOM node. `focus`, `blur`, and arbitrary mutation are
-   not available.
+   from a module; a same-file `createContext` cannot cross a boundary. Object
+   values are read through a proxy and follow later updates; primitive values
+   are captured when the provider runs. Destructuring the context object
+   snapshots its current fields.
+4. **Refs** expose a node handle with measurement, descendant queries,
+   `focus`, `blur`, attribute access and `scrollIntoView`, not a DOM node. The
+   node methods use `NodesRef.node()` when the base library provides it and
+   return `false` otherwise; nested `scroll-view` scrolling is not guaranteed.
 5. **List structure** is a `DataChange` splice for insert, delete, and middle
    replacement (`spliceArrayDataOnPath` in the fallback path). A pure move is
    expressed as delete+insert over the changed middle; there is no LIS move
    scheduler yet, so a full reverse still sends one large middle chunk. The
-   previous array is snapshotted shallowly, so an item mutated in place and
-   returned in a new array (`items[0].done = true; return [...items]`) is not
-   detected; replace the item object instead.
+   previous list rows are copied one level deep, so a direct field mutation
+   followed by a new array (`items[0].done = true; return [...items]`) is
+   detected; mutating a nested object still follows the immutable update rule.
 6. **Component event payloads** pass `event.detail` as one argument; multiple
    arguments arrive as an array.
 7. **Unsupported JSX** (`.map`, dynamic components, render props, `Portal`,
@@ -887,9 +911,9 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
    that disable WXS.
 10. **Build integration** has `glaze build`, `glaze watch`, and a Vite build
     bridge. Watch is compile-incremental; there is no mini-program HMR.
-11. **Async boundaries** (`Loading` / `Errored`) support nesting, but not inside
-    a loop; `Errored` function fallbacks take only an error accessor, and `on`
-    dependencies and reset are not implemented.
+11. **Async boundaries** (`Loading` / `Errored`) support nesting, `Loading on`
+    and an `Errored` reset function, but not inside a loop; boundary parent/child
+    aggregation is not implemented.
 12. **Svelte** has no compiler yet.
 
 

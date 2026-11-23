@@ -400,6 +400,7 @@ export function compileProvider(node, ctx, scope) {
   const blockId = ctx.blocks.length
   ctx.blocks.push({
     setup: [],
+    effects: [],
     propsParam: null,
     propGetters: [],
     provider: ctx.currentProvider,

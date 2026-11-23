@@ -899,7 +899,7 @@ test('keeps changes another writer queued before the flush', async () => {
 // Node refs
 // ---------------------------------------------------------------------------
 
-function createQueryHarness(rects) {
+function createQueryHarness(rects, nodes = new Map()) {
   return {
     createSelectorQuery() {
       const query = {
@@ -925,6 +925,10 @@ function createQueryHarness(rects) {
           else callback(value ?? null)
           return query
         },
+        node(callback) {
+          callback(nodes.get(query.selector) ?? null)
+          return query
+        },
         scrollOffset(callback) {
           callback({ scrollTop: rects.get('__scrollTop') ?? 0 })
           return query
@@ -936,7 +940,7 @@ function createQueryHarness(rects) {
   }
 }
 
-function createRefInstance(rects) {
+function createRefInstance(rects, nodes = new Map()) {
   let node
   const def = defineGlazeComponent({
     data: { b0: null },
@@ -951,7 +955,7 @@ function createRefInstance(rects) {
     properties: {},
     __glaze: null,
     setData() {},
-    ...createQueryHarness(rects),
+    ...createQueryHarness(rects, nodes),
   }
   def.lifetimes.created.call(instance)
   def.lifetimes.attached.call(instance)
@@ -1030,6 +1034,44 @@ test('scrollIntoView returns false when no scroll API exists', async () => {
   } finally {
     if (originalWx !== undefined) globalThis.wx = originalWx
   }
+})
+
+test('focus, blur and attributes go through the node query', async () => {
+  const node = {
+    focused: false,
+    values: { value: 'a' },
+    focus() {
+      node.focused = true
+    },
+    blur() {
+      node.focused = false
+    },
+    getAttribute(name) {
+      return node.values[name]
+    },
+    setAttribute(name, value) {
+      node.values[name] = value
+    },
+  }
+  const ref = createRefInstance(new Map([['#glaze-r0', { top: 0 }]]), new Map([['#glaze-r0', node]]))
+  await tick()
+
+  assert.equal(await ref.node.getAttribute('value'), 'a')
+  assert.equal(await ref.node.setAttribute('value', 'b'), true)
+  assert.equal(node.values.value, 'b')
+  assert.equal(await ref.node.focus(), true)
+  assert.equal(node.focused, true)
+  assert.equal(await ref.node.blur(), true)
+  assert.equal(node.focused, false)
+})
+
+test('node methods return false when the platform does not expose a node', async () => {
+  const ref = createRefInstance(new Map([['#glaze-r0', { top: 0 }]]))
+  await tick()
+  assert.equal(await ref.node.focus(), false)
+  assert.equal(await ref.node.blur(), false)
+  assert.equal(await ref.node.setAttribute('value', 'b'), false)
+  assert.equal(await ref.node.getAttribute('value'), undefined)
 })
 
 test('passes null to a ref callback when the selector does not match', async () => {

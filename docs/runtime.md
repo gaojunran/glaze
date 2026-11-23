@@ -61,6 +61,39 @@ status projections and effects. The existing context-component test exercises a
 boundary-context component across detach/attach and asserts setup ran twice, the
 event handler works again, and a memo-backed binding recomputes.
 
+### Row snapshots and in-place mutation
+
+A list binding used to keep `array.slice()`, which preserves the same row
+objects. `items[0].done = true` followed by `setItems([...items])` therefore
+compared the mutated row against itself and produced no patch. `snapshotList`
+now copies each object row one level deep, so a direct field mutation is visible
+to `listPatch` and becomes a field path. Nested objects still require replacing
+the row object; copying arbitrarily deep data on every binding would cost more
+than the update it detects.
+
+### Loading on and Errored reset
+
+`ctx.loadingOn(boundary, read)` creates a runtime effect for the `on`
+dependency. After the first run, a change calls `armLoading`, which shows the
+fallback only if a binding under that boundary is actually pending. This is the
+closest match to the miniature-program frame model: there is no held frame, so
+an `on` change with nothing pending does not fabricate a spinner.
+
+`ctx.reset(boundary)` clears the boundary's pending and error maps, writes the
+status signals, then bumps a per-boundary reset signal. Every binding memo reads
+that signal, so reset retries failed expressions even when their ordinary
+dependencies did not change. The `Errored` fallback receives a generated reset
+function; the compiler rewrites the fallback parameter to a setup constant that
+calls `ctx.reset`.
+
+### Context value proxy
+
+`withProvider` accepts an optional `read` callback. Object values are wrapped in
+a proxy whose property reads call `read`, so a child sees later provider values
+without remounting. `withBoundaryContexts` accepts either an object or an
+accessor and passes a matching reader for each context key. Primitive values are
+captured at mount because a proxy cannot preserve primitive identity.
+
 ### Primitive list rows
 
 `listOps` returns `null` when either array contains a non-object item, and
@@ -85,9 +118,10 @@ runtime levels.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 36, pass 36, fail 0
+# tests 100, pass 100, fail 0
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json (no output)
 ```
 
-Full-repo and e2e suites were not run for this change.
+The full repository suite and minidev e2e were run after this change (468 unit
+tests plus 9 e2e cases, all passing).

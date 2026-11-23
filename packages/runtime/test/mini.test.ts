@@ -958,3 +958,108 @@ test('propSignals selects the actual prop signals', () => {
   assert.equal(noProps.title, undefined)
   assert.equal(noProps.other, undefined)
 })
+
+test('re-arms a Loading boundary when its on dependency changes', async () => {
+  let setRoute
+  let setPending
+  let attempts = 0
+  const def = defineGlazeComponent({
+    asyncStatus: [{ index: 1, kind: 'loading', boundary: 0 }],
+    data: { b0: null, b1: null },
+    setup(ctx) {
+      const [route, updateRoute] = createSignal(0)
+      const [pending, updatePending] = createSignal(false)
+      setRoute = updateRoute
+      setPending = updatePending
+      ctx.loadingOn(0, () => route())
+      ctx.bind(
+        0,
+        () => {
+          if (pending()) throw new NotReadyError()
+          return `value-${++attempts}`
+        },
+        0,
+      )
+      ctx.bind(1, () => ctx.loading(0))
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  const merged = () => Object.assign({}, ...instance.calls)
+  await tick()
+  assert.equal(merged().b1, false)
+
+  // With nothing pending the trigger does not fabricate a fallback.
+  setRoute(1)
+  await tick()
+  assert.equal(merged().b1, false)
+
+  setPending(true)
+  await tick()
+  await tick()
+  assert.equal(merged().b1, true)
+
+  setPending(false)
+  await tick()
+  await tick()
+  assert.equal(merged().b1, false)
+})
+
+test('Errored reset retries a binding that failed on every earlier attempt', async () => {
+  let reset
+  let calls = 0
+  const def = defineGlazeComponent({
+    errorBoundary: true,
+    asyncStatus: [{ index: 1, kind: 'error', boundary: 0 }],
+    data: { b0: null, b1: null, b2: null },
+    setup(ctx) {
+      reset = () => ctx.reset(0)
+      ctx.bind(
+        0,
+        () => {
+          calls += 1
+          if (calls <= 2) throw new Error('boom')
+          return 'recovered'
+        },
+        0,
+      )
+      ctx.bind(1, () => ctx.errored(0))
+      ctx.bind(2, () => (ctx.error(0) as Error)?.message)
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  const merged = () => Object.assign({}, ...instance.calls)
+  await tick()
+  assert.equal(merged().b1, true)
+  assert.equal(merged().b2, 'boom')
+
+  reset()
+  await tick()
+  await tick()
+  assert.equal(merged().b0, 'recovered')
+  assert.equal(merged().b1, false)
+  assert.equal(merged().b2, null)
+})
+
+test('detects a field mutated in place on a row object', async () => {
+  const row = { id: 1, done: false, title: 'one' }
+  const initial = [row]
+  let setItems
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    setup(ctx) {
+      const [items, set] = createSignal(initial)
+      setItems = set
+      ctx.bind(0, () => items())
+    },
+  })
+  const instance = createInstance(def, {}, { paths: true })
+  def.lifetimes.attached.call(instance)
+
+  row.done = true
+  setItems([...initial])
+  await tick()
+  assert.deepEqual(instance.pathCalls, [[['b0', 0, 'done'], true]])
+})
