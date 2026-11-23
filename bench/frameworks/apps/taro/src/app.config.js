@@ -7,7 +7,8 @@ export default defineAppConfig({
     'pages/scalars/index',
     'pages/grid/index',
     'pages/move/index',
-    'pages/props/index'
+    'pages/props/index',
+    'pages/props-object/index'
   ],
   window: {
     backgroundTextStyle: 'light',

@@ -1,0 +1,10 @@
+<view class="row-card">
+  <text class="row-title">{{row.a}}</text>
+  <text class="prop">{{row.b}}</text>
+  <text class="prop">{{row.c}}</text>
+  <text class="prop">{{row.d}}</text>
+  <text class="prop">{{row.e}}</text>
+  <text class="prop">{{row.f}}</text>
+  <text class="prop">{{row.g}}</text>
+  <text class="prop">{{row.h}}</text>
+</view>

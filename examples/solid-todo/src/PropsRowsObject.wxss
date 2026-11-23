@@ -1,0 +1,3 @@
+.bench { display: flex; flex-direction: column; }
+.row-card { display: flex; height: 20px; }
+.row-title, .prop, .row-done { width: 50px; font-size: 10px; }

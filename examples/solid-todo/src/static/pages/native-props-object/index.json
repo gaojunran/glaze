@@ -1,0 +1,6 @@
+{
+  "usingComponents": {
+    "props-row-object-native": "/components/props-row-object-native/index"
+  },
+  "navigationBarTitleText": "native props object"
+}

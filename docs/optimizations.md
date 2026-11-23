@@ -181,6 +181,34 @@ Next steps should therefore target boundary count or property propagation, not
 the Solid binding layer. See P1 above for the prop-only
 projection that already removed child prop signals.
 
+### P1c.1 — Object-prop A/B
+
+Status: measured; fixture only, no compiler change yet.
+
+A second 500-boundary page passes one `row` object per child instead of eight
+scalar props. The parent still owns the same rows and the child renders the same
+eight field projections (Glaze keeps its existing local counter text), so only
+the property bridge changes.
+
+| Implementation | Eight props | One object prop |
+| --- | ---: | ---: |
+| Glaze (stateful boundary) | 781–829 ms | **175–189 ms** |
+| Native WXML | 102–109 ms | **91–99 ms** |
+| uni-app Vue3 | 136–188 ms | 131–146 ms |
+| Taro 4.3.3 (Vite) | 502–585 ms | 486–588 ms |
+
+Glaze improves 4.4–4.7×. The eight-prop child still has `propSignals: []` and
+zero child `setData`, so the removed cost is property fan-out: eight property
+writes per child instead of one. Native improves only slightly, and Taro/uni-app
+show no repeatable improvement; this is a Glaze boundary cost, not a general
+mini-program cost. Vue Mini was not measured because its minidev appservice did
+not respond to the automator during this run.
+
+The object shape is currently a manual component API: the child must read
+`props.row.a` instead of `props.a`. Automating it in the compiler would require
+generating the object property only for Glaze-to-Glaze components, preserving
+external props, event props, context, and hand-written component compatibility.
+
 ## P1d — Compiler template slimming
 
 Status: implemented.

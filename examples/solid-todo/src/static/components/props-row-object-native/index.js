@@ -1,0 +1,3 @@
+Component({
+  properties: { row: Object },
+})

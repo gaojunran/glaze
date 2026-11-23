@@ -1,0 +1,10 @@
+<view class="bench">
+  <text id="tick">{{tick}}</text>
+  <text id="title">{{rows[0].a}}</text>
+  <text id="last">{{rows[499].h}}</text>
+  <button id="update" class="update" bindtap="updateFirst">update</button>
+  <button id="update-all" class="update-all" bindtap="updateAll">update all</button>
+  <view class="list">
+    <props-row-object-native wx:for="{{rows}}" wx:key="id" wx:for-item="row" class="row-card" row="{{row}}" />
+  </view>
+</view>

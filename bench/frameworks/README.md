@@ -14,10 +14,10 @@ the same-harness Glaze/native suite in `docs/optimizations.md`.
 | App | Stack | Build | Routes |
 | --- | --- | --- | --- |
 | `apps/vue-mini` | `@vue-mini/core 1.2.16`, official create-vue-mini build | `pnpm install && pnpm build` | `pages/home/index` (flat), `pages/fine/index` (rich rows), `pages/components/index` (500 row components), `pages/scalars/index`, `pages/grid/index`, `pages/move/index`, `pages/props/index` |
-| `apps/taro` | Taro 4.3.3, React 18, **Vite compiler** | `pnpm install && pnpm build:weapp` | `pages/index/index`, `pages/fine/index`, `pages/components/index`, `pages/scalars/index`, `pages/grid/index`, `pages/move/index`, `pages/props/index` |
-| `apps/uni-app` | uni-app Vue3 Vite preset `3.0.0-5030420261029002` | `pnpm install && pnpm build:mp-weixin` | `pages/index/index`, `pages/fine/index`, `pages/components/index`, `pages/scalars/index`, `pages/grid/index`, `pages/move/index`, `pages/props/index` |
-| Glaze | `examples/solid-todo` | repository `pnpm build` | `pages/bench/index`, `pages/bench-fine/index`, `pages/bench-component-rows/index`, `pages/bench-component-rows-pure/index`, `pages/bench-scalars/index`, `pages/bench-grid/index`, `pages/bench-move/index`, `pages/bench-props/index` |
-| Native | `examples/solid-todo/src/static/pages/*` | repository `pnpm build` | `pages/native/index`, `pages/native-fine/index`, `pages/native-fine-projected/index`, `pages/native-component-rows/index`, `pages/native-scalars/index`, `pages/native-grid/index`, `pages/native-move/index`, `pages/native-props/index` |
+| `apps/taro` | Taro 4.3.3, React 18, **Vite compiler** | `pnpm install && pnpm build:weapp` | `pages/index/index`, `pages/fine/index`, `pages/components/index`, `pages/scalars/index`, `pages/grid/index`, `pages/move/index`, `pages/props/index`, `pages/props-object/index` |
+| `apps/uni-app` | uni-app Vue3 Vite preset `3.0.0-5030420261029002` | `pnpm install && pnpm build:mp-weixin` | `pages/index/index`, `pages/fine/index`, `pages/components/index`, `pages/scalars/index`, `pages/grid/index`, `pages/move/index`, `pages/props/index`, `pages/props-object/index` |
+| Glaze | `examples/solid-todo` | repository `pnpm build` | `pages/bench/index`, `pages/bench-fine/index`, `pages/bench-component-rows/index`, `pages/bench-component-rows-pure/index`, `pages/bench-scalars/index`, `pages/bench-grid/index`, `pages/bench-move/index`, `pages/bench-props/index`, `pages/bench-props-object/index` |
+| Native | `examples/solid-todo/src/static/pages/*` | repository `pnpm build` | `pages/native/index`, `pages/native-fine/index`, `pages/native-fine-projected/index`, `pages/native-component-rows/index`, `pages/native-scalars/index`, `pages/native-grid/index`, `pages/native-move/index`, `pages/native-props/index`, `pages/native-props-object/index` |
 
 The **flat** pages render 1000 `.row` elements and expose `#title`, `#update`
 and `.reverse` in every implementation. Glaze/native use `.bump`/`.tick` class
@@ -137,6 +137,20 @@ For the Glaze stateful and pure variants, use the same command with
 (`/pages/bench-component-rows/index` or
 `/pages/bench-component-rows-pure/index`); for native use
 `/pages/native-component-rows/index` without `--root`.
+
+```bash
+# Props object A/B: one `row` property per child instead of a..h
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
+  --port 9445 --route /pages/bench-props-object/index --neutral /pages/index/index \
+  --root '#app' --count 500 --row '.row-card' --first-text '.row-title' \
+  --update '#update' --update-all '#update-all' --title '#title' \
+  --last-text '#last' --skip-reverse --runs 3
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
+  --port 9445 --route /pages/native-props-object/index --neutral /pages/index/index \
+  --count 500 --row '.row-card' --first-text '.row-title' \
+  --update '#update' --update-all '#update-all' --title '#title' \
+  --last-text '#last' --skip-reverse --runs 3
+```
 
 The runner supports `--bump`, `--update-all`, `--toggle`, `--insert`,
 `--delete`, `--row` (row selector), `--first-text` (first-row text selector),
@@ -294,9 +308,39 @@ paths did not improve it (776–833 ms), so the number of list `DataChange` path
 is not the explanation by itself.
 
 The likely lever is to coalesce a component's props into fewer property writes,
-or to batch child property updates. An object-prop variant (one `row` object
-instead of eight properties) is the next experiment; it is not implemented or
-claimed here.
+or to batch child property updates. The object-prop A/B below tests the first
+lever.
+
+### Props-object A/B (2026-11-23)
+
+Same 500-row, 500-boundary shape, but the child has one property instead of
+eight. The page still owns the same eight-field rows and renders the same eight
+field projections (Glaze keeps its existing local counter text), so only the
+property bridge changes. Glaze child WXML reads
+`{{row.a}}`..`{{row.h}}`; native and the other frameworks use the equivalent
+object prop.
+
+| Implementation | Eight props | One object prop |
+| --- | ---: | ---: |
+| Glaze (stateful boundary) | 781–829 ms | **175–189 ms** |
+| Native WXML | 102–109 ms | **91–99 ms** |
+| uni-app Vue3 Vite | 136–188 ms | 131–146 ms |
+| Taro 4.3.3 (Vite) | 502–585 ms | 486–588 ms |
+
+Glaze drops 4.4–4.7×: the eight-property child update was dominated by eight
+property writes per child, not by Solid, the list diff, or child `setData` (the
+child still has `propSignals: []` and no child `setData`). Native improves only
+slightly, and Taro/uni-app do not improve at all, so this is a Glaze
+property-fan-out cost rather than a general mini-program cost.
+
+Vue Mini was not measured in this A/B; its minidev appservice did not respond to
+the automator during this run, and the existing eight-prop number is kept as the
+reference.
+
+This is still a fixture, not a compiler feature: the object prop changes the
+child's public API and requires the child to read `props.row.a` instead of
+`props.a`. A future compiler optimization would have to generate that shape for
+Glaze-to-Glaze components without changing external components or event props.
 
 ## Repeated-run correctness
 
