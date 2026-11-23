@@ -337,3 +337,20 @@ test('signals props read by an event handler inside a For body', () => {
   `)
   assert.deepEqual(signalNames(result), ['title'])
 })
+
+test('projects Switch and Match conditions', () => {
+  const result = compileComponent(`
+    import { Switch, Match } from 'solid-js'
+    export default function Page(props) {
+      return (
+        <view data-other={props.other}>
+          <Switch>
+            <Match when={props.mode === 'a'}><text>a</text></Match>
+            <Match when={props.mode === 'b'}><text>b</text></Match>
+          </Switch>
+        </view>
+      )
+    }
+  `)
+  assert.deepEqual(signalNames(result), [])
+})
