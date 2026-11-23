@@ -135,7 +135,8 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
   if (kind === 'Errored' && !fallback) throw new Error('<Errored> requires a fallback')
   if (kind === 'Errored') ctx.usesErrorBoundary = true
 
-  const outerBoundary = ctx.currentAsyncBoundary
+  const outerLoading = ctx.currentLoadingBoundary
+  const outerError = ctx.currentErrorBoundary
   const boundary = ctx.nextAsyncBoundary
   ctx.nextAsyncBoundary += 1
   if (on) {
@@ -226,9 +227,14 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
     kind: kind === 'Loading' ? 'loading' : 'error',
     boundary,
   })
-  ctx.currentAsyncBoundary = boundary
+  // A binding can sit under an inner Loading and an outer Errored, or the
+  // reverse. Track the nearest boundary per kind so an outer boundary still
+  // receives the state its inner counterpart does not handle.
+  if (kind === 'Loading') ctx.currentLoadingBoundary = boundary
+  else ctx.currentErrorBoundary = boundary
   const children = compileChildren(node.children, ctx, scope)
-  ctx.currentAsyncBoundary = outerBoundary
+  ctx.currentLoadingBoundary = outerLoading
+  ctx.currentErrorBoundary = outerError
 
   const condition = kind === 'Loading' && !fallback ? `!b${index}` : `b${index}`
   if (!fallback) return `<block wx:if="{{${condition}}}">${children}</block>`

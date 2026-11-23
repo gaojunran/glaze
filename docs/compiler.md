@@ -470,7 +470,7 @@ The compiler creates a provider block and emits:
 withProvider(Theme, ("dark"), () => {
   {
     const props = { get theme() { return (Theme); } };
-    const theme = useContext(props.theme);
+    const theme = ctx.context(props.theme);
     ...
   }
 })
@@ -499,21 +499,26 @@ return <text>{theme}</text>
 ```
 
 The value travels through the mini-program property bridge, so it must be
-JSON-like. A context declared with `createContext` in the **same file** cannot
-cross a boundary (the child module has no way to reconstruct the same object);
-import it from a module instead. Components that consume a boundary context
-defer their setup to `ready`, because the parent's first `setData` may land
-after the child is created.
+JSON-like. A context declared with `createContext` in the **same file** also
+crosses a boundary: its key is the source file plus the local name, so the
+parent and the separately compiled child agree on the same key. The generated
+child creates its own context object and re-enters it with the value from the
+property; context identity is not shared, but the provided value is. A context
+provided in the same component does not add a `glazecontext` property, because
+the inline provider already owns those reads. Components that consume a
+boundary context defer their setup to `ready`, because the parent's first
+`setData` may land after the child is created.
 
-A context value that is an object is wrapped in a reader proxy: providers pass
-the expression twice, once as the captured value and once as a `read` callback,
-and the child re-enters the provider with an accessor over `props.glazecontext`.
-Property reads therefore follow later updates without remounting the child tree.
-A primitive context value keeps the value captured when the provider ran; wrap
-it in an object or a signal-backed store when it must change. The proxy keeps
-the object identity stable, binds methods to the current value, and forwards
-`Object.keys`; it is not a replacement for a store, and destructuring
-(`const { color } = useContext(...)`) snapshots the current properties.
+Every generated `useContext` call goes through `ctx.context(...)` and returns a
+reader, for both object and primitive values: providers pass the expression
+twice, once as the captured value and once as a `read` callback, and the child
+re-enters the provider with an accessor over `props.glazecontext`. Later
+provider updates are therefore visible without remounting the child tree, and a
+string or number context is reactive exactly like an object. The generated
+reader is called at every use site, so methods, `Object.keys` and nested fields
+all see the current value. Destructuring (`const { color } = useContext(...)`)
+still snapshots the current properties; assign to a variable and read fields
+through it for reactivity.
 
 ### Async boundaries
 
@@ -528,13 +533,16 @@ Solid 2 `Loading` and `Errored` compile inside a component, including nested bou
 </Errored>
 ```
 
-Each boundary gets an id. Bindings inside it are emitted with that id, and
-`<Loading>` becomes a `wx:if` binding on `ctx.loading(id)`; `<Errored>` becomes
-`ctx.errored(id)`. A binding is governed by its **nearest** enclosing boundary,
-so an inner pending binding shows the inner fallback without hiding the outer
-content. A failed binding is skipped instead of writing `undefined`, so it
-cannot clear another binding's error. The fallback and the boundary's own
-condition belong to the outer boundary.
+Each boundary gets an id. Bindings inside it are emitted with the nearest
+Loading id and the nearest Errored id, and `<Loading>` becomes a `wx:if`
+binding on `ctx.loading(id)`; `<Errored>` becomes `ctx.errored(id)`. Tracking
+the two kinds separately is what aggregates an outer boundary: a binding under
+an inner Loading but an outer Errored reports pending to the inner Loading and
+errors to the outer Errored. A binding is still governed by its **nearest
+same-kind** boundary, so an inner pending binding shows the inner fallback
+without hiding the outer content. A failed binding is skipped instead of
+writing `undefined`, so it cannot clear another binding's error. The fallback
+and the boundary's own condition belong to the outer boundary.
 
 Bindings in a component with async boundaries are wrapped in one Solid memo
 each. The memo is the single evaluation node the data effect reads; a
@@ -555,8 +563,9 @@ value. The fallback is rendered through a single-element `wx:for`, so `error()`
 is rewritten to the WXML loop item and the dependency graph itself stays in JS.
 
 Boundaries inside a loop are rejected because their condition would need a
-per-row binding. `Loading on` and an `Errored` reset function are supported;
-boundary parent/child aggregation is not.
+per-row async identity; a single component-level status cannot distinguish one
+list row from another. `Loading on` and an `Errored` reset function are
+supported.
 
 Async behavior that is implemented:
 
@@ -575,8 +584,11 @@ Remaining async work, deliberately left for a later pass:
 - No Solid boundary tree and no boundary-output projection. First pending and
   real errors are captured by the runtime; only refetch pending uses Solid
   `isPending`.
-- Boundary parent/child status aggregation is not implemented; each boundary
-  reports only the bindings whose nearest boundary is itself.
+- Same-kind boundary nesting reports only bindings whose nearest boundary is
+  that boundary, matching Solid's nearest-boundary behavior. Cross-kind
+  aggregation (inner Loading with outer Errored, and the reverse) is
+  implemented; an outer boundary is not a single aggregate of every descendant
+  boundary.
 - `asyncStatus` condition bindings are projected directly with a microtask.
   This keeps them out of a held effect, but it has not been checked on a real
   device for visible intermediate frames.
@@ -880,11 +892,10 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
    their WXML lands in the parent's scope.
 2. **Named slots** require a component boundary. An inlined component can only
    use the default `props.children` slot.
-3. **Context** reaches a separate component only when the context is imported
-   from a module; a same-file `createContext` cannot cross a boundary. Object
-   values are read through a proxy and follow later updates; primitive values
-   are captured when the provider runs. Destructuring the context object
-   snapshots its current fields.
+3. **Context** reaches a separate component whether it is imported or declared
+   in the same file; the boundary key is the source file plus the context name.
+   Object and primitive values both go through a reader and follow later
+   updates; destructuring the reader's current value snapshots its fields.
 4. **Refs** expose a node handle with measurement, descendant queries,
    `focus`, `blur`, attribute access and `scrollIntoView`, not a DOM node. The
    node methods use `NodesRef.node()` when the base library provides it and
@@ -893,9 +904,10 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
    replacement (`spliceArrayDataOnPath` in the fallback path). A pure move is
    expressed as delete+insert over the changed middle; there is no LIS move
    scheduler yet, so a full reverse still sends one large middle chunk. The
-   previous list rows are copied one level deep, so a direct field mutation
-   followed by a new array (`items[0].done = true; return [...items]`) is
-   detected; mutating a nested object still follows the immutable update rule.
+   previous list rows are deep-cloned, so a direct or nested field mutation
+   followed by a new array (`items[0].meta.done = true; return [...items]`) is
+   detected and produces a path on the changed top-level field; the nested value
+   itself is sent whole.
 6. **Component event payloads** pass `event.detail` as one argument; multiple
    arguments arrive as an array.
 7. **Unsupported JSX** (`.map`, dynamic components, render props, `Portal`,
@@ -964,7 +976,7 @@ bundle size) is documented in `docs/build.md`.
 
 Run on 2026-11-23 in the repository workspace:
 
-- `pnpm -r test` — compiler 197 passed, build 120 passed, runtime 90 passed, shared 2 passed.
+- `pnpm -r test` — compiler 249 passed, build 120 passed, runtime 107 passed, shared 2 passed.
 - `pnpm build` — `9 pages, 20 components`.
 - `target/debug/minidev test --project examples/solid-todo --browser
   ~/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell`

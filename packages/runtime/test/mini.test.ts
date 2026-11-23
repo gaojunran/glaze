@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import test, { after } from 'node:test'
-import { createMemo, createSignal, createStore, NotReadyError } from 'solid-js'
+import { createContext, createMemo, createSignal, createStore, NotReadyError } from 'solid-js'
 import { defineGlazeComponent, listOps, listPatch } from '../src/mini.ts'
+import { withProvider } from '../src/provider.ts'
 
 const originalComponent = globalThis.Component
 globalThis.Component = (config) => config
@@ -1062,4 +1063,166 @@ test('detects a field mutated in place on a row object', async () => {
   setItems([...initial])
   await tick()
   assert.deepEqual(instance.pathCalls, [[['b0', 0, 'done'], true]])
+})
+
+test('detects a nested field mutated in place on a row object', async () => {
+  const row = { id: 1, meta: { tag: 'a', flags: [1] } }
+  const initial = [row]
+  let setItems
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    setup(ctx) {
+      const [items, set] = createSignal(initial)
+      setItems = set
+      ctx.bind(0, () => items())
+    },
+  })
+  const instance = createInstance(def, {}, { paths: true })
+  def.lifetimes.attached.call(instance)
+
+  row.meta.tag = 'b'
+  setItems([...initial])
+  await tick()
+  assert.deepEqual(instance.pathCalls, [[['b0', 0, 'meta'], { tag: 'b', flags: [1] }]])
+})
+
+
+test('a primitive context value updates a binding through ctx.context', async () => {
+  const Theme = createContext('light')
+  let setTheme
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    setup(ctx) {
+      const [theme, set] = createSignal('light')
+      setTheme = set
+      withProvider(
+        Theme,
+        'light',
+        () => {
+          const read = ctx.context(Theme)
+          ctx.bind(0, () => read())
+        },
+        () => theme(),
+      )
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  assert.equal(instance.calls.at(-1).b0, 'light')
+  setTheme('dark')
+  await tick()
+  assert.equal(instance.calls.at(-1).b0, 'dark')
+})
+
+test('an object context value exposes current fields through ctx.context', async () => {
+  const Palette = createContext({ color: 'light' })
+  let setColor
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    setup(ctx) {
+      const [color, set] = createSignal('light')
+      setColor = set
+      withProvider(
+        Palette,
+        { color: 'light' },
+        () => {
+          const read = ctx.context(Palette)
+          ctx.bind(0, () => read().color)
+        },
+        () => ({ color: color() }),
+      )
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  assert.equal(instance.calls.at(-1).b0, 'light')
+  setColor('dark')
+  await tick()
+  assert.equal(instance.calls.at(-1).b0, 'dark')
+})
+
+
+test('a binding uses the nearest Loading and the nearest Errored boundary separately', async () => {
+  let setPhase
+  const def = defineGlazeComponent({
+    data: { b0: null, b1: null, b2: null },
+    errorBoundary: true,
+    asyncStatus: [
+      { index: 0, kind: 'loading', boundary: 0 },
+      { index: 1, kind: 'error', boundary: 1 },
+    ],
+    setup(ctx) {
+      const [phase, set] = createSignal(0)
+      setPhase = set
+      ctx.bind(0, () => ctx.loading(0))
+      ctx.bind(1, () => ctx.errored(1))
+      ctx.bind(2, () => {
+        if (phase() === 0) throw new NotReadyError()
+        throw new Error('boom')
+      }, 0, 1)
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  assert.equal(instance.calls.at(-1).b0, true)
+  assert.notEqual(instance.calls.at(-1).b1, true)
+
+  setPhase(1)
+  await tick()
+  assert.equal(instance.calls.at(-1).b0, false)
+  assert.equal(instance.calls.at(-1).b1, true)
+})
+
+
+test('detects a nested array mutated in place on a row object', async () => {
+  const row = { id: 1, tags: ['a'] }
+  const initial = [row]
+  let setItems
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    setup(ctx) {
+      const [items, set] = createSignal(initial)
+      setItems = set
+      ctx.bind(0, () => items())
+    },
+  })
+  const instance = createInstance(def, {}, { paths: true })
+  def.lifetimes.attached.call(instance)
+
+  row.tags.push('b')
+  setItems([...initial])
+  await tick()
+  assert.deepEqual(instance.pathCalls, [[['b0', 0, 'tags'], ['a', 'b']]])
+})
+
+
+test('clears Loading when a binding fails without an Errored boundary', async () => {
+  let setPhase
+  const def = defineGlazeComponent({
+    asyncStatus: [{ index: 1, kind: 'loading', boundary: 0 }],
+    data: { b0: null, b1: null },
+    setup(ctx) {
+      const [phase, set] = createSignal(0)
+      setPhase = set
+      ctx.bind(0, () => {
+        if (phase() === 0) throw new NotReadyError()
+        throw new Error('no error boundary')
+      }, 0, null)
+      ctx.bind(1, () => ctx.loading(0))
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  assert.equal(instance.calls.at(-1).b1, true)
+
+  setPhase(1)
+  await tick()
+  await tick()
+  assert.equal(instance.calls.at(-1).b1, false)
 })

@@ -66,10 +66,12 @@ event handler works again, and a memo-backed binding recomputes.
 A list binding used to keep `array.slice()`, which preserves the same row
 objects. `items[0].done = true` followed by `setItems([...items])` therefore
 compared the mutated row against itself and produced no patch. `snapshotList`
-now copies each object row one level deep, so a direct field mutation is visible
-to `listPatch` and becomes a field path. Nested objects still require replacing
-the row object; copying arbitrarily deep data on every binding would cost more
-than the update it detects.
+now clones each object row deeply, so a direct field mutation and a nested
+field mutation are both visible to `listPatch` and become a field path. Only the
+changed top-level field is sent: the path still stops at the row field, and a
+nested object value travels whole. Prototype-less data and cycles are handled;
+class instances beyond arrays, dates and regular expressions are copied as plain
+objects, so replace such a row instead of mutating it.
 
 ### Loading on and Errored reset
 
@@ -86,13 +88,22 @@ dependencies did not change. The `Errored` fallback receives a generated reset
 function; the compiler rewrites the fallback parameter to a setup constant that
 calls `ctx.reset`.
 
-### Context value proxy
+### Async boundary kinds
 
-`withProvider` accepts an optional `read` callback. Object values are wrapped in
-a proxy whose property reads call `read`, so a child sees later provider values
-without remounting. `withBoundaryContexts` accepts either an object or an
-accessor and passes a matching reader for each context key. Primitive values are
-captured at mount because a proxy cannot preserve primitive identity.
+A binding stores two boundary ids: the nearest `Loading` and the nearest
+`Errored`. Pending uses the loading id; failures and `Errored` values use the
+error id. That is what lets an outer `Errored` catch a failure inside an inner
+`Loading`, and an outer `Loading` show pending work inside an inner `Errored`,
+while same-kind nesting still follows the nearest boundary.
+
+### Context readers
+
+`withProvider` accepts an optional `read` callback and wraps it in a context
+reader. `withBoundaryContexts` passes a reader for each context key, so a child
+sees later provider values without remounting. The compiler routes every
+generated `useContext` through `ctx.context`, which returns the reader (or wraps
+a default value in one). Object and primitive context values therefore behave
+the same; destructuring still snapshots the current value.
 
 ### Primitive list rows
 

@@ -17,10 +17,10 @@ test('an object context value follows later reads without remounting the provide
       () => ({ get color() { return color() } }),
     )
   })
-  assert.equal(seen.color, 'light')
+  assert.equal(seen().color, 'light')
   setColor('dark')
   flush()
-  assert.equal(seen.color, 'dark')
+  assert.equal(seen().color, 'dark')
 })
 
 test('a boundary context accessor updates the proxied value', () => {
@@ -36,14 +36,15 @@ test('a boundary context accessor updates the proxied value', () => {
       },
     )
   })
-  assert.equal(seen.color, 'light')
+  assert.equal(seen().color, 'light')
   setColor('dark')
   flush()
-  assert.equal(seen.color, 'dark')
+  assert.equal(seen().color, 'dark')
 })
 
-test('a primitive context value keeps the value captured at mount', () => {
+test('a primitive context value follows later reads through the reader', () => {
   const Theme = createContext('light')
+  const [value, setValue] = createSignal('light')
   let seen
   createRoot(() => {
     withProvider(
@@ -52,8 +53,22 @@ test('a primitive context value keeps the value captured at mount', () => {
       () => {
         seen = useContext(Theme)
       },
-      () => 'dark',
+      () => value(),
     )
   })
-  assert.equal(seen, 'light')
+  assert.equal(seen(), 'light')
+  setValue('dark')
+  flush()
+  assert.equal(seen(), 'dark')
+})
+
+test('withProvider without a reader keeps the raw value for hand-written code', () => {
+  const Theme = createContext('light')
+  let seen
+  createRoot(() => {
+    withProvider(Theme, 'raw', () => {
+      seen = useContext(Theme)
+    })
+  })
+  assert.equal(seen, 'raw')
 })

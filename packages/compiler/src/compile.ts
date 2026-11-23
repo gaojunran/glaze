@@ -6,6 +6,7 @@ import { emitModule } from './emit.ts'
 import { eventNameFor, splitEventBinding } from './events.ts'
 import { parseComponent, collectImports } from './parse.ts'
 import { compileNode } from './elements.ts'
+import { rewriteContextAccess } from './context.ts'
 import type {
   AnyNode,
   CompileOptions,
@@ -122,7 +123,8 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     usesSlot: false,
     usesErrorBoundary: false,
     nextAsyncBoundary: 0,
-    currentAsyncBoundary: null,
+    currentLoadingBoundary: null,
+    currentErrorBoundary: null,
     asyncStatus: [],
     namedSlots: new Set<string>(),
     usesWxs: false,
@@ -193,7 +195,8 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
         code: this.guardCode(codeOf(expression)),
         listKey,
         block: this.currentBlock,
-        asyncBoundary: this.currentAsyncBoundary,
+        asyncBoundary: this.currentLoadingBoundary,
+        errorBoundary: this.currentErrorBoundary,
       })
       return index
     },
@@ -217,7 +220,8 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
         code: this.guardCode(code),
         listKey,
         block: this.currentBlock,
-        asyncBoundary: this.currentAsyncBoundary,
+        asyncBoundary: this.currentLoadingBoundary,
+        errorBoundary: this.currentErrorBoundary,
       })
       return index
     },
@@ -273,19 +277,40 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
   // child wraps its setup in the providers it actually consumes, so a provider
   // in the parent can reach a separate mini-program component without sharing
   // its Solid owner.
+  const providedHere = new Set<string>()
+  walkAst(jsx, (node) => {
+    if (!t.isJSXElement(node)) return
+    const name = node.openingElement.name
+    if (t.isJSXIdentifier(name)) providedHere.add(name.name)
+    if (
+      t.isJSXMemberExpression(name) &&
+      t.isJSXIdentifier(name.object) &&
+      t.isJSXIdentifier(name.property, { name: 'Provider' })
+    ) {
+      providedHere.add(name.object.name)
+    }
+  })
   const collectBoundaryContexts = (root) =>
     walkAst(root, (node) => {
       if (!t.isCallExpression(node) || !t.isIdentifier(node.callee, { name: 'useContext' })) return
       const argument = node.arguments[0]
       if (!t.isIdentifier(argument)) return
       const entry = contextKeys.get(argument.name)
-      if (!entry?.imported) return
+      // A context provided in this component is consumed through that inline
+      // provider. Only a context owned by an outer component needs the
+      // boundary property.
+      if (!entry || providedHere.has(argument.name)) return
       if (!ctx.boundaryContexts.some((item) => item.key === entry.key)) {
         ctx.boundaryContexts.push({ name: argument.name, key: entry.key })
       }
     })
   collectBoundaryContexts({ type: 'BlockStatement', body: statements.slice(0, returnIndex) })
   collectBoundaryContexts(jsx)
+
+  // `useContext` returns a reader in generated code so object and primitive
+  // values both follow provider updates. The source keeps its normal Solid
+  // shape; only the generated AST is rewritten.
+  rewriteContextAccess(...statements)
 
   const eventProps = Object.fromEntries(
     props

@@ -88,10 +88,10 @@ Before writing code:
    <view style={{ marginTop: 2, color: props.color }} />
    ```
 
-10. **Context must be importable from a module.** Define it in a shared
-    `.ts` file with `createContext`, then `useContext` it. A same-file
-    `createContext` cannot cross a component boundary. Object context values
-    stay reactive; primitive values are captured when the provider runs.
+10. **Context works across component boundaries.** Define it in a shared `.ts`
+    file when several components need it; a same-file `createContext` also
+    crosses a boundary by source-file key. Object and primitive values both stay
+    reactive through a reader.
 
 11. **Async state is a memo under a boundary.** Use `createMemo(async () => ...)`
     (or a memo that throws `NotReadyError`), not a React effect or resource

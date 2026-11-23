@@ -577,7 +577,8 @@ test('compiles a context provider around an inlined consumer', () => {
 
   assert.match(result.wxml, /<text class="theme">\{\{b0\}\}<\/text>/)
   assert.match(result.js, /withProvider\(Theme, \("dark"\), \(\) => \{/)
-  assert.match(result.js, /const theme = useContext\(props\.theme\)/)
+  assert.match(result.js, /const theme = ctx\.context\(props\.theme\)/)
+  assert.match(result.js, /ctx\.bind\(0, \(\) => \(theme\(\)\)\)/)
 })
 
 test('separates event props from properties', () => {
@@ -1197,7 +1198,7 @@ test('supports Solid 2 context providers and rejects loop providers', () => {
     }
   `)
   assert.match(result.js, /withProvider\(Theme, \("dark"\)/)
-  assert.match(result.js, /ctx\.bind\(0, \(\) => \(useContext\(Theme\)\)\)/)
+  assert.match(result.js, /ctx\.bind\(0, \(\) => \(ctx\.context\(Theme\)\(\)\)\)/)
 })
 
 test('preserves text whitespace without WXML brace collisions', () => {
@@ -1393,8 +1394,8 @@ test('assigns separate ids to nested Loading boundaries', () => {
   `)
   assert.match(result.wxml, /wx:if="\{\{b0\}\}"><text>outer<\/text><\/block><block wx:else><block wx:if="\{\{b1\}\}"><text>inner/)
   assert.match(result.js, /ctx\.bind\(0, \(\) => \(ctx\.loading\(0\)\)\)/)
-  assert.match(result.js, /ctx\.bind\(1, \(\) => \(ctx\.loading\(1\)\), 0\)/)
-  assert.match(result.js, /ctx\.bind\(2, \(\) => \(later\(\)\), 1\)/)
+  assert.match(result.js, /ctx\.bind\(1, \(\) => \(ctx\.loading\(1\)\), 0, null\)/)
+  assert.match(result.js, /ctx\.bind\(2, \(\) => \(later\(\)\), 1, null\)/)
 })
 
 test('marks relative resource literals for build-time asset rewriting', () => {
@@ -1433,7 +1434,7 @@ test('compiles an Errored function fallback with an error accessor', () => {
   assert.match(result.wxml, /wx:for-item="error"/)
   assert.match(result.wxml, /\{\{error\.message\}\}/)
   assert.match(result.js, /ctx\.bind\(0, \(\) => \(ctx\.errorArray\(0\)\)\)/)
-  assert.match(result.js, /ctx\.bind\(2, \(\) => \(broken\(\)\), 0\)/)
+  assert.match(result.js, /ctx\.bind\(2, \(\) => \(broken\(\)\), null, 0\)/)
 })
 
 test('keeps double-quoted loop expressions out of WXML attribute delimiters', () => {
@@ -1843,4 +1844,20 @@ test('rejects a nested For key that is not a single field', () => {
     }
   `)
   assert.match(result.wxml, /wx:key="id"/)
+})
+
+test('a binding selects the nearest Loading and Errored boundary independently', () => {
+  const result = compileComponent(`
+    import { Errored, Loading } from 'solid-js'
+    export default function Page() {
+      return (
+        <Errored fallback={(error) => <text>{error().message}</text>}>
+          <Loading fallback={<text>loading</text>}>
+            <text>{later()}</text>
+          </Loading>
+        </Errored>
+      )
+    }
+  `)
+  assert.match(result.js, /ctx\.bind\(3, \(\) => \(later\(\)\), 1, 0\)/)
 })

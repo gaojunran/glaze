@@ -12,6 +12,7 @@ import {
 import { eventNameFor, splitEventBinding } from './events.ts'
 import { compileChildren, compileNode } from './elements.ts'
 import { parseComponent } from './parse.ts'
+import { rewriteContextAccess } from './context.ts'
 import type { AnyNode, CompilerContext, Scope } from './types.ts'
 
 export function usesSlotElement(node) {
@@ -209,6 +210,7 @@ export function inlineComponent(node, ctx, scope, name, source) {
   } catch {
     return null
   }
+  rewriteContextAccess(...child.statements)
   if (usesSlotElement(child.jsx)) return null
   const inLoop = Boolean(scope)
   if (inLoop && !isLoopInlineEligible(child)) return null

@@ -7,18 +7,71 @@ const keyOf = (item: unknown, key: string) =>
 
 const isObjectItem = (item: unknown) => item !== null && typeof item === 'object'
 
+/** Structural equality, used to ignore unchanged nested values after cloning. */
+const equalValue = (left: unknown, right: unknown, seen: WeakMap<object, WeakSet<object>>): boolean => {
+  if (Object.is(left, right)) return true
+  if (!isObjectItem(left) || !isObjectItem(right)) return false
+  if (left instanceof Date || right instanceof Date) {
+    return left instanceof Date && right instanceof Date && left.getTime() === right.getTime()
+  }
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false
+    for (let index = 0; index < left.length; index += 1) {
+      if (!equalValue(left[index], right[index], seen)) return false
+    }
+    return true
+  }
+  const leftObject = left as object
+  const rightObject = right as object
+  const compared = seen.get(leftObject)
+  if (compared?.has(rightObject)) return true
+  if (!compared) seen.set(leftObject, new WeakSet([rightObject]))
+  else compared.add(rightObject)
+  const leftRecord = left as Record<string, unknown>
+  const rightRecord = right as Record<string, unknown>
+  const leftKeys = Object.keys(leftRecord)
+  if (leftKeys.length !== Object.keys(rightRecord).length) return false
+  for (const key of leftKeys) {
+    if (!Object.hasOwn(rightRecord, key)) return false
+    if (!equalValue(leftRecord[key], rightRecord[key], seen)) return false
+  }
+  return true
+}
+
 /**
- * Copy each row one level deep. A plain array slice keeps the same row
- * objects, so `items[0].done = true` followed by a new array would compare
- * equal against itself. Copying the row fields makes a direct field mutation
- * visible to `listPatch`; nested objects still follow the immutable update
- * rule.
+ * Deep-copy a list row before it is stored as the previous value. Array
+ * slicing keeps the same row objects, so `items[0].meta.done = true` followed
+ * by a new array would compare equal against itself at every level. A deep
+ * snapshot makes both direct and nested field mutations visible to
+ * `listPatch`; only the changed top-level field is still sent, because
+ * `listPatch` compares row fields one level at a time.
  */
+const cloneValue = (value: unknown, seen: WeakMap<object, unknown>): unknown => {
+  if (value === null || typeof value !== 'object') return value
+  const object = value as object
+  const existing = seen.get(object)
+  if (existing) return existing
+  if (Array.isArray(value)) {
+    const copy: unknown[] = []
+    seen.set(object, copy)
+    for (const item of value) copy.push(cloneValue(item, seen))
+    return copy
+  }
+  if (value instanceof Date) return new Date(value.getTime())
+  if (value instanceof RegExp) return new RegExp(value.source, value.flags)
+  const copy: Record<string, unknown> = {}
+  seen.set(object, copy)
+  for (const key of Object.keys(value)) {
+    copy[key] = cloneValue((value as Record<string, unknown>)[key], seen)
+  }
+  return copy
+}
+
+/** Internal helper, exported for unit tests. */
 export function snapshotList(value: unknown): unknown {
   if (!Array.isArray(value)) return value
-  return value.map((item) =>
-    isObjectItem(item) && !Array.isArray(item) ? { ...(item as object) } : item,
-  )
+  const seen = new WeakMap<object, unknown>()
+  return value.map((item) => (isObjectItem(item) ? cloneValue(item, seen) : item))
 }
 
 /** Internal helper, exported for unit tests. */
@@ -86,9 +139,8 @@ export function listPatch(
     if (!before || !item || typeof before !== 'object' || typeof item !== 'object') return null
     if (!Object.is(keyOf(before, key), keyOf(item, key))) return null
 
-    if (before === item) continue
     for (const field of Object.keys(item)) {
-      if (Object.is(before[field], item[field])) continue
+      if (equalValue(before[field], item[field], new WeakMap())) continue
       if (!(field in before)) return null
       patch.push({ path: [binding, index, field], value: item[field] })
     }

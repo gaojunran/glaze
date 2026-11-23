@@ -12,37 +12,23 @@ export type BoundaryContextEntry = { context: GlazeContextProvider; key: string 
 type ContextValues = Record<string, unknown> | null | undefined
 type ContextValuesSource = ContextValues | (() => ContextValues)
 
+const CONTEXT_READER = Symbol('glaze.contextReader')
+
+export type ContextReader = (() => unknown) & { [CONTEXT_READER]: true }
+
+export const isContextReader = (value: unknown): value is ContextReader =>
+  typeof value === 'function' && (value as { [CONTEXT_READER]?: true })[CONTEXT_READER] === true
+
 /**
- * A context value is normally an object read by descendants. Wrapping it in a
- * proxy lets every property read observe the latest provider value without
- * remounting the child tree. Primitives cannot be proxied without changing
- * their identity, so they keep the value captured when the provider ran.
+ * Every generated context read goes through a reader, including primitive
+ * values. A Proxy preserves object identity but cannot represent a string, and
+ * a captured primitive cannot follow a provider update; an accessor handles
+ * both without changing the user-facing `const theme = useContext(Theme)` form.
  */
-const reactiveValue = (read: () => unknown, captured: unknown): unknown => {
-  const initial = read()
-  if (initial === null || typeof initial !== 'object') return captured
-  const target: object = Array.isArray(initial) ? [] : {}
-  return new Proxy(target, {
-    get(_target, key) {
-      const current = read() as Record<PropertyKey, unknown> | null | undefined
-      if (current == null) return undefined
-      const value = current[key as keyof typeof current]
-      return typeof value === 'function' ? value.bind(current) : value
-    },
-    has(_target, key) {
-      const current = read()
-      return current != null && typeof current === 'object' && key in current
-    },
-    ownKeys() {
-      const current = read()
-      return current != null && typeof current === 'object' ? Reflect.ownKeys(current) : []
-    },
-    getOwnPropertyDescriptor(_target, key) {
-      const current = read()
-      if (current == null || typeof current !== 'object' || !(key in current)) return undefined
-      return { enumerable: true, configurable: true }
-    },
-  })
+export const createContextReader = (read: () => unknown): ContextReader => {
+  const reader = (() => read()) as ContextReader
+  reader[CONTEXT_READER] = true
+  return reader
 }
 
 const readValues = (source: ContextValuesSource): ContextValues =>
@@ -84,7 +70,7 @@ export function withProvider(
   setup: () => void,
   read?: () => unknown,
 ): void {
-  const provided = read ? reactiveValue(read, value) : value
+  const provided = read ? createContextReader(read) : value
   const provider = context({
     value: provided,
     children: () => {

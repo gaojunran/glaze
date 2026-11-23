@@ -70,7 +70,7 @@ Working spike, not a production framework. It covers:
 - build: pages, subpackages (including independent), per-page config, shared
   runtime, assets, Tailwind 4, SCSS/Less, incremental `watch`, Vite bridge and
   single-file snippets;
-- validation: 468 unit tests (shared 2, runtime 100, compiler 246, build 120),
+- validation: 478 unit tests (shared 2, runtime 107, compiler 249, build 120),
   glass-easel rendering tests and 9 minidev e2e cases.
 
 Known limits are documented in [Compiler](docs/compiler.md),

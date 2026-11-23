@@ -19,6 +19,7 @@ export type BindingEntry = {
   listKey: string | null
   block: number
   asyncBoundary: number | null
+  errorBoundary: number | null
 }
 export type EventEntry = { code: string; ast: AnyNode; scope: Scope | null; custom: boolean; block: number }
 export type RefEntry = { code: string; block: number }
@@ -110,7 +111,8 @@ export type CompilerContext = {
   usesSlot: boolean
   usesErrorBoundary: boolean
   nextAsyncBoundary: number
-  currentAsyncBoundary: number | null
+  currentLoadingBoundary: number | null
+  currentErrorBoundary: number | null
   asyncStatus: { index: number; kind: 'loading' | 'error'; boundary: number }[]
   namedSlots: Set<string>
   usesWxs: boolean

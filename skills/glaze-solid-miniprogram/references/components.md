@@ -148,14 +148,15 @@ const palette = useContext(Palette)
 
 Rules:
 
-- A same-file `createContext` cannot cross a component boundary. Import it from
-  a shared module.
-- An object context value is exposed through a reader proxy, so property reads
-  follow later updates without remounting the child tree. A primitive value is
-  captured when the provider runs; wrap it in an object/store if it must change.
-- Destructuring a context object snapshots its current fields:
-  `const { color } = useContext(Palette)` will not track later changes. Read
-  `palette.color` in the reactive expression.
+- A same-file `createContext` can cross a component boundary. Its key is the
+  source file plus the local name, so the child module reconstructs the provider
+  and receives the value through `glazecontext`. Import it from a shared module
+  when several components need the same context object.
+- Object and primitive context values both go through a reader, so later
+  provider updates are visible without remounting the child tree.
+- Destructuring a context read snapshots its current fields:
+  `const { color } = useContext(Palette)` will not track later changes. Assign it
+  to a variable and read `palette.color` in the reactive expression.
 - Provider values cross the mini-program property bridge, so they must be
   JSON-like; functions and class instances do not survive.
 - Solid 2 supports both `<Theme.Provider value={...}>` and `<Theme value={...}>`.
