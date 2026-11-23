@@ -126,6 +126,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     currentLoadingBoundary: null,
     currentErrorBoundary: null,
     asyncStatus: [],
+    listProjectionBlocked: new Set<number>(),
     namedSlots: new Set<string>(),
     usesWxs: false,
     usesWxsValue: false,
@@ -197,6 +198,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
         block: this.currentBlock,
         asyncBoundary: this.currentLoadingBoundary,
         errorBoundary: this.currentErrorBoundary,
+        listFields: null,
       })
       return index
     },
@@ -222,6 +224,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
         block: this.currentBlock,
         asyncBoundary: this.currentLoadingBoundary,
         errorBoundary: this.currentErrorBoundary,
+        listFields: null,
       })
       return index
     },
@@ -381,6 +384,13 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
 
   const effectivePropsParam =
     propsParam?.name ?? (ctx.boundaryContexts.length > 0 ? '__glazeProps' : null)
+  const listFields = Object.fromEntries(
+    ctx.bindings.flatMap((binding, index) =>
+      binding.listFields && binding.listFields.length > 0
+        ? [[String(index), binding.listFields] as const]
+        : [],
+    ),
+  )
   const js = emitModule(ast, statements.slice(0, returnIndex), ctx, {
     bindingGroupSize: options.bindingGroupSize,
     propsParam: effectivePropsParam,
@@ -394,6 +404,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     boundaryContexts: ctx.boundaryContexts,
     asyncStatus: ctx.asyncStatus,
     propSignals,
+    listFields,
   })
 
   return {
@@ -409,6 +420,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     boundaryContexts: ctx.boundaryContexts,
     asyncStatus: ctx.asyncStatus,
     propSignals,
+    listFields,
     components: ctx.components,
     inlineComponents: ctx.inlineComponents,
     assets: ctx.assets,

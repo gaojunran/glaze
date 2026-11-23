@@ -129,6 +129,96 @@ export function inferKeyedField(fn) {
   return t.isIdentifier(body.property) ? body.property.name : null
 }
 
+function unwrapTs(node) {
+  let current = node
+  while (
+    current &&
+    (t.isTSAsExpression(current) ||
+      t.isTSSatisfiesExpression(current) ||
+      t.isTSNonNullExpression(current))
+  ) {
+    current = current.expression
+  }
+  return current
+}
+
+function itemScope(scope, name) {
+  for (let cursor = scope; cursor; cursor = cursor.parent) {
+    if (cursor.item === name) return cursor
+  }
+  return null
+}
+
+function addListField(ctx, binding, field) {
+  const entry = ctx.bindings[binding]
+  if (!entry) return
+  const fields = entry.listFields ?? []
+  if (!fields.includes(field)) fields.push(field)
+  entry.listFields = fields
+}
+
+/**
+ * Record which top-level row fields WXML actually reads. The runtime can then
+ * project only those fields into component data instead of sending the whole
+ * object (for example a large `extra` payload that the template never uses).
+ *
+ * Anything the compiler cannot prove is a static field access disables
+ * projection for that loop; falling back to the full row is always correct.
+ */
+export function noteListFields(expression, scope, ctx) {
+  if (!scope) return
+  const visit = (node, parent) => {
+    if (!node || typeof node !== 'object') return
+
+    if (t.isIdentifier(node)) {
+      if (isStaticPropertyKey(node, parent)) return
+      const owner = itemScope(scope, node.name)
+      if (!owner || owner.listBinding == null) return
+      const memberObject =
+        parent &&
+        (t.isMemberExpression(parent) || t.isOptionalMemberExpression(parent)) &&
+        parent.object === node
+      if (!memberObject) ctx.listProjectionBlocked.add(owner.listBinding)
+      return
+    }
+
+    if (t.isMemberExpression(node) || t.isOptionalMemberExpression(node)) {
+      const object = unwrapTs(node.object)
+      if (t.isIdentifier(object)) {
+        const owner = itemScope(scope, object.name)
+        if (owner && owner.listBinding != null) {
+          const binding = owner.listBinding
+          if (node.computed) {
+            const property = unwrapTs(node.property)
+            if (t.isStringLiteral(property)) addListField(ctx, binding, property.value)
+            else ctx.listProjectionBlocked.add(binding)
+          } else if (t.isIdentifier(node.property)) {
+            addListField(ctx, binding, node.property.name)
+          } else {
+            ctx.listProjectionBlocked.add(binding)
+          }
+          return
+        }
+      }
+      visit(object, node)
+      if (node.computed) visit(node.property, node)
+      return
+    }
+
+    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+      const value = node[key]
+      if (Array.isArray(value)) {
+        for (const child of value) visit(child, node)
+      } else {
+        visit(value, node)
+      }
+    }
+  }
+  for (const item of Array.isArray(expression) ? expression : [expression]) {
+    visit(item, null)
+  }
+}
+
 export function inlineExpression(expression, scope, ctx) {
   if (
     t.isStringLiteral(expression) ||
@@ -139,6 +229,7 @@ export function inlineExpression(expression, scope, ctx) {
     return wxmlCodeOf(expression)
   }
   const rewritten = rewriteAccessorCalls(expression, scope)
+  noteListFields(rewritten, scope, ctx)
   if (!dependsOnLoop(rewritten, scope)) {
     return `b${ctx.addBinding(rewritten)}`
   }

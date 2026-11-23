@@ -17,7 +17,7 @@ import {
   reportBindingError as logBindingError,
   SCALAR_BINDING_GROUP,
 } from './data.ts'
-import { listOps, listPatch, snapshotList } from './list.ts'
+import { listOps, listPatch, projectList, snapshotList } from './list.ts'
 import { isContextReader, withBoundaryContexts, withProvider } from './provider.ts'
 import { createNodeRef } from './ref.ts'
 declare const Component: (options: Record<string, unknown>) => unknown
@@ -34,7 +34,7 @@ import type {
 
 export { className, styleName, textValue } from './styles.ts'
 export { withBoundaryContexts, withProvider } from './provider.ts'
-export { listOps, listPatch, snapshotList } from './list.ts'
+export { listOps, listPatch, projectList, snapshotList } from './list.ts'
 export type { GlazeComponentConfig, GlazeContext, GlazeNode } from './types.ts'
 
 export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
@@ -302,8 +302,19 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     Object.create(null),
     config.listBindings ?? {},
   )
+  const listFields: Record<string, string[]> = Object.assign(
+    Object.create(null),
+    config.listFields ?? {},
+  )
 
   const isListBinding = (index: number) => Object.hasOwn(listBindings, index)
+  const projectValue = (index: number, value: unknown) => {
+    if (!isListBinding(index)) return value
+    const key = listBindings[index]
+    const fields = listFields[index]
+    if (!fields || !key || key === '*this') return value
+    return projectList(value, fields.includes(key) ? fields : [...fields, key])
+  }
   const snapshotValue = (index: number, value: unknown) =>
     isListBinding(index) ? snapshotList(value) : value
 
@@ -373,7 +384,8 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         try {
           const value = fn()
           state.initial[index] = value
-          state.previous[index] = snapshotValue(index, value)
+          const projected = projectValue(index, value)
+          state.previous[index] = snapshotValue(index, projected)
           // The initial pass already committed a value, so the boundary status
           // effect below may probe `isPending` for a later refetch.
           if (state.bindingBoundaries[index] != null || state.bindingErrorBoundaries[index] != null) state.settled[index] = true
@@ -381,7 +393,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           // must not alias the signal array, or the next page instance would
           // inherit a row mutated by the previous one.
           initial[`b${index}`] = normalizeDataValue(
-            isListBinding(index) ? snapshotValue(index, value) : value,
+            isListBinding(index) ? snapshotValue(index, projected) : value,
           )
         } catch (error) {
           // One async or broken binding must not prevent the component from
@@ -561,13 +573,17 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       // which also keeps the template engine on its binding-map path longer.
       if (!key && Object.is(value, state.previous[index])) return
       const binding = `b${index}`
-      const patch = key ? listPatch(state.previous[index], value, key, binding) : null
+      const projected = projectValue(index, value)
+      // A projected row may still contain an object field. Snapshot it before
+      // it enters component data, because the platform mutates data in place.
+      const next = isListBinding(index) && listFields[index] ? snapshotList(projected) : projected
+      const patch = key ? listPatch(state.previous[index], next, key, binding) : null
       if (patch) {
         schedule(patch)
       } else {
         const ops =
           key && typeof component.spliceArrayDataOnPath === 'function'
-            ? listOps(state.previous[index], value, key)
+            ? listOps(state.previous[index], next, key)
             : null
         if (ops) {
           schedule(
@@ -577,10 +593,10 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
             })),
           )
         } else {
-          schedule([{ path: [binding], value }])
+          schedule([{ path: [binding], value: next }])
         }
       }
-      state.previous[index] = snapshotValue(index, value)
+      state.previous[index] = snapshotValue(index, next)
     }
 
     // Status conditions are projected directly from the same signals the

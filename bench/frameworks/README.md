@@ -17,7 +17,7 @@ the same-harness Glaze/native suite in `docs/optimizations.md`.
 | `apps/taro` | Taro 4.3.3, React 18, **Vite compiler** | `pnpm install && pnpm build:weapp` | `pages/index/index`, `pages/fine/index`, `pages/components/index` |
 | `apps/uni-app` | uni-app Vue3 Vite preset `3.0.0-5030420261029002` | `pnpm install && pnpm build:mp-weixin` | `pages/index/index`, `pages/fine/index`, `pages/components/index` |
 | Glaze | `examples/solid-todo` | repository `pnpm build` | `pages/bench/index`, `pages/bench-fine/index`, `pages/bench-component-rows/index`, `pages/bench-component-rows-pure/index` |
-| Native | `examples/solid-todo/src/static/pages/*` | repository `pnpm build` | `pages/native/index`, `pages/native-fine/index`, `pages/native-component-rows/index` |
+| Native | `examples/solid-todo/src/static/pages/*` | repository `pnpm build` | `pages/native/index`, `pages/native-fine/index`, `pages/native-fine-projected/index`, `pages/native-component-rows/index` |
 
 The **flat** pages render 1000 `.row` elements and expose `#title`, `#update`
 and `.reverse` in every implementation. Glaze/native use `.bump`/`.tick` class
@@ -117,6 +117,10 @@ NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
   --port 9446 --route /pages/native-fine/index --neutral /pages/index/index \
   --count 5000 --bump '#bump' --update '#update' --toggle '#toggle' \
   --insert '#insert' --delete '#delete' --last 'Row 4999' --runs 3
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
+  --port 9446 --route /pages/native-fine-projected/index --neutral /pages/index/index \
+  --count 5000 --bump '#bump' --update '#update' --toggle '#toggle' \
+  --insert '#insert' --delete '#delete' --last 'Row 4999' --runs 3
 ```
 
 ```bash
@@ -166,8 +170,9 @@ the simulator's ~50 ms polling floor, so only Taro's reverse is clearly slower.
 
 | Implementation | First render | Bump | Single-field update | Toggle first | Insert first | Delete first | Reverse |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Glaze | 4498–4587 ms | 54 ms | **54 ms** | 352–382 ms | 778–894 ms | 807–960 ms | 1532–1699 ms |
-| Native WXML | 4303–4522 ms | 53–54 ms | **54 ms** | 355–375 ms | 806–839 ms | 741–857 ms | 1548–1635 ms |
+| Glaze | 4309–4576 ms | 53–55 ms | **53–55 ms** | 351–379 ms | 730–745 ms | 756–806 ms | 1523–1573 ms |
+| Native WXML (full rows) | 4436–4466 ms | 53–55 ms | **53–55 ms** | 348–453 ms | 793–801 ms | 791–818 ms | 1534–1562 ms |
+| Native WXML (projected rows) | 4250–4326 ms | 54–56 ms | **54–56 ms** | 346–354 ms | 724–749 ms | 729–755 ms | 1495–1621 ms |
 | Vue Mini 1.2.16 | 4234–4465 ms | 53–63 ms | **126–141 ms** | 415–440 ms | 811–850 ms | 827–865 ms | 1631–1752 ms |
 | Taro 4.3.3 (Vite) | 3940–4016 ms | 391–1296 ms | **414–442 ms** | 761–774 ms | 2388–2554 ms | 2651–2788 ms | 5632–6002 ms |
 | uni-app Vue3 Vite | 4216–4385 ms | 54 ms | **58–59 ms** | 332–357 ms | 700–736 ms | 681–741 ms | 1516–1673 ms |
@@ -179,16 +184,34 @@ mutation because its generic recursive WXML template and node tree have to be
 rebuilt. Taro's `#bump` outlier (1296 ms in one run) is noise; its update column
 is stable across runs.
 
+### List projection A/B (2026-11-23)
+
+The fine page now sends only `id`, `title` and `done` to the view layer. The
+generated component data was measured directly:
+
+| Data object | JSON bytes | First row keys |
+| --- | ---: | --- |
+| Glaze before `listFields` | 10,270,281 | `id`, `title`, `done`, `extra` |
+| Glaze after `listFields` | 215,281 | `id`, `title`, `done` |
+
+A same-page A/B with the `listFields` field removed from the built component
+gave 4316–4430 ms first render (no projection) versus 4309–4576 ms (projection; one 4576 ms outlier);
+the minidev timer is dominated by WXML node creation, so the simulator delta is
+noise. The native projected control isolates the data-size effect: 4436–4466 ms
+with full page data, 4250–4326 ms with pre-projected page data. Do not use the
+simulator wall clock as evidence for the payload win; use the byte count until
+a phone run is available.
+
 ### Component page: 500 stateful row components
 
 | Implementation | First render | One child update | All 500 child updates |
 | --- | ---: | ---: | ---: |
-| Native WXML | 3316–3348 ms | 54–55 ms | **54 ms** |
+| Native WXML | 3299–3322 ms | 53–54 ms | **53–54 ms** |
 | uni-app Vue3 Vite | 3335–3372 ms | 53–56 ms | **61–70 ms** |
 | Vue Mini 1.2.16 | 3332–3371 ms | 54–57 ms | 133–152 ms |
 | Taro 4.3.3 (Vite) | 3205–3228 ms | 118–132 ms | 156–172 ms |
-| Glaze, stateful row | 3291–3359 ms | **53–54 ms** | 130–153 ms |
-| Glaze, pure row inline | 3233–3269 ms | — | **54–59 ms** |
+| Glaze, stateful row | 3303–3336 ms | **54 ms** | 145–176 ms |
+| Glaze, pure row inline | 3209–3227 ms | — | **53–54 ms** |
 
 Keeping a real child boundary costs one props/data round-trip per row. uni-app
 and Glaze stateful are close on one row, but all-row updates separate them:

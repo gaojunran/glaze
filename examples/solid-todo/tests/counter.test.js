@@ -282,3 +282,38 @@ test('independent subpackage loads its own runtime and updates state', async (mi
   await (await app.$('.pkg-inc')).tap()
   await expect(app).toMatchText('.pkg-count', '1')
 })
+
+test('projected rows render and update through real WXML', async (miniProgram) => {
+  await miniProgram.reLaunch('/pages/bench-fine/index')
+  const page = await miniProgram.currentPage()
+  await page.waitFor(5200)
+  const app = await page.$('#app')
+  if (!app) throw new Error('glaze-root not found')
+
+  let rows = await app.$$('.row')
+  await expect(rows.length).toBe(5000)
+  await expect(app).toMatchText('.row-title', 'Row 0')
+
+  const update = await app.$('#update')
+  await update.tap()
+  await page.waitFor(300)
+  await expect(app).toMatchText('.row-title', 'Row 0 1')
+
+  const toggle = await app.$('#toggle')
+  await toggle.tap()
+  await page.waitFor(300)
+  const first = (await app.$$('.row'))[0]
+  await expect(first).toMatchText('.row-done', 'false')
+
+  const insert = await app.$('#insert')
+  await insert.tap()
+  await page.waitFor(300)
+  rows = await app.$$('.row')
+  await expect(rows.length).toBe(5001)
+
+  const remove = await app.$('#delete')
+  await remove.tap()
+  await page.waitFor(300)
+  rows = await app.$$('.row')
+  await expect(rows.length).toBe(5000)
+})

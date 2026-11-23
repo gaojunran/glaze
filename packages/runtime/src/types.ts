@@ -61,6 +61,7 @@ export type GlazeComponentConfig = {
   propSignals?: string[]
   eventProps?: Record<string, string>
   listBindings?: Record<string, string>
+  listFields?: Record<string, string[]>
   handlerCount?: number
   refCount?: number
   setup(ctx: GlazeContext, props: GlazeProps): void

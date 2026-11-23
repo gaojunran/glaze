@@ -20,6 +20,7 @@ export type BindingEntry = {
   block: number
   asyncBoundary: number | null
   errorBoundary: number | null
+  listFields: string[] | null
 }
 export type EventEntry = { code: string; ast: AnyNode; scope: Scope | null; custom: boolean; block: number }
 export type RefEntry = { code: string; block: number }
@@ -49,6 +50,7 @@ export type Scope = {
   aliases?: Record<string, string[]>
   direct?: string
   eventItem?: string
+  listBinding?: number | null
 }
 export type CompileResult = {
   wxml: string
@@ -63,6 +65,7 @@ export type CompileResult = {
   boundaryContexts: BoundaryContext[]
   asyncStatus: { index: number; kind: 'loading' | 'error'; boundary: number }[]
   propSignals: string[]
+  listFields: Record<string, string[]>
   components: ComponentRef[]
   inlineComponents: ComponentRef[]
   assets: AssetEntry[]
@@ -83,6 +86,7 @@ export type EmitOptions = {
   boundaryContexts: BoundaryContext[]
   asyncStatus: { index: number; kind: 'loading' | 'error'; boundary: number }[]
   propSignals: string[]
+  listFields: Record<string, string[]>
 }
 export type CompilerContext = {
   bindings: BindingEntry[]
@@ -114,6 +118,7 @@ export type CompilerContext = {
   currentLoadingBoundary: number | null
   currentErrorBoundary: number | null
   asyncStatus: { index: number; kind: 'loading' | 'error'; boundary: number }[]
+  listProjectionBlocked: Set<number>
   namedSlots: Set<string>
   usesWxs: boolean
   usesWxsValue: boolean

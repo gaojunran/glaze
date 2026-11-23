@@ -121,6 +121,66 @@ The projection removes about 30–35% of the update time but does not reach nati
 entries. Pure components inlined into the parent remain the only way to reach
 native time. Single-row update stays at the simulator floor (53–55 ms).
 
+## P1b — List view-model projection
+
+Status: implemented.
+
+A keyed list binding used to send the complete row array. Templates that read
+only `row.title` and `row.done` therefore also sent every other field in the row
+through `setData`. The compiler now records the top-level fields read by WXML
+and emits `listFields`; the runtime projects rows before the initial write and
+before every list diff.
+
+The fine page has 5000 rows, each with an unused 2 KB `extra` field that the
+template never renders:
+
+| Data object | JSON bytes | First row keys |
+| --- | ---: | --- |
+| Before projection | 10,270,281 | `id`, `title`, `done`, `extra` |
+| After projection | 215,281 | `id`, `title`, `done` |
+
+That is a **47.7x** reduction in the data crossing the component boundary. The
+same projection applies to inserts and splices, so a new row enters view data
+without its unused payload.
+
+Minidev wall clock does not show a proportional win: three-run first render was
+4316–4430 ms with projection disabled and 4309–4576 ms with it (one 4576 ms outlier; the other runs were 4309 and 4404 ms). The timer is
+dominated by creating 5000 WXML nodes, and the simulator does not charge a
+real-device cross-thread copy of the same magnitude. The native control makes
+the data-size effect visible: native full rows 4436–4466 ms, native projected
+rows 4250–4326 ms. Treat the byte count, not the simulator delta, as the
+primary evidence for this optimization until it is measured on a phone.
+
+## P1c — Component-boundary profile
+
+Status: measured; no code change in this wave.
+
+The 500-row component fixture renders 500 real `component-row` boundaries. The
+generated child has `properties: ["index", "title"]`, `propSignals: []`,
+`data: { b0: null }` and one `ctx.bind(0, () => count())`; each instance creates
+one Solid root, one binding effect and one initial `setData` for `b0`. The
+parent list emits `listFields: { 3: ["id", "title"] }`.
+
+On `update-all`, the parent changes 500 titles. The runtime emits 500 field
+paths in one `DataGroup` commit. Each child receives a `title` property write
+(and an unchanged `index` property binding), but has no prop signal or prop
+observer: its `b0` does not change, so this action causes **zero child
+`setData` calls and zero child binding-effect runs**. The measured cost is the
+500 host component instances and their property propagation, not a child Solid
+update:
+
+| Implementation | First render | Update all 500 rows |
+| --- | ---: | ---: |
+| Native WXML | 3299–3322 ms | 53–54 ms |
+| Glaze stateful row components | 3303–3336 ms | 145–176 ms (typical 145 ms) |
+| Glaze pure row inline | 3209–3227 ms | 53–54 ms |
+
+The delta is about 90–120 ms for 500 boundaries, roughly 0.18–0.24 ms per
+boundary. Pure inlining removes the boundary and returns to native time.
+Next steps should therefore target boundary count or property propagation, not
+the Solid binding layer. See P1 above for the prop-only
+projection that already removed child prop signals.
+
 ## P1 — Batch scalar bindings
 
 Status: implemented.

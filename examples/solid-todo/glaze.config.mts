@@ -24,6 +24,7 @@ const config: GlazeConfig = {
   staticPages: [
     'pages/native/index',
     'pages/native-fine/index',
+    'pages/native-fine-projected/index',
     'pages/native-components/index',
     'pages/native-component-rows/index',
     'pages/native-edges/index',

@@ -73,6 +73,27 @@ nested object value travels whole. Prototype-less data and cycles are handled;
 class instances beyond arrays, dates and regular expressions are copied as plain
 objects, so replace such a row instead of mutating it.
 
+### List view-model projection
+
+`listFields` metadata from the compiler is applied by `projectList` in
+`list.ts`. `applyBinding` projects before `listPatch` / `listOps`, and `mount`
+projects before the initial `setData`; `state.previous` and the data copy both
+hold a detached projection. The projection only copies the recorded top-level
+fields and always keeps the key.
+
+The event path is unchanged: `scope.jsSource` still indexes the original
+application array, so a row handler sees fields that are not rendered. If any
+row is a primitive, array, class instance, `Date`, `RegExp` or another
+non-plain object, `projectList` returns the original array instead. That keeps
+the optimization from changing list semantics.
+
+The fine benchmark's initial list payload drops from 10,270,281 bytes to
+215,281 bytes; the 5000 rows keep `id`, `title` and `done`, and the unused 2 KB
+`extra` field is absent from component data. Minidev's first-render timer is
+dominated by WXML node creation, so this does not produce a large wall-clock
+change in the simulator; the payload reduction is measured directly on the
+generated data object.
+
 ### Initial list data must not alias app state
 
 The platform applies `replaceDataOnPath` by mutating the component data object
@@ -143,7 +164,7 @@ runtime levels.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 100, pass 100, fail 0
+# tests 114, pass 114, fail 0
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json (no output)
 ```

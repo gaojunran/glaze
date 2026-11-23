@@ -60,6 +60,10 @@ export function emitModule(ast: AnyNode, setupStatements: AnyNode[], ctx: Compil
     Object.keys(options.eventProps ?? {}).length > 0
       ? `  eventProps: ${JSON.stringify(options.eventProps)},\n`
       : ''
+  const listFields =
+    Object.keys(options.listFields ?? {}).length > 0
+      ? `  listFields: ${JSON.stringify(options.listFields)},\n`
+      : ''
   const setupParams = options.propsParam ? `, ${options.propsParam}` : ''
 
   const renderRefs = (blockId) =>
@@ -206,6 +210,7 @@ ${properties}${propMap}${eventProps}${propSignals}${errorBoundary}${asyncStatus}
       : `  bindingGroupSize: ${options.bindingGroupSize},\n`
   }${hasBoundaryContext ? `  boundaryContexts: ${JSON.stringify(boundaryContexts.map((item) => ({ name: item.name, key: item.key })))},\n` : ''}  data: ${data},
   listBindings: ${JSON.stringify(listBindings)},
+${listFields}
   handlerCount: ${ctx.events.length},
   refCount: ${ctx.refs.length},
   setup(ctx${setupParams}) {

@@ -76,6 +76,7 @@ export function compileCallbackBranch(fn, label, when, keyed, ctx, scope, direct
       itemAccessor: true,
       indexAccessor: false,
       aliases,
+      listBinding: scope?.listBinding ?? null,
     }
     const content = ctx.withGuard(scope ? null : codeOf(when), () =>
       compileNode(body, ctx, itemScope),
@@ -98,6 +99,7 @@ export function compileCallbackBranch(fn, label, when, keyed, ctx, scope, direct
     itemAccessor: false,
     indexAccessor: false,
     aliases,
+    listBinding: scope?.listBinding ?? null,
   }
   const content = compileNode(body, ctx, itemScope)
   let valuesExpr
@@ -210,6 +212,7 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
       itemAccessor: true,
       indexAccessor: false,
       aliases: callback.aliases,
+      listBinding: null,
     }
     fallbackContent = `<block wx:for="{{b${values}}}" wx:for-item="${param.name}" wx:for-index="__glazeErrorIndex" wx:key="*this">${compileNode(callback.jsx, ctx, errorScope)}</block>`
   } else if (fallback) {
@@ -418,7 +421,18 @@ export function compileFor(node, ctx, scope) {
 
   const projectedEach = projectExpression(each, ctx, scope)
   const eachCode = projectedEach ?? (scope ? inlineExpression(each, scope, ctx) : codeOf(each))
-  const eachExpr = projectedEach ?? (scope ? eachCode : `b${ctx.addBinding(each, key)}`)
+  let listBinding: number | null = null
+  let eachExpr = projectedEach
+  if (eachExpr == null) {
+    if (scope) {
+      eachExpr = eachCode
+    } else {
+      listBinding = ctx.addBinding(each, key)
+      eachExpr = `b${listBinding}`
+      if (key && key !== '*this') ctx.bindings[listBinding].listFields = [key]
+      else if (key === '*this') ctx.listProjectionBlocked.add(listBinding)
+    }
+  }
   const jsEachCode = scope ? codeOf(rewriteAccessorCalls(each, scope, true)) : codeOf(each)
 
   const childNodes = node.children.filter((item) => !isWhitespaceText(item))
@@ -477,8 +491,21 @@ export function compileFor(node, ctx, scope) {
     itemAccessor,
     indexAccessor: keyed !== false,
     aliases,
+    listBinding,
   }
   const children = compileNode(body, ctx, itemScope)
+  if (listBinding != null) {
+    const entry = ctx.bindings[listBinding]
+    if (
+      !key ||
+      key === '*this' ||
+      ctx.listProjectionBlocked.has(listBinding) ||
+      !entry.listFields ||
+      entry.listFields.length === 0
+    ) {
+      entry.listFields = null
+    }
+  }
   const keyAttrCode = key ? ` wx:key="${key}"` : ''
   const loop = `<block wx:for="{{${eachExpr}}}" wx:for-item="${itemName}" wx:for-index="${indexName}"${keyAttrCode}>${children}</block>`
 
@@ -544,6 +571,7 @@ export function compileRepeatInScope(node, ctx, scope) {
     indexAccessor: false,
     isIndexRepeat: true,
     aliases,
+    listBinding: null,
   }
   const children = compileNode(body, ctx, itemScope)
   const loop = `<block wx:for="{{glazeRange.range(${countCode}, ${fromCode})}}" wx:for-item="${itemName}" wx:for-index="${indexName}" wx:key="*this">${children}</block>`
@@ -602,6 +630,7 @@ export function compileRepeat(node, ctx, scope) {
     jsSource: `Array.from({ length: (${codeOf(count)}) }, (_, index) => index + (${fromCode}))`,
     parent: null,
     level: 0,
+    listBinding: null,
   }
   const children = compileNode(body, ctx, itemScope)
   const loop = `<block wx:for="{{b${binding}}}" wx:for-item="${itemName}" wx:for-index="__glazeIndex" wx:key="*this">${children}</block>`

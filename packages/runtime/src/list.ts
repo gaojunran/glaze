@@ -74,6 +74,34 @@ export function snapshotList(value: unknown): unknown {
   return value.map((item) => (isObjectItem(item) ? cloneValue(item, seen) : item))
 }
 
+/**
+ * Build the view-model rows for a list binding. The compiler records the
+ * top-level fields WXML reads; sending only those fields keeps large payloads
+ * that the template never uses out of `setData`.
+ *
+ * Every row must be a plain object. If any row is a primitive, array, class
+ * instance, Date, etc., return the original value: the projection is an
+ * optimization, never a semantic change.
+ */
+export function projectList(value: unknown, fields: readonly string[] | null | undefined): unknown {
+  if (!Array.isArray(value) || !fields || fields.length === 0) return value
+  const projected: Record<string, unknown>[] = []
+  for (const item of value) {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) return value
+    const prototype = Object.getPrototypeOf(item)
+    if (prototype !== Object.prototype && prototype !== null) return value
+    const row: Record<string, unknown> = {}
+    for (const field of fields) {
+      // Assigning `__proto__` would change the prototype instead of creating a
+      // data field; fall back rather than silently dropping it.
+      if (field === '__proto__') return value
+      row[field] = (item as Record<string, unknown>)[field]
+    }
+    projected.push(row)
+  }
+  return projected
+}
+
 /** Internal helper, exported for unit tests. */
 export function listOps(previous: unknown, next: unknown, key: string): ListOp[] | null {
   if (!Array.isArray(previous) || !Array.isArray(next)) return null

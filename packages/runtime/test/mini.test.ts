@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test, { after } from 'node:test'
 import { createContext, createMemo, createSignal, createStore, NotReadyError } from 'solid-js'
-import { defineGlazeComponent, listOps, listPatch } from '../src/mini.ts'
+import { defineGlazeComponent, listOps, listPatch, projectList } from '../src/mini.ts'
 import { withProvider } from '../src/provider.ts'
 
 const originalComponent = globalThis.Component
@@ -247,6 +247,114 @@ test('uses replaceDataOnPath for list field patches too', async () => {
   await tick()
 
   assert.deepEqual(instance.pathCalls, [[['b0', 0, 'done'], true]])
+})
+
+test('projects only the fields the compiler recorded for a keyed list', () => {
+  const rows = [
+    { id: 1, title: 'one', extra: 'x'.repeat(2000) },
+    { id: 2, title: 'two', extra: 'y'.repeat(2000) },
+  ]
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    listFields: { 0: ['id', 'title'] },
+    setup(ctx) {
+      ctx.bind(0, () => rows)
+    },
+  })
+
+  const instance = createInstance(def)
+  assert.deepEqual(instance.calls[0].b0, [
+    { id: 1, title: 'one' },
+    { id: 2, title: 'two' },
+  ])
+})
+
+test('projects list updates and still emits one field path', async () => {
+  let setRows
+  const rows = [{ id: 1, title: 'one', extra: 'x'.repeat(2000) }]
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    listFields: { 0: ['id', 'title'] },
+    setup(ctx) {
+      const [items, set] = createSignal(rows)
+      setRows = set
+      ctx.bind(0, () => items())
+    },
+  })
+
+  const instance = createInstance(def, {}, { paths: true })
+  def.lifetimes.attached.call(instance)
+
+  setRows([{ id: 1, title: 'two', extra: 'changed but unused' }])
+  await tick()
+
+  assert.deepEqual(instance.pathCalls, [[['b0', 0, 'title'], 'two']])
+})
+
+test('keeps the key in the projection even when the template does not read it', () => {
+  const rows = [{ id: 7, title: 'one', extra: 'x' }]
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    listFields: { 0: ['title'] },
+    setup(ctx) {
+      ctx.bind(0, () => rows)
+    },
+  })
+
+  const instance = createInstance(def)
+  assert.deepEqual(instance.calls[0].b0, [{ id: 7, title: 'one' }])
+})
+
+test('falls back to the original list when rows are not plain objects', () => {
+  const primitives = [1, 2]
+  assert.equal(projectList(primitives, ['id']), primitives)
+
+  class Row {
+    constructor(id) {
+      this.id = id
+    }
+  }
+  const instances = [new Row(1)]
+  assert.equal(projectList(instances, ['id']), instances)
+})
+
+test('projected rows are detached from the application rows', () => {
+  const row = { id: 1, title: 'first', extra: 'x' }
+  const rows = [row]
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    listFields: { 0: ['id', 'title'] },
+    setup(ctx) {
+      ctx.bind(0, () => rows)
+    },
+  })
+
+  const instance = createInstance(def)
+  instance.calls[0].b0[0].title = 'mutated by platform'
+  assert.equal(row.title, 'first')
+})
+
+test('projected object fields are detached before entering data', () => {
+  const meta = { done: false, extra: 'x' }
+  const rows = [{ id: 1, title: 'one', meta }]
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    listFields: { 0: ['id', 'title', 'meta'] },
+    setup(ctx) {
+      ctx.bind(0, () => rows)
+    },
+  })
+
+  const instance = createInstance(def)
+  const initial = instance.calls[0].b0[0]
+  assert.notEqual(initial.meta, meta)
+  initial.meta.done = true
+  assert.equal(meta.done, false)
 })
 
 test('initial list data is detached from the source array', () => {

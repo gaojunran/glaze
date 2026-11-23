@@ -70,8 +70,10 @@ Working spike, not a production framework. It covers:
 - build: pages, subpackages (including independent), per-page config, shared
   runtime, assets, Tailwind 4, SCSS/Less, incremental `watch`, Vite bridge and
   single-file snippets;
-- validation: 478 unit tests (shared 2, runtime 107, compiler 249, build 120),
-  glass-easel rendering tests and 9 minidev e2e cases.
+- data: keyed lists project only the fields WXML reads, so unused row payload
+  never crosses the `setData` boundary;
+- validation: 493 unit tests (shared 2, runtime 114, compiler 257, build 120),
+  glass-easel rendering tests and 10 minidev e2e cases.
 
 Known limits are documented in [Compiler](docs/compiler.md),
 [Build](docs/build.md) and [Optimizations](docs/optimizations.md).

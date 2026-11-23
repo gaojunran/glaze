@@ -649,6 +649,26 @@ A `For` binding is recorded with its key:
 listBindings: { 2: "id" }
 ```
 
+When every row access in the generated WXML is a static top-level field, the
+compiler also emits the view-model fields:
+
+```js
+listFields: { 2: ["id", "title", "done"] }
+```
+
+`noteListFields` runs from `inlineExpression`, so interpolation, attributes,
+`class`/`style` values, `Show` conditions, component props and nested loop
+sources all register their reads. The `wx:key` field is always included. The
+runtime projects each row to these fields before `setData`; a row carrying a
+large field that the template never reads no longer crosses the data boundary.
+
+Projection is fail-closed. It is disabled for an unkeyed loop, `wx:key="*this"`,
+a whole-row value (`title={row()}`, `data-x={row}`), a dynamic field
+(`row()[key]`), or destructured array positions. Nested field access
+(`row.user.name`) records only `user`; the nested object is sent whole. Event
+handlers continue to read the original row from the source array, not the
+projected data object.
+
 When the source array changes, the runtime compares the previous and next
 arrays by key. If the length and key order are unchanged, it emits only changed
 fields:
