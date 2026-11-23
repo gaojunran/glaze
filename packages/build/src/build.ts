@@ -1,4 +1,4 @@
-import { compileComponent } from '@glaze/compiler'
+import { compileComponent, hasMultipleProps } from '@glaze/compiler'
 import { build as esbuild } from 'esbuild'
 import { existsSync } from 'node:fs'
 import {
@@ -221,6 +221,17 @@ async function buildProjectInternal(
     }
   }
   const compiled = new Map()
+  const pageFiles = new Set(pageEntries.map((entry) => entry.file))
+  const structuredCache = new Map<string, boolean>()
+  const structuredFor = (file: string) => {
+    let structured = structuredCache.get(file)
+    if (structured === undefined) {
+      structured =
+        !pageFiles.has(file) && hasMultipleProps(sources.get(file) ?? '')
+      structuredCache.set(file, structured)
+    }
+    return structured
+  }
   const compileFile = async (file: string) => {
     const existing = compiled.get(file)
     if (existing) return existing
@@ -239,10 +250,13 @@ async function buildProjectInternal(
         inline: true,
         sourceFile: file,
         bindingGroupSize,
+        structuredProps: structuredFor(file),
         resolveComponent: (_name, specifier, fromFile = file) => {
           const child = resolveSourceImport(fromFile, specifier, sources)
           if (child) dependencies.add(child)
-          return child ? { source: sources.get(child), file: child } : null
+          return child
+            ? { source: sources.get(child), file: child, structuredProps: structuredFor(child) }
+            : null
         },
       }),
       dependencies,

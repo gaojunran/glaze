@@ -71,8 +71,9 @@ Working spike, not a production framework. It covers:
   runtime, assets, Tailwind 4, SCSS/Less, incremental `watch`, Vite bridge and
   single-file snippets;
 - data: keyed lists project only the fields WXML reads, so unused row payload
-  never crosses the `setData` boundary;
-- validation: 499 unit tests (shared 2, runtime 114, compiler 263, build 120),
+  never crosses the `setData` boundary; Glaze-to-Glaze child props cross the
+  component boundary as one internal object property;
+- validation: 509 unit tests (shared 2, runtime 116, compiler 271, build 120),
   glass-easel rendering tests and 10 minidev e2e cases.
 
 Known limits are documented in [Compiler](docs/compiler.md),

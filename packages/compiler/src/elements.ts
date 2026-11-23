@@ -12,6 +12,7 @@ import {
   normalizeText,
   skipChildKey,
   tagName,
+  wxmlCodeOf,
 } from './ast.ts'
 import { classAttr, styleAttr } from './attributes.ts'
 import {
@@ -22,7 +23,7 @@ import {
   compileShow,
   compileSwitch,
 } from './control.ts'
-import { BUILTIN_TAGS } from './constants.ts'
+import { BUILTIN_TAGS, STRUCTURED_PROPS } from './constants.ts'
 import {
   EVENT_MAP,
   NATIVE_EVENT_PROPS,
@@ -244,6 +245,7 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
   ctx.addComponent(name, source, ctx.currentFile)
 
   const attrs = []
+  const scalarProps: Array<{ name: string; attr: string; expr: string; group: boolean }> = []
   if (ctx.activeProviders.length > 0) {
     const local = ctx.activeProviders.filter((provider) => !provider.imported)
     if (local.length > 0) {
@@ -327,24 +329,62 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
       attrs.push(styleAttr(expression, ctx, scope))
       continue
     }
+    // class/style/id/slot are host attributes or helpers, not scalar props.
+    const group = !['class', 'style', 'id', 'slot'].includes(propName)
     if (t.isStringLiteral(expression)) {
-      const asset = staticAssetAttr(propName, expression.value, ctx)
-      attrs.push(`${propName}="${escapeAttr(asset ?? expression.value)}"`)
+      const value = staticAssetAttr(propName, expression.value, ctx) ?? expression.value
+      scalarProps.push({
+        name: propName,
+        attr: `${propName}="${escapeAttr(value)}"`,
+        expr: wxmlCodeOf(t.stringLiteral(value)),
+        group,
+      })
       continue
     }
     if (t.isNumericLiteral(expression)) {
-      attrs.push(`${propName}="{{${expression.value}}}"`)
+      scalarProps.push({
+        name: propName,
+        attr: `${propName}="{{${expression.value}}}"`,
+        expr: wxmlCodeOf(expression),
+        group,
+      })
       continue
     }
     const projected = projectExpression(expression, ctx, scope)
     if (projected != null) {
-      attrs.push(`${propName}="{{${projected}}}"`)
+      scalarProps.push({
+        name: propName,
+        attr: `${propName}="{{${projected}}}"`,
+        expr: projected,
+        group,
+      })
     } else if (scope) {
-      attrs.push(`${propName}="{{${inlineExpression(expression, scope, ctx)}}}"`)
+      const inline = inlineExpression(expression, scope, ctx)
+      scalarProps.push({
+        name: propName,
+        attr: `${propName}="{{${inline}}}"`,
+        expr: inline,
+        group,
+      })
     } else {
       const index = ctx.addBinding(expression)
-      attrs.push(`${propName}="{{b${index}}}"`)
+      scalarProps.push({
+        name: propName,
+        attr: `${propName}="{{b${index}}}"`,
+        expr: `b${index}`,
+        group,
+      })
     }
+  }
+
+  const grouped = scalarProps.filter((prop) => prop.group)
+  if (grouped.length >= 2 && canUseStructuredProps(name, source, ctx)) {
+    attrs.push(
+      `${STRUCTURED_PROPS}="{{ {${grouped.map((prop) => `${prop.name}: ${prop.expr}`).join(', ')}} }}"`,
+    )
+    for (const prop of scalarProps) if (!prop.group) attrs.push(prop.attr)
+  } else {
+    for (const prop of scalarProps) attrs.push(prop.attr)
   }
 
   const allAttrs = [...attrs, ...extraAttrs]
@@ -352,6 +392,11 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
   const children = compileChildren(node.children, ctx, scope)
   if (children === '') return `<${kebabCase(name)}${attrText} />`
   return `<${kebabCase(name)}${attrText}>${children}</${kebabCase(name)}>`
+}
+
+function canUseStructuredProps(name, source, ctx) {
+  const resolved = ctx.resolveComponent?.(name, source, ctx.currentFile ?? undefined)
+  return typeof resolved === 'object' && resolved != null && resolved.structuredProps === true
 }
 
 export function compileChildren(children, ctx, scope) {

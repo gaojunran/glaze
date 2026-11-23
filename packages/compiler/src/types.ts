@@ -5,11 +5,12 @@ export type CompileOptions = {
   inline?: boolean
   bindingGroupSize?: number
   sourceFile?: string
+  structuredProps?: boolean
   resolveComponent?: (
     name: string,
     source: string,
     fromFile?: string,
-  ) => string | { source: string; file?: string } | null
+  ) => string | { source: string; file?: string; structuredProps?: boolean } | null
 }
 
 export type ComponentRef = { name: string; source: string; fromFile?: string; file?: string }
@@ -72,6 +73,7 @@ export type CompileResult = {
   bindingCount: number
   handlerCount: number
   refCount: number
+  structuredProps: boolean
 }
 export type EmitOptions = {
   bindingGroupSize?: number
@@ -87,6 +89,7 @@ export type EmitOptions = {
   asyncStatus: { index: number; kind: 'loading' | 'error'; boundary: number }[]
   propSignals: string[]
   listFields: Record<string, string[]>
+  structuredProps?: boolean
 }
 export type CompilerContext = {
   bindings: BindingEntry[]
@@ -107,6 +110,7 @@ export type CompilerContext = {
   propMap: Record<string, string>
   propReads: Set<string>
   allPropsRead: boolean
+  structuredProps: boolean
   contextNames: Set<string>
   contextKeys: Map<string, { key: string; imported: boolean }>
   activeProviders: ContextProvider[]

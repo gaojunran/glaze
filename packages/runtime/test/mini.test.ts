@@ -83,6 +83,41 @@ test('initializes properties before created so first paint has prop values', () 
   assert.equal(missingInstance.calls[0].b0, null)
 })
 
+test('reads structured props and falls back to the scalar property', async () => {
+  let observed
+  const def = defineGlazeComponent({
+    properties: ['title', 'done'],
+    propSignals: ['title'],
+    structuredProps: true,
+    data: { b0: null },
+    setup(ctx, props) {
+      observed = props
+      ctx.bind(0, () => props.title)
+    },
+  })
+  const instance = createInstance(def, {
+    title: 'scalar',
+    glazeprops: { title: 'structured' },
+  })
+  def.lifetimes.attached.call(instance)
+
+  assert.equal(observed.title, 'structured')
+  assert.equal(instance.calls[0].b0, 'structured')
+  assert.equal(observed.glazeprops, undefined)
+  assert.deepEqual(Object.keys(observed), ['title'])
+
+  instance.properties.glazeprops = { title: 'next' }
+  def.observers.glazeprops.call(instance, { title: 'next' })
+  await tick()
+  assert.equal(observed.title, 'next')
+  assert.equal(instance.calls.at(-1).b0, 'next')
+
+  instance.properties.glazeprops = null
+  def.observers.glazeprops.call(instance, null)
+  await tick()
+  assert.equal(observed.title, 'scalar')
+})
+
 test('props proxy does not leak Object.prototype members', () => {
   let observed
   const def = defineGlazeComponent({

@@ -37,8 +37,19 @@ export { withBoundaryContexts, withProvider } from './provider.ts'
 export { listOps, listPatch, projectList, snapshotList } from './list.ts'
 export type { GlazeComponentConfig, GlazeContext, GlazeNode } from './types.ts'
 
+// The compiler passes a child's compact scalar props as one object property so a
+// parent update writes the child boundary once instead of once per prop.
+const STRUCTURED_PROP = 'glazeprops'
+
 export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
-  const propertyNames = config.properties ?? []
+  const publicPropertyNames = config.properties ?? []
+  const structuredProps = config.structuredProps === true
+  if (structuredProps && publicPropertyNames.includes(STRUCTURED_PROP)) {
+    throw new Error(`Component props may not use the reserved property "${STRUCTURED_PROP}"`)
+  }
+  const propertyNames = structuredProps
+    ? [...publicPropertyNames, STRUCTURED_PROP]
+    : publicPropertyNames
   const isNotReady = (error: unknown) =>
     error instanceof NotReadyError || (error as { name?: string } | null)?.name === 'NotReadyError'
   // Only a binding with an async boundary surfaces its failure through the
@@ -266,12 +277,24 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   const properties = Object.fromEntries(
     propertyNames.map((name) => [
       name,
-      name === 'glazecontext' ? { type: Object, value: null } : { type: null, value: null },
+      name === 'glazecontext' || name === STRUCTURED_PROP
+        ? { type: Object, value: null }
+        : { type: null, value: null },
     ]),
   )
   const signalNames = new Set(config.propSignals ?? propertyNames)
   // Context is always observed so a boundary can wait for the property bridge.
   if (deferredContext) signalNames.add('glazecontext')
+  // Compact props only need a signal when the child reads a prop from JS. A
+  // WXML-only child reads `glazeprops` directly, so adding a signal there would
+  // recreate the per-prop observer cost this property exists to avoid.
+  if (
+    structuredProps &&
+    publicPropertyNames.length >= 2 &&
+    (config.propSignals === undefined || config.propSignals.length > 0)
+  ) {
+    signalNames.add(STRUCTURED_PROP)
+  }
   const observers = Object.fromEntries(
     propertyNames.filter((name) => signalNames.has(name)).map((name) => [
       name,
@@ -837,22 +860,35 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           state.props[name] = createSignal(normalizePropValue(this.properties?.[name]))
         }
         const sourceNames =
-          Object.keys(propMap).length > 0 ? Object.keys(propMap) : propertyNames
+          Object.keys(propMap).length > 0 ? Object.keys(propMap) : publicPropertyNames
         state.propsProxy = new Proxy(
           {},
           {
             get: (_, key: string | symbol) => {
               if (typeof key !== 'string') return undefined
+              if (key === STRUCTURED_PROP) return undefined
               if (Object.hasOwn(eventProps, key)) {
                 const eventName = eventProps[key]!
                 return (...args: unknown[]) =>
                   this.triggerEvent(eventName, args.length <= 1 ? args[0] : args, GLAZE_EVENT_OPTIONS)
               }
               const mapped = Object.hasOwn(propMap, key) ? propMap[key]! : key
+              if (mapped !== 'glazecontext') {
+                const structured = state.props[STRUCTURED_PROP]?.[0]()
+                if (
+                  structured != null &&
+                  typeof structured === 'object' &&
+                  Object.hasOwn(structured, mapped)
+                ) {
+                  const value = (structured as Record<string, unknown>)[mapped]
+                  if (value !== undefined) return value
+                }
+              }
               return Object.hasOwn(state.props, mapped) ? state.props[mapped]![0]() : undefined
             },
             has: (_, key: string | symbol) =>
               typeof key === 'string' &&
+              key !== STRUCTURED_PROP &&
               (Object.hasOwn(eventProps, key) ||
                 Object.hasOwn(propMap, key) ||
                 Object.hasOwn(state.props, key)),
@@ -874,6 +910,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
             ownKeys: () => [...new Set([...sourceNames, ...Object.keys(eventProps)])],
             getOwnPropertyDescriptor: (_, key: string | symbol) =>
               typeof key === 'string' &&
+              key !== STRUCTURED_PROP &&
               (Object.hasOwn(eventProps, key) ||
                 Object.hasOwn(propMap, key) ||
                 Object.hasOwn(state.props, key))

@@ -46,6 +46,15 @@ without a child effect. A prop read by generated JavaScript gets a prop signal
 and an observer; the child's binding effects then update its WXML. The parent
 does not render the child in JS.
 
+For a Glaze-to-Glaze child with two or more scalar props, the build groups them
+into one internal `glazeprops` object property so a parent update crosses the
+component boundary once instead of once per prop. The child source still reads
+`props.a`; its WXML projection falls back to the scalar property when a field is
+absent, which keeps native parents and component defaults working. A one-prop
+child keeps the normal attribute path. This is a transport optimization, not a
+public component API. See
+[compiler.md](compiler.md#structured-props-for-component-boundaries).
+
 ## Why this shape
 
 The original external-component plan was rejected after an empirical test: the

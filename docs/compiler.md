@@ -75,10 +75,10 @@ First-wave support:
 | `class` object / array | `className(...)` binding, or inline WXML segments inside `For` |
 | `{...{ class: 'x', id: 'y' }}` | flattened static attributes |
 | `style` object | `styleName(...)` binding, or inline WXML segments inside `For` |
-| imported component `<TodoItem title={...} />` | `<todo-item title="{{...}}" />` + `usingComponents` |
+| imported component `<TodoItem title={...} />` | `<todo-item title="{{...}}" />` + `usingComponents`; `@glaze/build` groups 2+ scalar props into one `glazeprops` object |
 | stateless component outside `For` | inlined into the parent's WXML and setup |
 | pure component inside `For` / `Show` / `Match` | inlined into the loop template with props substituted per row |
-| `props.name` in the child | a mini-program property + a child signal |
+| `props.name` in the child | a mini-program property, or a field of the compact `glazeprops` property when the parent groups props |
 
 Anything outside this subset is a compile error. Silent fallback would hide the
 cases where the mini-program path diverges from Solid.
@@ -178,6 +178,43 @@ one unused signal; a false negative would make a generated JS read see
 it emits. As a final fail-closed check, the compiler still audits the generated
 code fragments: if an unregistered `props` reference remains, every prop keeps a
 signal. That costs only the optimization, never correctness.
+
+### Structured props for component boundaries
+
+`glaze build` compiles a non-page component with at least two non-event props
+with an internal `structuredProps` config. For an imported child with two or more
+scalar props, the parent emits one object property instead of one WXML property
+per prop:
+
+```tsx
+<Child title={row.title} done={row.done} />
+```
+
+```xml
+<child glazeprops="{{ {title: row.title, done: row.done} }}" />
+```
+
+The child still writes `props.title`; the projected WXML reads the object first
+and falls back to the scalar property:
+
+```xml
+<text>{{glazeprops && glazeprops.title !== undefined ? glazeprops.title : title}}</text>
+```
+
+Why the fallback is per prop: the parent does not know which props the child
+declares, a native parent passes scalar properties, and a child prop can have a
+default. A missing object field therefore resolves to the scalar property rather
+than `undefined`. `class`, `style`, `id`, `slot`, `data-*`/`aria-*`, events and
+`glazecontext` stay outside the object; a single scalar prop keeps the normal
+attribute form. Pages are compiled without `structuredProps`, so a component
+used as a page never receives or emits the object.
+
+The runtime adds the `glazeprops` property only when the marker is present. It
+creates a `glazeprops` signal only when the child has at least two public props
+and at least one prop signal; an all-WXML child needs no observer. The `props`
+proxy reads a non-`undefined` object field first and hides the internal key from
+`Object.keys`, `in` and property descriptors. See
+[optimizations.md](optimizations.md) for the measured 500-boundary result.
 
 ### When a prop actually gets a signal
 

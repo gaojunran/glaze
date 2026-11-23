@@ -1,4 +1,5 @@
 import * as t from '@babel/types'
+import { STRUCTURED_PROPS } from './constants.ts'
 import { wxmlCodeOf } from './ast.ts'
 import type { AnyNode, CompilerContext, Scope } from './types.ts'
 
@@ -71,15 +72,37 @@ export function projectExpression(
 
     if (t.isMemberExpression(node)) {
       if (node.computed) return null
-      if (t.isIdentifier(node.object, { name: propsParam })) {
-        if (!t.isIdentifier(node.property)) return null
-        const mapped = ctx.propMap[node.property.name]
-        if (!mapped || ctx.localNames.has(mapped)) return null
-        return t.identifier(mapped)
+      const segments = []
+      let cursor: AnyNode = node
+      while (t.isMemberExpression(cursor) && !cursor.computed) {
+        if (!t.isIdentifier(cursor.property)) return null
+        segments.unshift(cursor.property.name)
+        cursor = cursor.object
       }
-      const object = rewrite(node.object, node)
-      if (!object) return null
-      return t.memberExpression(object, node.property as AnyNode, false)
+      if (segments.length === 0 || !t.isIdentifier(cursor, { name: propsParam })) return null
+      const mapped = ctx.propMap[segments[0]!]
+      if (!mapped || ctx.localNames.has(mapped)) return null
+      const rest = segments.slice(1)
+      const buildPath = (base: AnyNode, names: string[]): AnyNode =>
+        names.reduce(
+          (value, name) => t.memberExpression(value, t.identifier(name)),
+          base,
+        )
+      const fallback = buildPath(t.identifier(mapped), rest)
+      if (!ctx.structuredProps) return fallback
+      const structuredRoot = t.memberExpression(
+        t.identifier(STRUCTURED_PROPS),
+        t.identifier(mapped),
+      )
+      return t.conditionalExpression(
+        t.logicalExpression(
+          '&&',
+          t.identifier(STRUCTURED_PROPS),
+          t.binaryExpression('!==', structuredRoot, t.identifier('undefined')),
+        ),
+        buildPath(structuredRoot, rest),
+        fallback,
+      )
     }
 
     if (t.isBinaryExpression(node) || t.isLogicalExpression(node)) {

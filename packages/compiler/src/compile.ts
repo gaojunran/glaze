@@ -1,7 +1,7 @@
 import path from 'node:path'
 import * as t from '@babel/types'
 import { codeOf, containsJsx, isStaticPropertyKey, walkAst } from './ast.ts'
-import { WXS_SOURCE, WXS_VALUE_SOURCE } from './constants.ts'
+import { STRUCTURED_PROPS, WXS_SOURCE, WXS_VALUE_SOURCE } from './constants.ts'
 import { emitModule } from './emit.ts'
 import { eventNameFor, splitEventBinding } from './events.ts'
 import { parseComponent, collectImports } from './parse.ts'
@@ -26,6 +26,18 @@ import type {
  * Everything else is a compile error on purpose. Silent fallback would hide
  * exactly the cases where the mini-program runtime diverges from Solid.
  */
+/**
+ * A structured child needs at least two non-event props: the parent groups only
+ * that case, and one scalar prop is cheaper as a normal WXML attribute.
+ */
+export function hasMultipleProps(source: string): boolean {
+  try {
+    return parseComponent(source).props.filter((name) => !/^on[A-Z]/.test(name)).length >= 2
+  } catch {
+    return false
+  }
+}
+
 export function compileComponent(source: string, options: CompileOptions = {}): CompileResult {
   const parsed = parseComponent(source)
   const { ast, statements, returnIndex, jsx, propsParam, props } = parsed
@@ -115,6 +127,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     propMap: {},
     propReads: new Set<string>(),
     allPropsRead: false,
+    structuredProps: options.structuredProps === true,
     contextNames,
     contextKeys,
     activeProviders: [],
@@ -323,10 +336,20 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
         return [name, eventNameFor(binding?.base ?? name)]
       }),
   )
+  if (props.includes(STRUCTURED_PROPS)) {
+    throw new Error(
+      `Component props may not use the reserved compiler property "${STRUCTURED_PROPS}"`,
+    )
+  }
   const plainProps = [
     ...props.filter((name) => !eventProps[name]),
     ...(ctx.boundaryContexts.length > 0 ? ['glazecontext'] : []),
   ]
+  // A one-prop child has no property fan-out to remove, and its parent keeps
+  // the normal attribute path; do not add the compact property or fallback.
+  if (ctx.structuredProps && plainProps.filter((name) => name !== 'glazecontext').length < 2) {
+    ctx.structuredProps = false
+  }
   const propertyNames = plainProps.map((name) => name.toLowerCase())
   if (new Set(propertyNames).size !== propertyNames.length) {
     throw new Error('Component props collide after lowercasing to mini-program property names')
@@ -405,6 +428,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     asyncStatus: ctx.asyncStatus,
     propSignals,
     listFields,
+    structuredProps: ctx.structuredProps,
   })
 
   return {
@@ -427,5 +451,6 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     bindingCount: ctx.bindings.length,
     handlerCount: ctx.events.length,
     refCount: ctx.refs.length,
+    structuredProps: ctx.structuredProps,
   }
 }

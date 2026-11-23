@@ -139,10 +139,22 @@ For the Glaze stateful and pure variants, use the same command with
 `/pages/native-component-rows/index` without `--root`.
 
 ```bash
+# Props page: automatic structured props (500 boundaries, a..h)
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
+  --port 9445 --route /pages/bench-props/index --neutral /pages/index/index \
+  --root '#app' --count 500 --row '.row-card' --first-text '.row-title' \
+  --update '#update' --update-all '#update-all' --title '#title' \
+  --last-text '#last' --skip-reverse --runs 3
+
 # Props object A/B: one `row` property per child instead of a..h
 NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
   --port 9445 --route /pages/bench-props-object/index --neutral /pages/index/index \
   --root '#app' --count 500 --row '.row-card' --first-text '.row-title' \
+  --update '#update' --update-all '#update-all' --title '#title' \
+  --last-text '#last' --skip-reverse --runs 3
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
+  --port 9445 --route /pages/native-props/index --neutral /pages/index/index \
+  --count 500 --row '.row-card' --first-text '.row-title' \
   --update '#update' --update-all '#update-all' --title '#title' \
   --last-text '#last' --skip-reverse --runs 3
 NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
@@ -227,6 +239,7 @@ a phone run is available.
 | Vue Mini 1.2.16 | 3332–3371 ms | 54–57 ms | 133–152 ms |
 | Taro 4.3.3 (Vite) | 3205–3228 ms | 118–132 ms | 156–172 ms |
 | Glaze, stateful row | 3303–3336 ms | **54 ms** | 145–176 ms |
+| Glaze, stateful after structured props | 3315–3335 ms | **53–54 ms** | 135–147 ms |
 | Glaze, pure row inline | 3209–3227 ms | — | **53–54 ms** |
 
 Keeping a real child boundary costs one props/data round-trip per row. uni-app
@@ -293,23 +306,23 @@ of every row.
 
 | Implementation | First render | Update one row | Update all 500 × 8 props |
 | --- | ---: | ---: | ---: |
-| Native WXML | 3396–3406 ms | 54–56 ms | **101–112 ms** |
+| Native WXML | 3397–3504 ms | 54 ms | **101–109 ms** |
 | uni-app Vue3 Vite | 3419–3471 ms | 53–54 ms | **117–132 ms** |
 | Vue Mini 1.2.16 | 3394–3442 ms | 54–60 ms | 629–696 ms |
 | Taro 4.3.3 (Vite) | 3226–3268 ms | 190–212 ms | 475–490 ms |
-| Glaze | 3413–3531 ms | 53–54 ms | **781–829 ms** |
+| Glaze before structured props | 3413–3531 ms | 53–54 ms | 781–829 ms |
+| Glaze with structured props | 3427–3482 ms | 53–55 ms | **183–204 ms** |
 
-This is the clear Glaze weakness in this batch. With 500 child boundaries,
-one-row updates are fine, but changing 8 props in every child is 7–8× native
+This was the clear Glaze weakness in this batch. With 500 child boundaries,
+one-row updates are fine, but changing 8 props in every child was 7–8× native
 and uni-app. A diagnostic variant that changed only `a` in every row took
-140–153 ms, so the cost tracks the number of changed props per child. Forcing
+140–153 ms, so the cost tracked the number of changed props per child. Forcing
 the parent list binding to replace the whole array instead of emitting field
 paths did not improve it (776–833 ms), so the number of list `DataChange` paths
-is not the explanation by itself.
-
-The likely lever is to coalesce a component's props into fewer property writes,
-or to batch child property updates. The object-prop A/B below tests the first
-lever.
+was not the explanation by itself. Coalescing the eight props into one object
+property brings the update to 183–204 ms, about 1.8–2.0× native and in the
+same range as the manual object-prop control (178–189 ms). The remaining cost
+is the 500 real component boundaries, not prop fan-out.
 
 ### Props-object A/B (2026-11-23)
 
@@ -322,7 +335,8 @@ object prop.
 
 | Implementation | Eight props | One object prop |
 | --- | ---: | ---: |
-| Glaze (stateful boundary) | 781–829 ms | **175–189 ms** |
+| Glaze (stateful boundary, manual) | 781–829 ms | 178–189 ms |
+| Glaze (automatic structured props) | — | **183–204 ms** |
 | Native WXML | 102–109 ms | **91–99 ms** |
 | uni-app Vue3 Vite | 136–188 ms | 131–146 ms |
 | Taro 4.3.3 (Vite) | 502–585 ms | 486–588 ms |
@@ -331,16 +345,18 @@ Glaze drops 4.4–4.7×: the eight-property child update was dominated by eight
 property writes per child, not by Solid, the list diff, or child `setData` (the
 child still has `propSignals: []` and no child `setData`). Native improves only
 slightly, and Taro/uni-app do not improve at all, so this is a Glaze
-property-fan-out cost rather than a general mini-program cost.
+property-fan-out cost rather than a general mini-program cost. The automatic
+row is within run spread of the manual object control (178–189 ms).
 
 Vue Mini was not measured in this A/B; its minidev appservice did not respond to
 the automator during this run, and the existing eight-prop number is kept as the
 reference.
 
-This is still a fixture, not a compiler feature: the object prop changes the
-child's public API and requires the child to read `props.row.a` instead of
-`props.a`. A future compiler optimization would have to generate that shape for
-Glaze-to-Glaze components without changing external components or event props.
+The automatic variant is now what the compiler emits for a Glaze-to-Glaze
+component with at least two scalar props: the child source still reads
+`props.a`, the parent emits one `glazeprops` object, and the child WXML projects
+`glazeprops.a` with the scalar property as a fallback. The manual object page is
+kept as the A/B control; it is no longer the recommended component API.
 
 ## Repeated-run correctness
 

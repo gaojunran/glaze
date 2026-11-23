@@ -1,4 +1,4 @@
-export { compileComponent } from './compile.ts'
+export { compileComponent, hasMultipleProps } from './compile.ts'
 export type {
   CompileOptions,
   CompileResult,

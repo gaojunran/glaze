@@ -173,6 +173,7 @@ update:
 | --- | ---: | ---: |
 | Native WXML | 3299–3322 ms | 53–54 ms |
 | Glaze stateful row components | 3303–3336 ms | 145–176 ms (typical 145 ms) |
+| Glaze stateful after structured props | 3315–3335 ms | 135–147 ms |
 | Glaze pure row inline | 3209–3227 ms | 53–54 ms |
 
 The delta is about 90–120 ms for 500 boundaries, roughly 0.18–0.24 ms per
@@ -204,12 +205,82 @@ show no repeatable improvement; this is a Glaze boundary cost, not a general
 mini-program cost. Vue Mini was not measured because its minidev appservice did
 not respond to the automator during this run.
 
-The object shape is currently a manual component API: the child must read
-`props.row.a` instead of `props.a`. Automating it in the compiler would require
-generating the object property only for Glaze-to-Glaze components, preserving
-external props, event props, context, and hand-written component compatibility.
+The object shape was a manual component API during the A/B (`props.row.a`
+instead of `props.a`). P1d now generates the transport in the compiler for
+Glaze-to-Glaze components while preserving external props, event props, context
+and hand-written component compatibility; the manual page stays as the control.
 
-## P1d — Compiler template slimming
+## P1d — Automatic structured props for component boundaries
+
+Status: implemented.
+
+The object-prop A/B above was a manual fixture. The compiler now emits the same
+shape itself for a Glaze-to-Glaze child with at least two scalar props:
+
+```tsx
+<Child title={row.title} done={row.done} count={row.count} />
+```
+
+becomes:
+
+```xml
+<child glazeprops="{{ {title: row.title, done: row.done, count: row.count} }}" />
+```
+
+The child's source API is unchanged (`props.title`), but its WXML projection
+reads through the compact property with the scalar property as a fallback:
+
+```xml
+<text>{{glazeprops && glazeprops.title !== undefined ? glazeprops.title : title}}</text>
+```
+
+Implementation boundaries:
+
+- `@glaze/build` marks a non-page `.tsx` component with `structuredProps` when
+  it declares at least two non-event props; pages and one-prop components keep
+  the scalar layout, and a component used as a page is never merged.
+- The parent groups only when the imported child resolves to a structured
+  component and at least two scalar props are present.
+- `class`, `style`, `id`, `slot`, `data-*`/`aria-*`, events and `glazecontext`
+  stay separate. One scalar prop keeps the native attribute path.
+- The runtime adds the `glazeprops` property only for components with the
+  marker. It creates a `glazeprops` signal only when the child has at least two
+  public props and any prop signal; an all-WXML child keeps only the direct
+  property read. `props` still hides the internal key from `Object.keys`, `in`
+  and property descriptors.
+- The fallback is per prop, not per object: an absent object field falls back to
+  the scalar property, so native parents, old components and prop defaults keep
+  working. Nested access is emitted as one conditional
+  (`glazeprops && glazeprops.user !== undefined ? glazeprops.user.name : user.name`)
+  rather than `(conditional).name`, which WXML rejects.
+
+Measured on the same 500-boundary, eight-prop page, three runs:
+
+| Implementation | First render | Update one row | Update all 500 × 8 props |
+| --- | ---: | ---: | ---: |
+| Native WXML | 3397–3504 ms | 54 ms | 101–109 ms |
+| Glaze before structured props | 3413–3531 ms | 53–54 ms | 781–829 ms |
+| Glaze with structured props | 3427–3482 ms | 53–55 ms | **183–204 ms** |
+
+That is roughly 4× faster than the scalar fan-out and indistinguishable from the
+manual object-prop control (178–189 ms). It does not reach native: the remaining
+cost is the 500 real component boundaries and one property write per child, not
+prop fan-out or Solid. Pure components still inline to native time.
+
+The trade-offs are deliberate: the child WXML carries one ternary per projected
+prop, the parent object literal is re-evaluated per update, and a child shared
+between a Glaze parent and a native parent keeps both paths. Without the
+per-prop fallback, a missing object field would silently override a component
+default with `undefined`. For a child that reads props from JS, one object
+signal now replaces the per-prop signals, so an unrelated field change wakes
+the prop bindings; they recompute but `applyBinding` still skips unchanged
+values, so the result stays correct.
+
+Validation for this wave: compiler 271, runtime 116, build 120, shared 2 (509
+total), five package typechecks, `glaze build` with 17 pages / 31 components,
+and minidev e2e 10/10.
+
+## P1e — Compiler template slimming
 
 Status: implemented.
 

@@ -22,6 +22,27 @@ test('renders WXML text, attributes and class bindings', async () => {
   assert.equal(textContentOf(box), 'world')
 })
 
+test('renders a structured prop fallback from the scalar value', async () => {
+  const root = space()
+  const def = register(root, {
+    wxml:
+      '<text id="value">{{glazeprops && glazeprops.title !== undefined ? glazeprops.title : title}}</text>',
+    config: { data: { glazeprops: null, title: 'scalar' } },
+  })
+  const comp = mount(root, def)
+  await tick()
+  const value = comp.getShadowRoot().querySelector('#value')
+  assert.equal(textContentOf(value), 'scalar')
+
+  comp.setData({ glazeprops: { title: 'object' } })
+  await tick()
+  assert.equal(textContentOf(value), 'object')
+
+  comp.setData({ glazeprops: {} })
+  await tick()
+  assert.equal(textContentOf(value), 'scalar')
+})
+
 test('renders wx:if / wx:elif / wx:else branches', async () => {
   const root = space()
   const def = register(root, {

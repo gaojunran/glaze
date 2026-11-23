@@ -1,3 +1,5 @@
+export const STRUCTURED_PROPS = 'glazeprops'
+
 // Built-in WXML tags. A component name must not kebab-case onto one of these,
 // or the generated tree mixes a user component with a native element.
 export const BUILTIN_TAGS: ReadonlySet<string> = new Set([

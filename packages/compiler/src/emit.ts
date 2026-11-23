@@ -64,6 +64,7 @@ export function emitModule(ast: AnyNode, setupStatements: AnyNode[], ctx: Compil
     Object.keys(options.listFields ?? {}).length > 0
       ? `  listFields: ${JSON.stringify(options.listFields)},\n`
       : ''
+  const structuredProps = options.structuredProps ? '  structuredProps: true,\n' : ''
   const setupParams = options.propsParam ? `, ${options.propsParam}` : ''
 
   const renderRefs = (blockId) =>
@@ -204,7 +205,7 @@ import { ${runtimeImports} } from "@glaze/runtime/mini";
 ${moduleStatements}
 
 export default defineGlazeComponent({
-${properties}${propMap}${eventProps}${propSignals}${errorBoundary}${asyncStatus}${
+${properties}${propMap}${eventProps}${propSignals}${errorBoundary}${asyncStatus}${structuredProps}${
     options.bindingGroupSize === undefined
       ? ''
       : `  bindingGroupSize: ${options.bindingGroupSize},\n`
