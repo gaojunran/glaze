@@ -301,12 +301,10 @@ attribute expression, so WXML sees loop values directly:
 becomes
 
 ```xml
-<block wx:for="{{b0}}" wx:for-item="item" wx:for-index="__glazeIndex" wx:key="id">
-  <view class="row">
-    <text>{{item.title}}</text>
-    <text class="{{item.done ? 'done' : ''}}">{{item.done ? 'done' : 'todo'}}</text>
-  </view>
-</block>
+<view class="row" wx:for="{{b0}}" wx:for-item="item" wx:for-index="__glazeIndex" wx:key="id">
+  <text>{{item.title}}</text>
+  <text class="{{item.done ? 'done' : ''}}">{{item.done ? 'done' : 'todo'}}</text>
+</view>
 ```
 
 There is no child component instance, props property bridge, child Solid root
@@ -740,6 +738,42 @@ an index accessor; `keyed={false}` gives an accessor item and a numeric index;
 `wx:key`. Accessor calls such as `item()` or `index()` are rewritten to the
 WXML variable in expressions and event handlers. `keyed` functions must return a
 single field; nested keys are rejected.
+
+### Loop template shape
+
+When a `For` or `Repeat` body compiles to exactly one root element, the compiler
+puts `wx:for`, `wx:for-item`, `wx:for-index` and `wx:key` directly on that
+element instead of wrapping it in `<block>`. The WXML is smaller and avoids one
+template node per loop. The block wrapper is kept when the body has multiple
+root nodes (for example a `Show` with a fallback), when the root is `block`,
+`slot` or `template`, and when the element already carries `wx:for`.
+
+The attribute scanner respects quoted attribute values, so a comparison such as
+`class={{ active: row.n > 0 }}` stays inside the attribute and the generated
+loop attributes are inserted at the real end of the opening tag. `For fallback`
+still emits an outer `<block wx:if>` and a sibling `wx:else`; only the loop
+itself moves onto the element.
+
+### Text conditionals and the WXS value helper
+
+Solid renders a boolean child as nothing, while WXML renders the strings
+`"true"` or `"false"`. The compiler therefore routes expressions that may
+produce a boolean through the `glazeValue` WXS helper (or `textValue` in JS).
+A conditional whose branches are all statically non-boolean (string, number or
+null literals, including nested conditionals) cannot produce a boolean and is
+emitted directly:
+
+```jsx
+<text>{row.done ? 'yes' : 'no'}</text>
+```
+
+```xml
+<text>{{row.done ? 'yes' : 'no'}}</text>
+```
+
+If any branch may be boolean, for example `row.done ? true : 'no'`, the helper is
+still required. This removes one WXS call per rendered row for the common
+"boolean to label" pattern without changing semantics.
 
 `Show` function children work at the top level and inside `For`. `keyed` passes
 the value; without it the callback receives an accessor (`value()`), matching

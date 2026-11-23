@@ -287,7 +287,7 @@ test('inlines a pure component inside For', () => {
     },
   )
 
-  assert.match(result.wxml, /<block wx:for="\{\{b0\}\}"[^>]*><text>\{\{entry\.title\}\}<\/text><\/block>/)
+  assert.match(result.wxml, /<text wx:for="\{\{b0\}\}"[^>]*>\{\{entry\.title\}\}<\/text>/)
   assert.deepEqual(result.components, [])
   assert.deepEqual(result.inlineComponents, [{ name: 'Item', source: './Item' }])
 })
@@ -389,7 +389,7 @@ test('keeps a stateful component boundary inside For', () => {
     },
   )
 
-  assert.match(result.wxml, /<item title="\{\{entry\.title\}\}" \/>/)
+  assert.match(result.wxml, /<item title="\{\{entry\.title\}\}"[^>]*\/>/)
   assert.deepEqual(result.components, [{ name: 'Item', source: './Item' }])
   assert.deepEqual(result.inlineComponents, [])
 })
@@ -673,7 +673,7 @@ test('compiles For fallback and Repeat', () => {
     }
   `)
   assert.match(forResult.wxml, /<block wx:if="\{\{\(items \|\| \[\]\)\.length > 0\}\}">/)
-  assert.match(forResult.wxml, /<block wx:for="\{\{items\}\}"/)
+  assert.match(forResult.wxml, /<text wx:for="\{\{items\}\}"/)
   assert.match(forResult.wxml, /<text wx:else>empty<\/text>/)
 
   const repeatResult = compileComponent(`
@@ -766,7 +766,7 @@ test('hoists outer expressions inside For', () => {
       )
     }
   `)
-  assert.match(result.wxml, /<text>\{\{b0\}\}\{\{b1\}\}<\/text>/)
+  assert.match(result.wxml, /<text wx:for="[^"]+"[^>]*>\{\{b0\}\}\{\{b1\}\}<\/text>/)
   assert.match(result.js, /ctx\.bind\(0, \(\) => \(props\.prefix\)\)/)
   assert.match(result.js, /ctx\.bind\(1, \(\) => \(format\(props\.suffix\)\)\)/)
 })

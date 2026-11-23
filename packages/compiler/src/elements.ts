@@ -426,6 +426,30 @@ export function compileProvider(node, ctx, scope) {
   return children
 }
 
+function isDefinitelyNonBoolean(node: AnyNode): boolean {
+  let current = node
+  while (
+    t.isParenthesizedExpression(current) ||
+    t.isTSAsExpression(current) ||
+    t.isTSSatisfiesExpression(current) ||
+    t.isTSNonNullExpression(current)
+  ) {
+    current = current.expression
+  }
+  if (
+    t.isStringLiteral(current) ||
+    t.isNumericLiteral(current) ||
+    t.isNullLiteral(current)
+  ) {
+    return true
+  }
+  return (
+    t.isConditionalExpression(current) &&
+    isDefinitelyNonBoolean(current.consequent) &&
+    isDefinitelyNonBoolean(current.alternate)
+  )
+}
+
 export function compileExpressionChild(expression, ctx, scope) {
   if (t.isJSXEmptyExpression(expression)) return ''
   if (
@@ -490,11 +514,12 @@ export function compileExpressionChild(expression, ctx, scope) {
   // "true"/"false" from a raw binding. Only expressions that can evaluate to a
   // boolean need the wrapper; a plain numeric/string binding keeps its shape.
   const booleanish =
-    t.isLogicalExpression(expression) ||
-    t.isConditionalExpression(expression) ||
-    (t.isUnaryExpression(expression) && expression.operator === '!') ||
-    (t.isBinaryExpression(expression) &&
-      ['==', '===', '!=', '!==', '<', '<=', '>', '>='].includes(expression.operator))
+    (t.isLogicalExpression(expression) ||
+      t.isConditionalExpression(expression) ||
+      (t.isUnaryExpression(expression) && expression.operator === '!') ||
+      (t.isBinaryExpression(expression) &&
+        ['==', '===', '!=', '!==', '<', '<=', '>', '>='].includes(expression.operator))) &&
+    !isDefinitelyNonBoolean(expression)
   const projected = projectExpression(expression, ctx, scope)
   if (projected != null) {
     if (booleanish) {

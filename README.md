@@ -72,7 +72,7 @@ Working spike, not a production framework. It covers:
   single-file snippets;
 - data: keyed lists project only the fields WXML reads, so unused row payload
   never crosses the `setData` boundary;
-- validation: 493 unit tests (shared 2, runtime 114, compiler 257, build 120),
+- validation: 499 unit tests (shared 2, runtime 114, compiler 263, build 120),
   glass-easel rendering tests and 10 minidev e2e cases.
 
 Known limits are documented in [Compiler](docs/compiler.md),

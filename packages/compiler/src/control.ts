@@ -375,6 +375,88 @@ export function compileSwitch(node, ctx, scope) {
   return output
 }
 
+type TagInfo = {
+  name: string
+  nameEnd: number
+  end: number
+  closing: boolean
+  selfClosing: boolean
+}
+
+function readTag(source: string, start: number): TagInfo | null {
+  if (source[start] !== '<') return null
+  let cursor = start + 1
+  const closing = source[cursor] === '/'
+  if (closing) cursor++
+  const nameStart = cursor
+  while (cursor < source.length && /[A-Za-z0-9_:.-]/.test(source[cursor])) cursor++
+  const name = source.slice(nameStart, cursor)
+  if (!name) return null
+  let quote: string | null = null
+  for (let index = cursor; index < source.length; index++) {
+    const char = source[index]
+    if (quote) {
+      if (char === quote) quote = null
+      continue
+    }
+    if (char === '"' || char === "'") {
+      quote = char
+      continue
+    }
+    if (char === '>') {
+      const head = source.slice(start, index)
+      return {
+        name,
+        nameEnd: cursor,
+        end: index + 1,
+        closing,
+        selfClosing: !closing && /\/\s*$/.test(head),
+      }
+    }
+  }
+  return null
+}
+
+function hasSingleRootElement(source: string): boolean {
+  const first = readTag(source, 0)
+  if (!first || first.closing) return false
+  if (first.selfClosing) return source.slice(first.end).trim() === ''
+  let depth = 1
+  let cursor = first.end
+  while (cursor < source.length) {
+    const next = source.indexOf('<', cursor)
+    if (next < 0) return false
+    const tag = readTag(source, next)
+    if (!tag) return false
+    if (tag.closing) depth--
+    else if (!tag.selfClosing) depth++
+    cursor = tag.end
+    if (depth === 0) return source.slice(cursor).trim() === ''
+  }
+  return false
+}
+
+function addLoopAttributes(children: string, attributes: string): string | null {
+  const root = readTag(children, 0)
+  if (!root || root.closing || !hasSingleRootElement(children)) return null
+  const tag = root.name
+  if (tag === 'block' || tag === 'slot' || tag === 'wxs' || tag === 'template') return null
+
+  const openingEnd = root.end - 1
+  let existing = children.slice(root.nameEnd, openingEnd).trimEnd()
+  if (/\swx:for(?:\s|=)/.test(existing)) return null
+  const selfClosing = root.selfClosing
+  if (selfClosing) existing = existing.replace(/\/\s*$/, '').trimEnd()
+  const rest = existing.length > 0 ? `${existing} ` : ' '
+  if (selfClosing) return `<${tag}${rest}${attributes} />`
+
+  const closing = `</${tag}>`
+  const after = children.slice(root.end)
+  if (!after.endsWith(closing)) return null
+  const body = after.slice(0, -closing.length)
+  return `<${tag}${rest}${attributes}>${body}</${tag}>`
+}
+
 export function compileFor(node, ctx, scope) {
   const each = getExpression(getAttribute(node, 'each'))
   if (!each) throw new Error('<For> requires an each expression')
@@ -507,7 +589,10 @@ export function compileFor(node, ctx, scope) {
     }
   }
   const keyAttrCode = key ? ` wx:key="${key}"` : ''
-  const loop = `<block wx:for="{{${eachExpr}}}" wx:for-item="${itemName}" wx:for-index="${indexName}"${keyAttrCode}>${children}</block>`
+  const loopAttributes = `wx:for="{{${eachExpr}}}" wx:for-item="${itemName}" wx:for-index="${indexName}"${keyAttrCode}`
+  const loop =
+    addLoopAttributes(children, loopAttributes) ??
+    `<block ${loopAttributes}>${children}</block>`
 
   const fallback = getAttribute(node, 'fallback')
   if (!fallback) return loop
@@ -574,7 +659,8 @@ export function compileRepeatInScope(node, ctx, scope) {
     listBinding: null,
   }
   const children = compileNode(body, ctx, itemScope)
-  const loop = `<block wx:for="{{glazeRange.range(${countCode}, ${fromCode})}}" wx:for-item="${itemName}" wx:for-index="${indexName}" wx:key="*this">${children}</block>`
+  const loopAttributes = `wx:for="{{glazeRange.range(${countCode}, ${fromCode})}}" wx:for-item="${itemName}" wx:for-index="${indexName}" wx:key="*this"`
+  const loop = addLoopAttributes(children, loopAttributes) ?? `<block ${loopAttributes}>${children}</block>`
   const fallback = getAttribute(node, 'fallback')
   if (!fallback) return loop
   const fallbackExpression = getExpression(fallback)
@@ -633,7 +719,8 @@ export function compileRepeat(node, ctx, scope) {
     listBinding: null,
   }
   const children = compileNode(body, ctx, itemScope)
-  const loop = `<block wx:for="{{b${binding}}}" wx:for-item="${itemName}" wx:for-index="__glazeIndex" wx:key="*this">${children}</block>`
+  const loopAttributes = `wx:for="{{b${binding}}}" wx:for-item="${itemName}" wx:for-index="__glazeIndex" wx:key="*this"`
+  const loop = addLoopAttributes(children, loopAttributes) ?? `<block ${loopAttributes}>${children}</block>`
 
   const fallback = getAttribute(node, 'fallback')
   if (!fallback) return loop

@@ -170,7 +170,7 @@ the simulator's ~50 ms polling floor, so only Taro's reverse is clearly slower.
 
 | Implementation | First render | Bump | Single-field update | Toggle first | Insert first | Delete first | Reverse |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Glaze | 4309–4576 ms | 53–55 ms | **53–55 ms** | 351–379 ms | 730–745 ms | 756–806 ms | 1523–1573 ms |
+| Glaze | 4313–4857 ms | 53–55 ms | **53–55 ms** | 363–373 ms | 739–765 ms | 762–784 ms | 1566–1599 ms |
 | Native WXML (full rows) | 4436–4466 ms | 53–55 ms | **53–55 ms** | 348–453 ms | 793–801 ms | 791–818 ms | 1534–1562 ms |
 | Native WXML (projected rows) | 4250–4326 ms | 54–56 ms | **54–56 ms** | 346–354 ms | 724–749 ms | 729–755 ms | 1495–1621 ms |
 | Vue Mini 1.2.16 | 4234–4465 ms | 53–63 ms | **126–141 ms** | 415–440 ms | 811–850 ms | 827–865 ms | 1631–1752 ms |
@@ -195,8 +195,10 @@ generated component data was measured directly:
 | Glaze after `listFields` | 215,281 | `id`, `title`, `done` |
 
 A same-page A/B with the `listFields` field removed from the built component
-gave 4316–4430 ms first render (no projection) versus 4309–4576 ms (projection; one 4576 ms outlier);
-the minidev timer is dominated by WXML node creation, so the simulator delta is
+gave 4316–4430 ms first render (no projection). The current output (single-root
+loop, no per-row WXS) measured 4313–4857 ms on a later same-server A/B; the old
+output measured 4372–4757 ms on the same server, so the two ranges overlap. The minidev timer is
+dominated by WXML node creation, so the simulator delta is
 noise. The native projected control isolates the data-size effect: 4436–4466 ms
 with full page data, 4250–4326 ms with pre-projected page data. Do not use the
 simulator wall clock as evidence for the payload win; use the byte count until

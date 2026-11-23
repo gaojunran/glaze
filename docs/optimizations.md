@@ -181,6 +181,28 @@ Next steps should therefore target boundary count or property propagation, not
 the Solid binding layer. See P1 above for the prop-only
 projection that already removed child prop signals.
 
+## P1d — Compiler template slimming
+
+Status: implemented.
+
+The fine page used to emit a `<block wx:for>` around every row and call
+`glazeValue.value(row.done ? 'true' : 'false')` once per row. Both are now gone
+when they are not needed: a single-root loop puts `wx:for` on the row element,
+and a conditional with statically non-boolean branches is emitted directly.
+
+A native control isolates the WXS cost: the same projected 5000-row page that
+rendered in 4250–4326 ms took 4320–4379 ms after adding the WXS conversion.
+A same-server A/B of the Glaze fine page gave 4313–4857 ms with the new output
+and 4372–4757 ms with the old output. The ranges overlap almost completely, so
+there is no stable minidev win to claim. The simple output is kept because the
+WXS call and the extra template node are real per-row work, and because the same
+change removes the wrapper for every single-root loop, not just this page; a
+phone run is still needed to measure the cross-thread and WXS costs that the
+simulator hides.
+
+Validation for this wave: compiler 263, runtime 114, build 120, shared 2 (499
+total) and minidev e2e 10/10.
+
 ## P1 — Batch scalar bindings
 
 Status: implemented.

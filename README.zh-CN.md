@@ -65,7 +65,7 @@ glass-easel 组件，不替换平台渲染器。
   Tailwind 4、SCSS/Less、增量 `watch`、Vite 桥接和单文件 snippet；
 - 数据：keyed 列表只把 WXML 真正读取的字段投影进视图层，未使用的行数据
   不再穿过 `setData` 边界；
-- 验证：493 个单元测试（shared 2、runtime 114、compiler 257、build 120）、
+- 验证：499 个单元测试（shared 2、runtime 114、compiler 263、build 120）、
   glass-easel 渲染测试和 10 个 minidev e2e 用例。
 
 已知限制记录在 [编译器](docs/compiler.md)、[构建](docs/build.md) 和

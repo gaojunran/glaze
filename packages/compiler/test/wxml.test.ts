@@ -59,6 +59,21 @@ const cases: Array<[string, string]> = [
     }`,
   ],
   [
+    'inline loop on an element with wx:if and a comparison attribute',
+    `import { For, Show } from 'solid-js'
+    export default function Page(props) {
+      return (
+        <For each={props.rows} key="id">
+          {(row) => (
+            <Show when={row.on}>
+              <view class={{ active: row.n > 0 }}><text>{row.title}</text></view>
+            </Show>
+          )}
+        </For>
+      )
+    }`,
+  ],
+  [
     'class and style objects',
     `export default function Page(props) {
       return <view class={{ on: props.on, off: !props.on }} style={{ color: props.color }} />

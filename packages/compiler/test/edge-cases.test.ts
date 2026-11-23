@@ -625,7 +625,7 @@ test('compiles For nested inside Show', () => {
       )
     }
   `)
-  assert.ok(result.wxml.includes('<block wx:if="{{open}}"><block wx:for="{{items}}"'))
+  assert.ok(result.wxml.includes('<block wx:if="{{open}}"><text wx:for="{{items}}"'))
   assert.doesNotMatch(result.js, /ctx\.bind/)
 })
 
@@ -639,7 +639,7 @@ test('compiles Show nested inside For', () => {
       )
     }
   `)
-  assert.ok(result.wxml.includes('<text wx:if="{{row.on}}">{{row.title}}</text>'))
+  assert.ok(result.wxml.includes('<text wx:if="{{row.on}}" wx:for="{{rows}}" wx:for-item="row"'))
 })
 
 test('adds negated earlier Match guards to later bindings', () => {
@@ -798,7 +798,7 @@ test('binds dynamic data-* attributes on a component inside For', () => {
       )
     }
   `)
-  assert.ok(result.wxml.includes('<child data-id="{{item.id}}" aria-label="{{item.label}}" />'))
+  assert.ok(result.wxml.includes('<child data-id="{{item.id}}" aria-label="{{item.label}}" wx:for="{{items}}"'))
   assert.equal(result.bindingCount, 0)
 })
 
@@ -1369,4 +1369,66 @@ test('registers prop reads from helper-wrapped bindings', () => {
     }
   `)
   assert.match(result.js, /propSignals: \["color","on"\]/)
+})
+
+test('skips the WXS helper for a conditional whose branches cannot be boolean', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return <text>{props.done ? 'yes' : 'no'}</text>
+    }
+  `)
+  assert.equal(result.wxml.includes('glazeValue.value'), false)
+  assert.match(result.wxml, /<text>\{\{done \? 'yes' : 'no'\}\}<\/text>/)
+})
+
+test('skips the WXS helper for a non-boolean conditional inside a loop', () => {
+  const result = compileComponent(`
+    import { For } from 'solid-js'
+    export default function Page(props) {
+      return (
+        <For each={props.rows} key="id">
+          {(row) => <text>{row.done ? 'yes' : 'no'}</text>}
+        </For>
+      )
+    }
+  `)
+  assert.equal(result.wxml.includes('glazeValue.value'), false)
+  assert.match(result.wxml, /row\.done \? 'yes' : 'no'/)
+})
+
+test('keeps the WXS helper when a conditional can return a boolean', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return <text>{props.done ? true : 'no'}</text>
+    }
+  `)
+  assert.ok(result.wxml.includes("glazeValue.value(done ? true : 'no')"))
+})
+
+test('inlines wx:for onto a single-root element', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return (
+        <For each={props.rows} key="id">
+          {(row) => <view class={{ active: row.n > 0 }}><text>{row.title}</text></view>}
+        </For>
+      )
+    }
+  `)
+  assert.match(result.wxml, /<view class="\{\{[^"]+\}\}" wx:for="\{\{rows\}\}"/)
+  assert.doesNotMatch(result.wxml, /<block wx:for=/)
+})
+
+test('keeps a block when a loop body has multiple roots', () => {
+  const result = compileComponent(`
+    import { Show } from 'solid-js'
+    export default function Page(props) {
+      return (
+        <For each={props.rows}>
+          {(row) => <Show when={row.on} fallback={<text>off</text>}><text>{row.title}</text></Show>}
+        </For>
+      )
+    }
+  `)
+  assert.match(result.wxml, /<block wx:for="\{\{rows\}\}"/)
 })
