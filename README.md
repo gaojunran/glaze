@@ -175,6 +175,7 @@ fallback rather than pretending the compiler can cover everything.
 - [Performance backlog](docs/optimizations.md)
 - [Why external components do not work](docs/findings-external-component.md)
 - [Framework comparison fixtures](bench/frameworks/README.md)
+- [Agent skill for Glaze source](skills/glaze-solid-miniprogram/SKILL.md)
 
 ## License
 

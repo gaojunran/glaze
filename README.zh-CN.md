@@ -160,7 +160,7 @@ Chromium 1248）：
 - [使用 minidev 运行](docs/minidev.md)
 - [性能待办](docs/optimizations.md)
 - [为什么 external component 不可行](docs/findings-external-component.md)
-- [框架对比基准](bench/frameworks/README.md)
+- [面向 Agent 的 Glaze 写法 skill](skills/glaze-solid-miniprogram/SKILL.md)
 
 ## License
 
