@@ -36,6 +36,11 @@ export function projectExpression(
   scope: Scope | null,
 ): string | null {
   if (scope) return null
+  // Inline children have their own `props` parameter. If its name matches the
+  // parent's, projecting it would read the parent property instead of the
+  // child's prop getter.
+  if (ctx.inlinePropsParam) return null
+  if (ctx.blocks[ctx.currentBlock]?.propsParam) return null
   const propsParam = ctx.rootPropsParam
   if (!propsParam) return null
 

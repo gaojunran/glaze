@@ -1266,3 +1266,60 @@ test('emits propSignals only for props read by generated JavaScript', () => {
   `)
   assert.match(mixed.js, /propSignals: \["name"\]/)
 })
+
+test('tracks props read by inline child prop getters', () => {
+  const result = compileComponent(
+    `
+      import Child from './Child'
+      export default function Parent(props) {
+        return <view title={props.other}><Child label={props.title} /></view>
+      }
+    `,
+    {
+      inline: true,
+      resolveComponent: () => `
+        export default function Child(props) {
+          return <text>{props.label}</text>
+        }
+      `,
+    },
+  )
+  assert.match(result.js, /propSignals: \["title"\]/)
+})
+
+test('tracks props read by a context provider value', () => {
+  const result = compileComponent(`
+    import { createContext } from 'solid-js'
+    const Theme = createContext('light')
+    export default function Page(props) {
+      return (
+        <view title={props.other}>
+          <Theme.Provider value={props.value}><text>x</text></Theme.Provider>
+        </view>
+      )
+    }
+  `)
+  assert.match(result.js, /propSignals: \["value"\]/)
+})
+
+test('does not project an inline child prop onto a same-named parent prop', () => {
+  const result = compileComponent(
+    `
+      import Child from './Child'
+      export default function Parent(props) {
+        return <view title={props.title}><Child title={props.other} /></view>
+      }
+    `,
+    {
+      inline: true,
+      resolveComponent: () => `
+        export default function Child(props) {
+          return <text>{props.title}</text>
+        }
+      `,
+    },
+  )
+  assert.match(result.wxml, /title="\{\{title\}\}"/)
+  assert.doesNotMatch(result.wxml, /<text>\{\{title\}\}<\/text>/)
+  assert.match(result.wxml, /<text>\{\{b\d+\}\}<\/text>/)
+})

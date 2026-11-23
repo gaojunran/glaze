@@ -148,11 +148,39 @@ handled by component inlining instead.
 
 Because WXML reads the property directly, a parent prop update no longer needs
 the child's Solid signal or binding effect. The runtime still creates a signal
-and a property observer only for props that generated JavaScript actually reads:
-setup statements, bindings, events, or refs. The compiler emits
-`propSignals: []` when every prop is WXML-only, or a list of the property names
-that are read by JS. When all props are read it omits the field and the runtime
-keeps the old behavior.
+and a property observer only for props that generated JavaScript actually reads.
+The scan covers every surface the compiler can emit:
+
+- setup statements before `return`;
+- `ctx.bind` binding code;
+- event handler code;
+- ref callback code;
+- inline-child prop getters (a parent expression mapped into a child prop);
+- context-provider values.
+
+Inline child prop getters matter even though the child is inlined: the getter is
+generated in the parent module, and it can read a parent prop. A provider value
+is also emitted in the parent module, so `value={props.current}` needs the same
+treatment.
+
+The compiler emits `propSignals: []` when every prop is WXML-only, or a list of
+the property names that are read by JS. When all props are read it omits the
+field and the runtime keeps the old behavior. The scan is deliberately
+conservative: a bare `props` reference, `props[key]`, destructuring, or an
+unrecognized alias marks every prop as needing a signal. A false positive costs
+one unused signal; a false negative would make a generated JS read see
+`undefined`.
+
+Two related scoping rules:
+
+- An inline child has its own `props` parameter. Projection is disabled inside
+  that child while its props parameter is in scope, otherwise a child
+  `props.title` whose name matches a parent prop would read the parent property
+  instead of the child's prop getter.
+- Event handlers and ref callbacks are marked conservatively today because the
+  runtime `props` Proxy reads prop signals. They are invoked on demand, so a
+  future optimization could read the platform property directly for them; that
+  would remove them from `propSignals` without changing the property path.
 
 A prop read only by WXML is still a normal mini-program property, so the child
 template updates when the parent writes the property. This is the same path a

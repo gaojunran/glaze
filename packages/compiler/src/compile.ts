@@ -261,11 +261,19 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
   if (propsParam) {
     const param = propsParam.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const memberPattern = new RegExp(`\\b${param}\\s*\\.\\s*([A-Za-z_$][\\w$]*)`, 'g')
+    // Every place the compiler can emit generated JavaScript. Inline child
+    // blocks are separate blocks: their prop getters and provider values are
+    // real parent-scope expressions even though their bodies live in `blocks`.
     const codes = [
       ...statements.slice(0, returnIndex).map((statement) => codeOf(statement)),
       ...ctx.bindings.map((binding) => binding.code),
       ...ctx.events.map((event) => event.code),
       ...ctx.refs.map((ref) => ref.code),
+      ...ctx.blocks.flatMap((block) => [
+        ...block.setup.map((statement) => codeOf(statement)),
+        ...block.propGetters.map((getter) => getter.code),
+        ...(block.providerValue ? [block.providerValue] : []),
+      ]),
     ]
     for (const code of codes) {
       let rest = code

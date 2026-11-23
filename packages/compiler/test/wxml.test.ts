@@ -23,6 +23,20 @@ const assertCompiles = (wxml: string) => {
 
 const cases: Array<[string, string]> = [
   [
+    'projected prop expressions and control flow',
+    `import { For, Show } from 'solid-js'
+    export default function Page(props) {
+      return (
+        <view title={props.user.name} data-id={props.a === 'x' ? 'yes' : 'no'}>
+          <text>{props.title}</text>
+          <Show when={props.open}>
+            <For each={props.items} key="id">{(item) => <text>{item.name}</text>}</For>
+          </Show>
+        </view>
+      )
+    }`,
+  ],
+  [
     'conditional and quoted expression',
     `import { Show } from 'solid-js'
     export default function Page(props) {
