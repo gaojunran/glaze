@@ -918,3 +918,43 @@ test('props are read-only at runtime', () => {
   }, /read-only/)
   assert.equal(observed.title, 'Hello')
 })
+
+test('propSignals selects the actual prop signals', () => {
+  let allProps
+  const all = defineGlazeComponent({
+    properties: ['title', 'other'],
+    data: {},
+    setup(_ctx, props) {
+      allProps = props
+    },
+  })
+  createInstance(all, { title: 'a', other: 'b' })
+  assert.equal(allProps.title, 'a')
+  assert.equal(allProps.other, 'b')
+
+  let selectedProps
+  const selected = defineGlazeComponent({
+    properties: ['title', 'other'],
+    propSignals: ['title'],
+    data: {},
+    setup(_ctx, props) {
+      selectedProps = props
+    },
+  })
+  createInstance(selected, { title: 'a', other: 'b' })
+  assert.equal(selectedProps.title, 'a')
+  assert.equal(selectedProps.other, undefined)
+
+  let noProps
+  const none = defineGlazeComponent({
+    properties: ['title', 'other'],
+    propSignals: [],
+    data: {},
+    setup(_ctx, props) {
+      noProps = props
+    },
+  })
+  createInstance(none, { title: 'a', other: 'b' })
+  assert.equal(noProps.title, undefined)
+  assert.equal(noProps.other, undefined)
+})

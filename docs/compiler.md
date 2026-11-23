@@ -179,6 +179,65 @@ it emits. As a final fail-closed check, the compiler still audits the generated
 code fragments: if an unregistered `props` reference remains, every prop keeps a
 signal. That costs only the optimization, never correctness.
 
+### When a prop actually gets a signal
+
+Two independent decisions decide the generated output:
+
+1. **Projection**: can this JSX expression be emitted as a WXML expression?
+   This is decided per expression from its AST, not from the surrounding
+   braces. Literals, `props.x`, nested `props.x.y`, arithmetic, comparisons,
+   `&&`/`||`, unary `! + -`, and ternaries are accepted when every leaf is a
+   prop. Calls, optional access, computed access, objects, arrays, templates,
+   and expressions mixed with local state fall back to a `bN` binding.
+2. **Signal registration**: does generated JavaScript read the prop? Reads that
+   land in generated JS (bindings, events, refs, helper wrappers, setup, inline
+   prop getters, provider values) create a signal.
+
+Examples:
+
+| JSX | Generated form | Signal |
+| --- | --- | --- |
+| `{props.title}` | `{{title}}` | no |
+| `{props.title + props.count}` | `{{title + count}}` | no |
+| `{props.user.name}` | `{{user.name}}` | no |
+| `{props.title + count()}` | `{{b0}}` | `title` |
+| `{props.user?.name}` | `{{b0}}` | `user` |
+| `onClick={() => save(props.title)}` | event handler | `title` |
+| `class={{ on: props.active }}` | `className(...)` binding | `active` |
+| `<For each={props.items}>` | `wx:for="{{items}}"` | no |
+| `<For each={props.items.filter(Boolean)}>` | `wx:for="{{b0}}"` | `items` |
+| `<Repeat count={props.count}>` | `wx:for="{{b0}}"` | `count` |
+| `ref={(el) => log(props.title, el)}` | ref callback | `title` |
+| `<Child label={props.title} />` (separate boundary) | `label="{{title}}"` | no |
+| `<Child label={props.title + n} />` | `label="{{b0}}"` | `title` |
+| `{props[key]}` or `const alias = props` | falls back | every prop |
+
+Event handlers are the subtle case: they do not re-render anything, but the
+runtime `props` Proxy reads prop signals. Without a signal, `props.title` inside
+the handler would be `undefined`; the signal is what makes an on-demand callback
+see the latest property value. If the Proxy later falls back to the platform
+property for non-signal props, event and ref reads could leave `propSignals`.
+The same conservative rule applies to refs and one-shot reads such as `onMount`.
+
+The runtime set is not the `propSignals` array itself:
+
+```text
+signalNames = new Set(config.propSignals ?? propertyNames)
+```
+
+An absent `propSignals` field means **all** generated properties; an explicit
+empty array means **none**. The emitter omits the field when every property is
+selected, so "all" and "none" must never be confused. `glazecontext` is added
+when a boundary needs the context property bridge. Property names are lowered
+for the mini-program bridge (`userName` becomes `username`), so `propSignals`
+contains lowercase names.
+
+Projection also has a few behavior edges unrelated to signals: `props.user.name`
+when `user` is null renders empty in WXML instead of throwing in JS, and a raw
+boolean prop used as text can render `"true"`/`"false"` because only statically
+boolean-shaped expressions go through `glazeValue`. These are WXML projection
+semantics, not signal-set errors.
+
 ### Props are inputs, not state
 
 Solid's component props are getter-only in a module build: assigning a declared
@@ -197,24 +256,10 @@ Mutating a nested object held by a prop (`props.user.name = ...`) is still
 allowed, matching Solid, but it is not reactive; replace the prop object instead
 of mutating it when the parent must observe the change.
 
-The compiler emits `propSignals: []` when every prop is WXML-only, or a list of
-the property names that are read by JS. When all props are read it omits the
-field and the runtime keeps the old behavior. The scan is deliberately
-conservative: a bare `props` reference, `props[key]`, destructuring, or an
-unrecognized alias marks every prop as needing a signal. A false positive costs
-one unused signal; a false negative would make a generated JS read see
-`undefined`.
-
-Two related scoping rules:
-
-- An inline child has its own `props` parameter. Projection is disabled inside
-  that child while its props parameter is in scope, otherwise a child
-  `props.title` whose name matches a parent prop would read the parent property
-  instead of the child's prop getter.
-- Event handlers and ref callbacks are marked conservatively today because the
-  runtime `props` Proxy reads prop signals. They are invoked on demand, so a
-  future optimization could read the platform property directly for them; that
-  would remove them from `propSignals` without changing the property path.
+An inline child has its own `props` parameter. Projection is disabled inside that
+child while its props parameter is in scope, otherwise a child `props.title`
+whose name matches a parent prop would read the parent property instead of the
+child's prop getter.
 
 A prop read only by WXML is still a normal mini-program property, so the child
 template updates when the parent writes the property. This is the same path a
