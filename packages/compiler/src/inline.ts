@@ -294,6 +294,7 @@ export function inlineComponent(node, ctx, scope, name, source) {
     if (containsJsx(expression)) {
       throw new Error('JSX values are not supported in component props; use children instead')
     }
+    ctx.notePropReads(expression)
     propGetters.push({ name: attrName, code: codeOf(expression), expression })
   }
 
@@ -320,6 +321,9 @@ export function inlineComponent(node, ctx, scope, name, source) {
   }
 
   const blockId = ctx.blocks.length
+  for (const statement of child.statements.slice(0, child.returnIndex)) {
+    ctx.notePropReads(statement)
+  }
   ctx.blocks.push({
     setup: child.statements.slice(0, child.returnIndex),
     propsParam: child.propsParam?.name ?? null,

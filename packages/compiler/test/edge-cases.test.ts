@@ -1355,3 +1355,18 @@ test('does not reject a module helper that mutates its own props parameter', () 
   `)
   assert.ok(result.js.includes('helper.toString()'))
 })
+
+test('registers prop reads from helper-wrapped bindings', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return (
+        <view
+          data-label={props.label}
+          class={{ on: props.on }}
+          style={{ color: props.color }}
+        />
+      )
+    }
+  `)
+  assert.match(result.js, /propSignals: \["color","on"\]/)
+})

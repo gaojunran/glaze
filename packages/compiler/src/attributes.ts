@@ -14,7 +14,7 @@ export function conditionExpression(expression, ctx, scope) {
 export function classAttr(expression, ctx, scope) {
   if (!scope) {
     ctx.addHelper('className')
-    const index = ctx.addBindingCode(`className(${codeOf(expression)})`)
+    const index = ctx.addBindingCode(`className(${codeOf(expression)})`, null, expression)
     return `class="{{b${index}}}"`
   }
   return `class="${classInline(expression, scope, ctx)}"`
@@ -26,7 +26,7 @@ export function styleAttr(expression, ctx, scope) {
       return `style="${escapeAttr(staticStyle(expression))}"`
     }
     ctx.addHelper('styleName')
-    const index = ctx.addBindingCode(`styleName(${codeOf(expression)})`)
+    const index = ctx.addBindingCode(`styleName(${codeOf(expression)})`, null, expression)
     return `style="{{b${index}}}"`
   }
   return `style="${styleInline(expression, scope, ctx)}"`

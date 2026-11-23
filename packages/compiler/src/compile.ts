@@ -1,6 +1,6 @@
 import path from 'node:path'
 import * as t from '@babel/types'
-import { codeOf, containsJsx, walkAst } from './ast.ts'
+import { codeOf, containsJsx, isStaticPropertyKey, walkAst } from './ast.ts'
 import { WXS_SOURCE, WXS_VALUE_SOURCE } from './constants.ts'
 import { emitModule } from './emit.ts'
 import { eventNameFor, splitEventBinding } from './events.ts'
@@ -112,6 +112,8 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     inlineChildrenCount: 0,
     rootPropsParam: propsParam?.name ?? null,
     propMap: {},
+    propReads: new Set<string>(),
+    allPropsRead: false,
     contextNames,
     contextKeys,
     activeProviders: [],
@@ -141,7 +143,47 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     refForbidden: 0,
     inline: options.inline ?? false,
     resolveComponent: options.resolveComponent ?? null,
+    notePropReads(expression) {
+      const rootName = propsParam?.name
+      if (!rootName) return
+      const visit = (node, parent) => {
+        if (!node || typeof node.type !== 'string') return
+        if (t.isIdentifier(node, { name: rootName })) {
+          if (
+            !(
+              parent &&
+              (t.isMemberExpression(parent) || t.isOptionalMemberExpression(parent)) &&
+              parent.object === node
+            ) &&
+            !isStaticPropertyKey(node, parent)
+          ) {
+            this.allPropsRead = true
+          }
+          return
+        }
+        const member =
+          t.isMemberExpression(node) || t.isOptionalMemberExpression(node)
+        if (member && t.isIdentifier(node.object, { name: rootName })) {
+          if (!node.computed && t.isIdentifier(node.property)) {
+            this.propReads.add(node.property.name)
+          } else {
+            this.allPropsRead = true
+          }
+          if (node.computed) visit(node.property, node)
+          return
+        }
+        for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+          const value = node[key]
+          if (Array.isArray(value)) value.forEach((child) => visit(child, node))
+          else visit(value, node)
+        }
+      }
+      for (const item of Array.isArray(expression) ? expression : [expression]) {
+        visit(item, null)
+      }
+    },
     addBinding(expression, listKey = null) {
+      this.notePropReads(expression)
       if (containsJsx(expression)) {
         throw new Error('JSX values are not supported in expressions; use a JSX branch or child')
       }
@@ -155,11 +197,13 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
       return index
     },
     addEvent(expression, scope = null, custom = false) {
+      this.notePropReads(expression)
       const index = this.events.length
       this.events.push({ code: codeOf(expression), ast: expression, scope, custom, block: this.currentBlock })
       return index
     },
-    addBindingCode(code, listKey = null) {
+    addBindingCode(code, listKey = null, reads = null) {
+      if (reads) this.notePropReads(reads)
       const index = this.bindings.length
       this.bindings.push({
         code: this.guardCode(code),
@@ -201,6 +245,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
       this.usesWxsValue = true
     },
     addRef(expression) {
+      this.notePropReads(expression)
       const index = this.refs.length
       this.refs.push({ code: codeOf(expression), block: this.currentBlock })
       return index
@@ -210,6 +255,10 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
         this.components.push({ name, source, ...(fromFile ? { fromFile } : {}) })
       }
     },
+  }
+
+  for (const statement of statements.slice(0, returnIndex)) {
+    ctx.notePropReads(statement)
   }
 
   // Context used by a component boundary is passed as one JSON property. The
@@ -257,37 +306,41 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     ctx.usesWxsValue ? `<wxs module="glazeValue">${WXS_VALUE_SOURCE}</wxs>` : '',
   ].join('')
   const wxml = `${wxs}${bodyWxml}`
-  const usedProps = new Set<string>()
-  if (propsParam) {
-    const param = propsParam.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const memberPattern = new RegExp(`\\b${param}\\s*\\.\\s*([A-Za-z_$][\\w$]*)`, 'g')
-    // Every place the compiler can emit generated JavaScript. Inline child
-    // blocks are separate blocks: their prop getters and provider values are
-    // real parent-scope expressions even though their bodies live in `blocks`.
-    const codes = [
-      ...statements.slice(0, returnIndex).map((statement) => codeOf(statement)),
+  // Fail closed: code fragments that still mention `props` must already have
+  // been registered at their generation point. This catches a new generation
+  // path that forgot to call `notePropReads`; an unregistered read would
+  // otherwise make the runtime omit the signal and read `undefined`.
+  if (propsParam && !ctx.allPropsRead) {
+    const audit = [
+      ...statements.slice(0, returnIndex).map((node) => codeOf(node)),
       ...ctx.bindings.map((binding) => binding.code),
       ...ctx.events.map((event) => event.code),
       ...ctx.refs.map((ref) => ref.code),
       ...ctx.blocks.flatMap((block) => [
-        ...block.setup.map((statement) => codeOf(statement)),
+        ...block.setup.map((node) => codeOf(node)),
         ...block.propGetters.map((getter) => getter.code),
         ...(block.providerValue ? [block.providerValue] : []),
       ]),
     ]
-    for (const code of codes) {
-      let rest = code
-      for (const match of code.matchAll(memberPattern)) {
-        usedProps.add(match[1])
+    const param = propsParam.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const reference = new RegExp(
+      `\\b${param}\\b\\s*(?:\\??\\.\\s*([A-Za-z_$][\\w$]*))?`,
+      'g',
+    )
+    for (const code of audit) {
+      for (const match of code.matchAll(reference)) {
+        const name = match[1]
+        if (!name || !ctx.propReads.has(name)) {
+          ctx.allPropsRead = true
+          break
+        }
       }
-      rest = rest.replace(memberPattern, '')
-      if (new RegExp(`\\b${param}\\b`).test(rest)) {
-        for (const name of plainProps) usedProps.add(name)
-      }
+      if (ctx.allPropsRead) break
     }
   }
+
   const propSignals = plainProps
-    .filter((name) => usedProps.has(name))
+    .filter((name) => ctx.allPropsRead || ctx.propReads.has(name))
     .map((name) => propMap[name])
   if (ctx.boundaryContexts.length > 0 && !propSignals.includes('glazecontext')) {
     propSignals.push('glazecontext')

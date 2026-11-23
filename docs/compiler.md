@@ -149,19 +149,35 @@ handled by component inlining instead.
 Because WXML reads the property directly, a parent prop update no longer needs
 the child's Solid signal or binding effect. The runtime still creates a signal
 and a property observer only for props that generated JavaScript actually reads.
-The scan covers every surface the compiler can emit:
+Prop reads are recorded at the point where generated JavaScript is built, not by
+scanning the final JavaScript as a string. Every code-generation entry point
+registers the AST expression it emits:
 
 - setup statements before `return`;
-- `ctx.bind` binding code;
-- event handler code;
-- ref callback code;
+- `ctx.addBinding`;
+- `ctx.addEvent`;
+- `ctx.addRef`;
+- `ctx.addBindingCode` when the code wraps a user expression
+  (`className(...)`, `styleName(...)`, `textValue(...)`, loop conditions);
 - inline-child prop getters (a parent expression mapped into a child prop);
-- context-provider values.
+- context-provider values;
+- inline-child setup statements.
 
 Inline child prop getters matter even though the child is inlined: the getter is
 generated in the parent module, and it can read a parent prop. A provider value
 is also emitted in the parent module, so `value={props.current}` needs the same
 treatment.
+
+The compiler emits `propSignals: []` when every prop is WXML-only, or a list of
+the property names that are read by JS. When all props are read it omits the
+field and the runtime keeps the old behavior. Registration is deliberately
+conservative: a bare `props` reference, `props[key]`, destructuring, or an
+unrecognized alias marks every prop as needing a signal. A false positive costs
+one unused signal; a false negative would make a generated JS read see
+`undefined`. Any new code-generation path must call `notePropReads` with the AST
+it emits. As a final fail-closed check, the compiler still audits the generated
+code fragments: if an unregistered `props` reference remains, every prop keeps a
+signal. That costs only the optimization, never correctness.
 
 ### Props are inputs, not state
 

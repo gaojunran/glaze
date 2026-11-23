@@ -99,6 +99,8 @@ export type CompilerContext = {
   inlineChildrenCount: number
   rootPropsParam: string | null
   propMap: Record<string, string>
+  propReads: Set<string>
+  allPropsRead: boolean
   contextNames: Set<string>
   contextKeys: Map<string, { key: string; imported: boolean }>
   activeProviders: ContextProvider[]
@@ -122,8 +124,9 @@ export type CompilerContext = {
   inline: boolean
   resolveComponent: CompileOptions['resolveComponent'] | null
   addBinding(expression: AnyNode, listKey?: string | null): number
+  notePropReads(expression: AnyNode | AnyNode[]): void
   addEvent(expression: AnyNode, scope?: Scope | null, custom?: boolean): number
-  addBindingCode(code: string, listKey?: string | null): number
+  addBindingCode(code: string, listKey?: string | null, reads?: AnyNode | AnyNode[] | null): number
   guardCode(code: string): string
   withGuard<T>(guard: string | null, fn: () => T): T
   withRefForbidden<T>(fn: () => T): T

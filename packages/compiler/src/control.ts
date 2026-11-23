@@ -98,7 +98,7 @@ export function compileCallbackBranch(fn, label, when, keyed, ctx, scope, direct
     ctx.addWxs()
     valuesExpr = `glazeRange.single(${whenCode})`
   } else {
-    const values = ctx.addBindingCode(`[(${whenCode})]`)
+    const values = ctx.addBindingCode(`[(${whenCode})]`, null, when)
     valuesExpr = `b${values}`
   }
   const loop = `<block wx:for="{{${valuesExpr}}}" wx:for-item="${itemName}" wx:for-index="${indexName}" wx:key="*this">${content}</block>`
@@ -542,6 +542,8 @@ export function compileRepeat(node, ctx, scope) {
 
   const binding = ctx.addBindingCode(
     `Array.from({ length: (${codeOf(count)}) }, (_, index) => index + (${fromCode}))`,
+    null,
+    from ? [count, from] : count,
   )
   const itemScope = {
     item: itemName,

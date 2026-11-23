@@ -385,6 +385,7 @@ export function compileProvider(node, ctx, scope) {
   if (containsJsx(value)) {
     throw new Error('A Context provider value cannot be JSX')
   }
+  ctx.notePropReads(value)
   const contextName = t.isJSXMemberExpression(tag) && t.isJSXIdentifier(tag.object)
     ? tag.object.name
     : t.isJSXIdentifier(tag)
@@ -510,7 +511,7 @@ export function compileExpressionChild(expression, ctx, scope) {
   }
   if (booleanish) {
     ctx.addHelper('textValue')
-    const index = ctx.addBindingCode(`textValue(${codeOf(expression)})`)
+    const index = ctx.addBindingCode(`textValue(${codeOf(expression)})`, null, expression)
     return `{{b${index}}}`
   }
   const index = ctx.addBinding(expression)
