@@ -18,6 +18,13 @@ import {
   patternAliases,
   rewriteAccessorCalls,
 } from './scope.ts'
+import { STRUCTURED_PROPS } from './constants.ts'
+
+const assertScopeName = (name: string, label: string) => {
+  if (name === STRUCTURED_PROPS) {
+    throw new Error(`${label} parameter may not use "${STRUCTURED_PROPS}"`)
+  }
+}
 import type { AnyNode, CompilerContext, Scope } from './types.ts'
 
 export function compileConditional(test, consequent, alternate, ctx, scope) {
@@ -44,6 +51,7 @@ export function compileCallbackBranch(fn, label, when, keyed, ctx, scope, direct
     : t.isIdentifier(firstParam)
       ? firstParam.name
       : 'value'
+  assertScopeName(param, label)
   const callback = callbackBody(fn, label, [param])
   const aliases = mergeAliases(
     destructured ? patternAliases(firstParam, [param]) : null,
@@ -198,6 +206,7 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
       param.name,
       ...(resetAlias ? [resetAlias] : []),
     ])
+    assertScopeName(param.name, '<Errored>')
     if (!t.isJSXElement(callback.jsx) && !t.isJSXFragment(callback.jsx)) {
       throw new Error('<Errored> fallback function must return JSX')
     }
@@ -545,6 +554,8 @@ export function compileFor(node, ctx, scope) {
       ? `__glazeIndex${scope.level + 1}`
       : '__glazeIndex'
   const callback = callbackBody(fn, '<For>', [itemName, indexName])
+  assertScopeName(itemName, '<For> item')
+  assertScopeName(indexName, '<For> index')
   const aliases = mergeAliases(
     destructured ? patternAliases(firstParam, [itemName]) : null,
     callback.aliases,

@@ -353,7 +353,7 @@ the automator during this run, and the existing eight-prop number is kept as the
 reference.
 
 The automatic variant is now what the compiler emits for a Glaze-to-Glaze
-component with at least two scalar props: the child source still reads
+component with at least two groupable scalar props: the child source still reads
 `props.a`, the parent emits one `glazeprops` object, and the child WXML projects
 `glazeprops.a` with the scalar property as a fallback. The manual object page is
 kept as the A/B control; it is no longer the recommended component API.

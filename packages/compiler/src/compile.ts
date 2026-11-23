@@ -27,12 +27,27 @@ import type {
  * exactly the cases where the mini-program runtime diverges from Solid.
  */
 /**
- * A structured child needs at least two non-event props: the parent groups only
- * that case, and one scalar prop is cheaper as a normal WXML attribute.
+ * A structured child needs at least two props that the parent can actually
+ * group. Host attributes and event props never enter the compact object, so
+ * counting them would mark a child whose parent cannot group anything.
  */
+const NON_GROUPABLE_PROPS = new Set([
+  'class',
+  'style',
+  'id',
+  'slot',
+  'key',
+  'children',
+  'glazecontext',
+  'glazeprops',
+])
+const isEventProp = (name: string) => /^on[A-Z]/.test(name)
+const groupableProps = (props: string[]) =>
+  props.filter((name) => !isEventProp(name) && !NON_GROUPABLE_PROPS.has(name.toLowerCase()))
+
 export function hasMultipleProps(source: string): boolean {
   try {
-    return parseComponent(source).props.filter((name) => !/^on[A-Z]/.test(name)).length >= 2
+    return groupableProps(parseComponent(source).props).length >= 2
   } catch {
     return false
   }
@@ -330,13 +345,13 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
 
   const eventProps = Object.fromEntries(
     props
-      .filter((name) => /^on[A-Z]/.test(name))
+      .filter((name) => isEventProp(name))
       .map((name) => {
         const binding = splitEventBinding(name)
         return [name, eventNameFor(binding?.base ?? name)]
       }),
   )
-  if (props.includes(STRUCTURED_PROPS)) {
+  if (props.some((name) => name.toLowerCase() === STRUCTURED_PROPS)) {
     throw new Error(
       `Component props may not use the reserved compiler property "${STRUCTURED_PROPS}"`,
     )
@@ -347,7 +362,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
   ]
   // A one-prop child has no property fan-out to remove, and its parent keeps
   // the normal attribute path; do not add the compact property or fallback.
-  if (ctx.structuredProps && plainProps.filter((name) => name !== 'glazecontext').length < 2) {
+  if (ctx.structuredProps && groupableProps(plainProps).length < 2) {
     ctx.structuredProps = false
   }
   const propertyNames = plainProps.map((name) => name.toLowerCase())

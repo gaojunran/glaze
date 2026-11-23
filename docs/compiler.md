@@ -181,10 +181,10 @@ signal. That costs only the optimization, never correctness.
 
 ### Structured props for component boundaries
 
-`glaze build` compiles a non-page component with at least two non-event props
+`glaze build` compiles a non-page component with at least two groupable props
 with an internal `structuredProps` config. For an imported child with two or more
-scalar props, the parent emits one object property instead of one WXML property
-per prop:
+groupable scalar props, the parent emits one object property instead of one WXML
+property per prop:
 
 ```tsx
 <Child title={row.title} done={row.done} />
@@ -204,10 +204,10 @@ and falls back to the scalar property:
 Why the fallback is per prop: the parent does not know which props the child
 declares, a native parent passes scalar properties, and a child prop can have a
 default. A missing object field therefore resolves to the scalar property rather
-than `undefined`. `class`, `style`, `id`, `slot`, `data-*`/`aria-*`, events and
-`glazecontext` stay outside the object; a single scalar prop keeps the normal
-attribute form. Pages are compiled without `structuredProps`, so a component
-used as a page never receives or emits the object.
+than `undefined`. `class`, `style`, `id`, `slot`, `data-*`/`aria-*`, events,
+`children`, `key` and `glazecontext` stay outside the object; a single scalar prop
+keeps the normal attribute form. Pages are compiled without `structuredProps`, so
+a component used as a page never receives or emits the object.
 
 The runtime adds the `glazeprops` property only when the marker is present. It
 creates a `glazeprops` signal only when the child has at least two public props

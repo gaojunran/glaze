@@ -317,6 +317,12 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
     if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(attrName)) {
       throw new Error(`Component prop "${attrName}" must be a valid identifier`)
     }
+    if (attrName.toLowerCase() === STRUCTURED_PROPS) {
+      throw new Error(`"${STRUCTURED_PROPS}" is reserved for compiled component props`)
+    }
+    if (attrName.toLowerCase() === 'glazecontext') {
+      throw new Error('"glazecontext" is reserved for compiled context props')
+    }
 
     const propName = attrName.toLowerCase()
     const expression = getExpression(attr)
@@ -329,8 +335,9 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
       attrs.push(styleAttr(expression, ctx, scope))
       continue
     }
-    // class/style/id/slot are host attributes or helpers, not scalar props.
-    const group = !['class', 'style', 'id', 'slot'].includes(propName)
+    // class/style/id/slot and context are host attributes or helpers, not
+    // scalar props.
+    const group = !['class', 'style', 'id', 'slot', 'glazecontext'].includes(propName)
     if (t.isStringLiteral(expression)) {
       const value = staticAssetAttr(propName, expression.value, ctx) ?? expression.value
       scalarProps.push({

@@ -44,7 +44,10 @@ const STRUCTURED_PROP = 'glazeprops'
 export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   const publicPropertyNames = config.properties ?? []
   const structuredProps = config.structuredProps === true
-  if (structuredProps && publicPropertyNames.includes(STRUCTURED_PROP)) {
+  if (
+    structuredProps &&
+    publicPropertyNames.some((name) => name.toLowerCase() === STRUCTURED_PROP)
+  ) {
     throw new Error(`Component props may not use the reserved property "${STRUCTURED_PROP}"`)
   }
   const propertyNames = structuredProps
@@ -880,8 +883,10 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
                   typeof structured === 'object' &&
                   Object.hasOwn(structured, mapped)
                 ) {
+                  // Match the WXML projection: an explicit undefined field is
+                  // treated as absent, while a null field is a real value.
                   const value = (structured as Record<string, unknown>)[mapped]
-                  if (value !== undefined) return value
+                  if (value !== undefined) return normalizePropValue(value)
                 }
               }
               return Object.hasOwn(state.props, mapped) ? state.props[mapped]![0]() : undefined

@@ -215,7 +215,7 @@ and hand-written component compatibility; the manual page stays as the control.
 Status: implemented.
 
 The object-prop A/B above was a manual fixture. The compiler now emits the same
-shape itself for a Glaze-to-Glaze child with at least two scalar props:
+shape itself for a Glaze-to-Glaze child with at least two groupable scalar props:
 
 ```tsx
 <Child title={row.title} done={row.done} count={row.count} />
@@ -237,10 +237,12 @@ reads through the compact property with the scalar property as a fallback:
 Implementation boundaries:
 
 - `@glaze/build` marks a non-page `.tsx` component with `structuredProps` when
-  it declares at least two non-event props; pages and one-prop components keep
-  the scalar layout, and a component used as a page is never merged.
+  it declares at least two groupable props (not events, `class`/`style`/`id`/
+  `slot`, `children`, `key` or `glazecontext`; `glazeprops` is reserved); pages
+  and one-prop components keep the scalar layout, and a component used as a page
+  is never merged.
 - The parent groups only when the imported child resolves to a structured
-  component and at least two scalar props are present.
+  component and at least two groupable scalar props are present.
 - `class`, `style`, `id`, `slot`, `data-*`/`aria-*`, events and `glazecontext`
   stay separate. One scalar prop keeps the native attribute path.
 - The runtime adds the `glazeprops` property only for components with the
@@ -276,7 +278,7 @@ signal now replaces the per-prop signals, so an unrelated field change wakes
 the prop bindings; they recompute but `applyBinding` still skips unchanged
 values, so the result stays correct.
 
-Validation for this wave: compiler 271, runtime 116, build 120, shared 2 (509
+Validation for this wave: compiler 275, runtime 117, build 120, shared 2 (514
 total), five package typechecks, `glaze build` with 17 pages / 31 components,
 and minidev e2e 10/10.
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { compileComponent } from '../src/index.ts'
+import { compileComponent, hasMultipleProps } from '../src/index.ts'
 
 const child = `
   import { createSignal } from 'solid-js'
@@ -156,6 +156,82 @@ test('keeps nested prop access as one conditional instead of a parenthesized mem
   assert.doesNotMatch(result.wxml, /\)\.name/)
 })
 
+test('does not mark a one-prop component itself as structured', () => {
+  const result = compileComponent(
+    `
+      export default function Child(props) {
+        return <view><text>{props.title}</text></view>
+      }
+    `,
+    { structuredProps: true },
+  )
+  assert.equal(result.structuredProps, false)
+  assert.doesNotMatch(result.wxml, /glazeprops/)
+  assert.doesNotMatch(result.js, /structuredProps/)
+})
+
+test('does not count host attributes toward the structured decision', () => {
+  const result = compileComponent(
+    `
+      export default function Child(props) {
+        return <view id={props.id}><text>{props.title}</text></view>
+      }
+    `,
+    { structuredProps: true },
+  )
+  assert.equal(result.structuredProps, false)
+  assert.doesNotMatch(result.wxml, /glazeprops/)
+})
+
+test('counts only props that the parent can group', () => {
+  assert.equal(
+    hasMultipleProps(`
+      export default function Child(props) {
+        return <view id={props.id}><text>{props.title}</text></view>
+      }
+    `),
+    false,
+  )
+  assert.equal(
+    hasMultipleProps(`
+      export default function Child(props) {
+        return <view><text>{props.title}</text><text>{props.done}</text></view>
+      }
+    `),
+    true,
+  )
+  assert.equal(
+    hasMultipleProps(`
+      export default function Child(props) {
+        return <view>{props.children}<text>{props.title}</text></view>
+      }
+    `),
+    false,
+  )
+})
+
+test('rejects loop variables that shadow the compact property', () => {
+  for (const source of [
+    `
+      export default function C() {
+        return <For each={[]}>{(glazeprops) => <text>{glazeprops}</text>}</For>
+      }
+    `,
+    `
+      export default function C() {
+        return <For each={[]}>{(item, glazeprops) => <text>{item}</text>}</For>
+      }
+    `,
+    `
+      export default function C() {
+        return <Show when={true}>{(glazeprops) => <text>{glazeprops}</text>}</Show>
+      }
+    `,
+  ]) {
+    assert.throws(() => compileComponent(source), /may not use "glazeprops"/)
+  }
+})
+
 test('rejects the reserved compact property name', () => {
   assert.throws(
     () =>
@@ -165,5 +241,46 @@ test('rejects the reserved compact property name', () => {
         }
       `),
     /reserved compiler property "glazeprops"/,
+  )
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Child(props) {
+          return <view>{props.glazeProps}</view>
+        }
+      `),
+    /reserved compiler property "glazeprops"/,
+  )
+  assert.throws(
+    () =>
+      compileComponent(
+        `
+          import Child from './Child'
+          export default function Page(props) {
+            return <Child glazeprops={1} title={props.title} />
+          }
+        `,
+        {
+          sourceFile: '/project/src/Page.tsx',
+          resolveComponent: () => ({ source: child, file: '/project/src/Child.tsx' }),
+        },
+      ),
+    /reserved for compiled component props/,
+  )
+  assert.throws(
+    () =>
+      compileComponent(
+        `
+          import Child from './Child'
+          export default function Page(props) {
+            return <Child glazecontext={1} title={props.title} />
+          }
+        `,
+        {
+          sourceFile: '/project/src/Page.tsx',
+          resolveComponent: () => ({ source: child, file: '/project/src/Child.tsx' }),
+        },
+      ),
+    /reserved for compiled context props/,
   )
 })

@@ -112,10 +112,32 @@ test('reads structured props and falls back to the scalar property', async () =>
   assert.equal(observed.title, 'next')
   assert.equal(instance.calls.at(-1).b0, 'next')
 
+  instance.properties.glazeprops = { title: null }
+  def.observers.glazeprops.call(instance, { title: null })
+  await tick()
+  assert.equal(observed.title, undefined)
+
+  instance.properties.glazeprops = { title: undefined }
+  def.observers.glazeprops.call(instance, { title: undefined })
+  await tick()
+  assert.equal(observed.title, 'scalar')
+
   instance.properties.glazeprops = null
   def.observers.glazeprops.call(instance, null)
   await tick()
   assert.equal(observed.title, 'scalar')
+})
+
+test('rejects a case variant of the structured property name', () => {
+  assert.throws(
+    () =>
+      defineGlazeComponent({
+        properties: ['glazeProps'],
+        structuredProps: true,
+        setup() {},
+      }),
+    /reserved property "glazeprops"/,
+  )
 })
 
 test('props proxy does not leak Object.prototype members', () => {
