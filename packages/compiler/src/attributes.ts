@@ -1,9 +1,12 @@
 import * as t from '@babel/types'
 import { codeOf, escapeAttr } from './ast.ts'
+import { projectExpression } from './projection.ts'
 import { inlineExpression } from './scope.ts'
 import type { AnyNode, CompilerContext, Scope } from './types.ts'
 
 export function conditionExpression(expression, ctx, scope) {
+  const projected = projectExpression(expression, ctx, scope)
+  if (projected != null) return projected
   if (scope) return inlineExpression(expression, scope, ctx)
   return `b${ctx.addBinding(expression)}`
 }

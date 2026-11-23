@@ -1,6 +1,7 @@
 import * as t from '@babel/types'
 import { codeOf, getAttribute, getExpression, isWhitespaceText } from './ast.ts'
 import { conditionExpression } from './attributes.ts'
+import { projectExpression } from './projection.ts'
 import { compileChildren, compileNode } from './elements.ts'
 import {
   callbackBody,
@@ -365,8 +366,9 @@ export function compileFor(node, ctx, scope) {
     key = keyedField
   }
 
-  const eachCode = scope ? inlineExpression(each, scope, ctx) : codeOf(each)
-  const eachExpr = scope ? eachCode : `b${ctx.addBinding(each, key)}`
+  const projectedEach = projectExpression(each, ctx, scope)
+  const eachCode = projectedEach ?? (scope ? inlineExpression(each, scope, ctx) : codeOf(each))
+  const eachExpr = projectedEach ?? (scope ? eachCode : `b${ctx.addBinding(each, key)}`)
   const jsEachCode = scope ? codeOf(rewriteAccessorCalls(each, scope, true)) : codeOf(each)
 
   const childNodes = node.children.filter((item) => !isWhitespaceText(item))
@@ -439,7 +441,7 @@ export function compileFor(node, ctx, scope) {
   ) {
     throw new Error('<For> fallback must be JSX')
   }
-  const condition = scope
+  const condition = scope || projectedEach
     ? `(${eachCode} || []).length > 0`
     : `b${ctx.addBindingCode(`(${eachCode} || []).length > 0`)}`
   const fallbackGuard = scope ? null : `(${codeOf(each)} || []).length === 0`

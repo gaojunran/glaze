@@ -1616,7 +1616,7 @@ export default function Child(props) {
     path.join(project, 'miniprogram/components/glaze-child/index.wxml'),
     'utf8',
   )
-  assert.match(child, /src="\{\{b0\}\}"/)
+  assert.match(child, /src="\{\{src\}\}"/)
 })
 
 test('keeps imported subpackage assets inside the package root', async () => {

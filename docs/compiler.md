@@ -109,15 +109,55 @@ list. The parent is compiled to a tag and the build script writes
 <todo-item title="{{todo.title}}" done="{{todo.done}}" />
 ```
 
-At runtime the child declares those names as mini-program `properties`, creates
-one Solid signal per prop, and exposes a getter-only `props` object. Property
-observers update the signals; the normal binding effects then update the child's
-own WXML. Prop names may be camelCase: the compiler lowercases the WXML property
-name (`userName` -> `username`, `user-name` in WXML source is normalized by the
+At runtime the child declares those names as mini-program `properties`. Prop
+names may be camelCase: the compiler lowercases the WXML property name
+(`userName` -> `username`, `user-name` in WXML source is normalized by the
 mini-program runtime), emits `propMap: { userName: "username" }`, and the runtime
 Proxy resolves `props.userName` through that map. Event props (`onToggle`,
 `onChange`, ...) are compiled as mini-program custom events instead of
 properties; see below.
+
+### Prop projection and selective prop signals
+
+The compiler projects an expression that only reads props directly into WXML,
+without a `bN` binding and without a child effect:
+
+```tsx
+<text>{props.title}</text>
+<view title={props.title} data-id={props.id} />
+```
+
+becomes:
+
+```xml
+<text>{{title}}</text>
+<view title="{{title}}" data-id="{{id}}" />
+```
+
+The first wave accepts property access, string/number/boolean/null literals,
+`+ - * / %`, comparisons, `&&`, `||`, unary `! + -`, ternaries, and nested
+property access (`props.user.name`). Anything else stays on the normal binding
+path: calls, optional access (`props.user?.name`), `??`, computed access,
+objects/arrays, template literals, and expressions mixed with local state.
+A prop whose lowercased name collides with a local declaration also stays on the
+binding path.
+
+Projection is only done outside a loop. Expressions inside `<For>`/`<Show>`
+continue to use the existing inline/hoist path; a pure child inside a loop is
+handled by component inlining instead.
+
+Because WXML reads the property directly, a parent prop update no longer needs
+the child's Solid signal or binding effect. The runtime still creates a signal
+and a property observer only for props that generated JavaScript actually reads:
+setup statements, bindings, events, or refs. The compiler emits
+`propSignals: []` when every prop is WXML-only, or a list of the property names
+that are read by JS. When all props are read it omits the field and the runtime
+keeps the old behavior.
+
+A prop read only by WXML is still a normal mini-program property, so the child
+template updates when the parent writes the property. This is the same path a
+native child component uses. A prop read by JS still gets a signal; its observer
+updates the signal and the normal binding effects run.
 
 `glaze build` compiles every `.tsx` under `src/`, resolves relative component
 imports, and emits each reached component plus its `usingComponents` map. Local

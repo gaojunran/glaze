@@ -51,6 +51,7 @@ export type GlazeComponentConfig = {
   asyncStatus?: { index: number; kind: 'loading' | 'error'; boundary: number }[]
   properties?: string[]
   propMap?: Record<string, string>
+  propSignals?: string[]
   eventProps?: Record<string, string>
   listBindings?: Record<string, string>
   handlerCount?: number

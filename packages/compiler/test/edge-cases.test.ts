@@ -63,8 +63,8 @@ test('emits adjacent expression children without separators', () => {
       return <text>{props.a}{props.b}</text>
     }
   `)
-  assert.ok(result.wxml.includes('{{b0}}{{b1}}'))
-  assert.equal(result.bindingCount, 2)
+  assert.ok(result.wxml.includes('{{a}}{{b}}'))
+  assert.equal(result.bindingCount, 0)
 })
 
 test('keeps the space between an expression and following text', () => {
@@ -73,7 +73,7 @@ test('keeps the space between an expression and following text', () => {
       return <text>{props.a} world</text>
     }
   `)
-  assert.ok(result.wxml.includes('{{b0}} world'))
+  assert.ok(result.wxml.includes('{{a}} world'))
 })
 
 test('drops whitespace-only JSX children', () => {
@@ -91,8 +91,8 @@ test('keeps double-quoted string literals inside an attribute expression', () =>
       return <view title={props.a === "x" ? "yes" : "no"} />
     }
   `)
-  assert.match(result.wxml, /title="\{\{b0\}\}"/)
-  assert.ok(result.js.includes('props.a === "x" ? "yes" : "no"'))
+  assert.match(result.wxml, /title="\{\{a === 'x' \? 'yes' : 'no'\}\}"/)
+  assert.doesNotMatch(result.js, /ctx\.bind/)
 })
 
 test('passes an apostrophe in a static attribute through', () => {
@@ -316,7 +316,7 @@ test('inlines a literal *this loop key', () => {
     }
   `)
   assert.match(result.wxml, /wx:key="\*this"/)
-  assert.ok(result.js.includes('listBindings: {"0":"*this"}'))
+  assert.ok(result.js.includes('listBindings: {}'))
 })
 
 test('destructures an array loop item into indexed access', () => {
@@ -330,7 +330,7 @@ test('destructures an array loop item into indexed access', () => {
     }
   `)
   assert.ok(result.wxml.includes('{{__glazeItem[0]}}-{{__glazeItem[1]}}'))
-  assert.ok(result.js.includes('listBindings: {"0":"id"}'))
+  assert.ok(result.js.includes('listBindings: {}'))
 })
 
 test('destructures nested loop fields with a rename', () => {
@@ -375,7 +375,7 @@ test('compiles Switch inside For without allocating loop bindings', () => {
     }
   `)
   assert.ok(result.wxml.includes('<text wx:if="{{item.done}}">done</text><text wx:else>?</text>'))
-  assert.equal(result.bindingCount, 1)
+  assert.equal(result.bindingCount, 0)
 })
 
 test('infers a loop key from a block-bodied keyed function', () => {
@@ -579,7 +579,7 @@ test('wraps multiple Show children and keeps the fallback', () => {
       )
     }
   `)
-  assert.ok(result.wxml.includes('<block wx:if="{{b0}}"><text>a</text><text>b</text></block><text wx:else>no</text>'))
+  assert.ok(result.wxml.includes('<block wx:if="{{a}}"><text>a</text><text>b</text></block><text wx:else>no</text>'))
 })
 
 test('guards the Show body binding against a falsy condition', () => {
@@ -588,7 +588,8 @@ test('guards the Show body binding against a falsy condition', () => {
       return <Show when={props.a}><text>{props.b}</text></Show>
     }
   `)
-  assert.ok(result.js.includes('ctx.bind(1, () => (((props.a)) ? (props.b) : undefined))'))
+  assert.ok(result.wxml.includes('<text wx:if="{{a}}">{{b}}</text>'))
+  assert.doesNotMatch(result.js, /ctx\.bind/)
 })
 
 test('guards the Show fallback binding against a truthy condition', () => {
@@ -597,7 +598,8 @@ test('guards the Show fallback binding against a truthy condition', () => {
       return <Show when={props.a} fallback={<text>{props.fallback}</text>}><text>x</text></Show>
     }
   `)
-  assert.ok(result.js.includes('ctx.bind(1, () => (((!(props.a))) ? (props.fallback) : undefined))'))
+  assert.ok(result.wxml.includes('<text wx:if="{{a}}">x</text><text wx:else>{{fallback}}</text>'))
+  assert.doesNotMatch(result.js, /ctx\.bind/)
 })
 
 test('renders a non-keyed Show function child with a fallback', () => {
@@ -623,8 +625,8 @@ test('compiles For nested inside Show', () => {
       )
     }
   `)
-  assert.ok(result.wxml.includes('<block wx:if="{{b0}}"><block wx:for="{{b1}}"'))
-  assert.ok(result.js.includes('((props.open)) ? (props.items) : undefined'))
+  assert.ok(result.wxml.includes('<block wx:if="{{open}}"><block wx:for="{{items}}"'))
+  assert.doesNotMatch(result.js, /ctx\.bind/)
 })
 
 test('compiles Show nested inside For', () => {
@@ -651,8 +653,9 @@ test('adds negated earlier Match guards to later bindings', () => {
       )
     }
   `)
-  assert.match(result.js, /props\.b\) && \(!\(props\.a\)\)/)
-  assert.ok(result.js.includes('? (props.y) : undefined'))
+  assert.match(result.wxml, /wx:if="\{\{a\}\}"/)
+  assert.match(result.wxml, /wx:elif="\{\{b\}\}"/)
+  assert.doesNotMatch(result.js, /ctx\.bind/)
 })
 
 test('renders a non-keyed Match function child', () => {
@@ -780,7 +783,7 @@ test('binds dynamic data-* attributes on a component', () => {
       return <Child data-id={props.id} aria-label={props.label} />
     }
   `)
-  assert.ok(result.wxml.includes('data-id="{{b0}}" aria-label="{{b1}}"'))
+  assert.ok(result.wxml.includes('data-id="{{id}}" aria-label="{{label}}"'))
   assert.deepEqual(result.props, ['id', 'label'])
 })
 
@@ -796,7 +799,7 @@ test('binds dynamic data-* attributes on a component inside For', () => {
     }
   `)
   assert.ok(result.wxml.includes('<child data-id="{{item.id}}" aria-label="{{item.label}}" />'))
-  assert.equal(result.bindingCount, 1)
+  assert.equal(result.bindingCount, 0)
 })
 
 test('emits a boolean shorthand prop on a component', () => {
@@ -929,7 +932,7 @@ test('orders helper imports after the component helper', () => {
     }
   `)
   assert.ok(
-    result.js.includes('import { defineGlazeComponent, textValue, className, styleName } from "@glaze/runtime/mini";'),
+    result.js.includes('import { defineGlazeComponent, className, styleName } from "@glaze/runtime/mini";'),
   )
 })
 
@@ -942,9 +945,8 @@ test('sizes the data object to the binding count', () => {
   const match = result.js.match(/data: (\{[^}]*\}),/)
   assert.ok(match)
   const data = JSON.parse(match[1])
-  assert.equal(result.bindingCount, 3)
-  assert.equal(Object.keys(data).length, result.bindingCount)
-  assert.ok(Object.values(data).every((value) => value === null))
+  assert.equal(result.bindingCount, 0)
+  assert.equal(Object.keys(data).length, 0)
 })
 
 test('emits listBindings only for keyed loops', () => {
@@ -953,7 +955,7 @@ test('emits listBindings only for keyed loops', () => {
       return <For each={props.items} key="id">{(item) => <text>{item.name}</text>}</For>
     }
   `)
-  assert.ok(keyed.js.includes('listBindings: {"0":"id"}'))
+  assert.ok(keyed.js.includes('listBindings: {}'))
 
   const unkeyed = compileComponent(`
     export default function Page(props) {
@@ -1167,4 +1169,100 @@ test('rejects props.class across a component boundary', () => {
       `),
     /props\.class is not delivered/,
   )
+})
+
+test('projects prop-only expressions into WXML without bindings', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return (
+        <view title={props.name} data-id={props.id}>
+          <text>{props.name}</text>
+          <text>{props.user.name}</text>
+          <view a={props.a === 'x' ? 'yes' : 'no'} />
+        </view>
+      )
+    }
+  `)
+  assert.equal(result.bindingCount, 0)
+  assert.equal(result.js.includes('ctx.bind'), false)
+  assert.match(result.wxml, /title="\{\{name\}\}"/)
+  assert.match(result.wxml, /data-id="\{\{id\}\}"/)
+  assert.match(result.wxml, /<text>\{\{name\}\}<\//)
+  assert.match(result.wxml, /<text>\{\{user\.name\}\}<\//)
+  assert.match(result.wxml, /a="\{\{a === 'x' \? 'yes' : 'no'\}\}"/)
+})
+
+test('keeps mixed prop and local-state expressions on the binding path', () => {
+  const result = compileComponent(`
+    import { createSignal } from 'solid-js'
+    export default function Page(props) {
+      const [count] = createSignal(0)
+      return <text>{props.name + count()}</text>
+    }
+  `)
+  assert.equal(result.bindingCount, 1)
+  assert.match(result.wxml, /<text>\{\{b0\}\}<\//)
+  assert.ok(result.js.includes('props.name + count()'))
+})
+
+test('falls back to a binding when a prop name is shadowed locally', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      const title = 'local'
+      return <text>{props.title}</text>
+    }
+  `)
+  assert.equal(result.bindingCount, 1)
+  assert.match(result.wxml, /<text>\{\{b0\}\}<\//)
+})
+
+test('projects a prop-only For source and Show condition', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return (
+        <Show when={props.open}>
+          <For each={props.items} key="id">{(item) => <text>{item.name}</text>}</For>
+        </Show>
+      )
+    }
+  `)
+  assert.equal(result.bindingCount, 0)
+  assert.ok(result.wxml.includes('wx:if="{{open}}"'))
+  assert.ok(result.wxml.includes('wx:for="{{items}}"'))
+  assert.ok(result.js.includes('listBindings: {}'))
+})
+
+test('keeps optional prop expressions on the binding path', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return <text>{props.user?.name}</text>
+    }
+  `)
+  assert.equal(result.bindingCount, 1)
+})
+
+test('projects boolean prop expressions through the WXS value helper', () => {
+  const result = compileComponent(`
+    export default function Page(props) {
+      return <text>{props.done && 'done'}</text>
+    }
+  `)
+  assert.equal(result.bindingCount, 0)
+  assert.ok(result.wxml.includes("glazeValue.value(done && 'done')"))
+})
+
+test('emits propSignals only for props read by generated JavaScript', () => {
+  const direct = compileComponent(`
+    export default function Page(props) {
+      return <view title={props.title}><text>{props.title}</text></view>
+    }
+  `)
+  assert.match(direct.js, /propSignals: \[\]/)
+
+  const mixed = compileComponent(`
+    export default function Page(props) {
+      return <view title={props.title}><text>{props.name + String(Date.now())}</text></view>
+    }
+  `)
+  assert.match(mixed.js, /propSignals: \["name"\]/)
 })

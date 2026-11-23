@@ -31,6 +31,7 @@ import {
   splitEventBinding,
 } from './events.ts'
 import { inlineComponent } from './inline.ts'
+import { projectExpression } from './projection.ts'
 import { inlineExpression } from './scope.ts'
 import type { AnyNode, CompilerContext, Scope } from './types.ts'
 
@@ -205,7 +206,10 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
       continue
     }
 
-    if (scope) {
+    const projected = projectExpression(expression, ctx, scope)
+    if (projected != null) {
+      attrs.push(`${propName}="{{${projected}}}"`)
+    } else if (scope) {
       attrs.push(`${propName}="{{${inlineExpression(expression, scope, ctx)}}}"`)
     } else {
       const index = ctx.addBinding(expression)
@@ -295,11 +299,16 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
       }
       if (t.isStringLiteral(expression) || t.isNumericLiteral(expression)) {
         attrs.push(`${attrName}="${escapeAttr(String(expression.value))}"`)
-      } else if (scope) {
-        attrs.push(`${attrName}="{{${inlineExpression(expression, scope, ctx)}}}"`)
       } else {
-        const index = ctx.addBinding(expression)
-        attrs.push(`${attrName}="{{b${index}}}"`)
+        const projected = projectExpression(expression, ctx, scope)
+        if (projected != null) {
+          attrs.push(`${attrName}="{{${projected}}}"`)
+        } else if (scope) {
+          attrs.push(`${attrName}="{{${inlineExpression(expression, scope, ctx)}}}"`)
+        } else {
+          const index = ctx.addBinding(expression)
+          attrs.push(`${attrName}="{{b${index}}}"`)
+        }
       }
       continue
     }
@@ -327,7 +336,10 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
       attrs.push(`${propName}="{{${expression.value}}}"`)
       continue
     }
-    if (scope) {
+    const projected = projectExpression(expression, ctx, scope)
+    if (projected != null) {
+      attrs.push(`${propName}="{{${projected}}}"`)
+    } else if (scope) {
       attrs.push(`${propName}="{{${inlineExpression(expression, scope, ctx)}}}"`)
     } else {
       const index = ctx.addBinding(expression)
@@ -481,6 +493,14 @@ export function compileExpressionChild(expression, ctx, scope) {
     (t.isUnaryExpression(expression) && expression.operator === '!') ||
     (t.isBinaryExpression(expression) &&
       ['==', '===', '!=', '!==', '<', '<=', '>', '>='].includes(expression.operator))
+  const projected = projectExpression(expression, ctx, scope)
+  if (projected != null) {
+    if (booleanish) {
+      ctx.addWxsValue()
+      return `{{glazeValue.value(${projected})}}`
+    }
+    return `{{${projected}}}`
+  }
   if (scope) {
     if (booleanish) {
       ctx.addWxsValue()

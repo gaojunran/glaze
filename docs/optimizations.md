@@ -86,6 +86,41 @@ Risks:
 - Event handlers still need the loop index/row reconstruction.
 - Local state is the semantic line: a stateful child must never be flattened.
 
+## P1 — Prop-only projection and selective prop signals
+
+Status: implemented. A child component used to project every prop through a
+child Solid signal, a property observer and a binding effect:
+
+```text
+parent property write
+  -> child property observer
+  -> child prop signal
+  -> child binding effect
+  -> child setData
+  -> child WXML
+```
+
+The compiler now emits `{{title}}` directly for prop-only WXML expressions and
+only keeps signals for props read by generated JavaScript. WXML then follows the
+mini-program property path, as a native child does.
+
+Measured with 500 stateful row components (each row has local state, so it stays
+a real component boundary), three runs, full title update in every row:
+
+| Implementation | First render | Update all 500 rows |
+| --- | ---: | ---: |
+| Native WXML | 3237–3303 ms | 54 ms |
+| uni-app Vue3 | 3280–3318 ms | 59–66 ms |
+| Vue Mini | 3259–3311 ms | 120–138 ms |
+| Glaze before projection | 3350–3371 ms | 199–222 ms |
+| Glaze after projection | 3262–3317 ms | 131–144 ms |
+| Glaze, pure row inline | 3183–3201 ms | 54–56 ms |
+
+The projection removes about 30–35% of the update time but does not reach native:
+500 real child boundaries still pay 500 property writes and 500 child runtime
+entries. Pure components inlined into the parent remain the only way to reach
+native time. Single-row update stays at the simulator floor (53–55 ms).
+
 ## P1 — Batch scalar bindings
 
 Status: implemented.

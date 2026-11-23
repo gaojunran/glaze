@@ -40,9 +40,11 @@ No virtual DOM, Taro DOM, or generic renderer exists at runtime. The only data
 that crosses the bridge is the changed binding value.
 
 A child Solid component becomes a mini-program component with declared
-`properties`. Its parent passes WXML attributes; property observers write the
-child's prop signals, and the child's own binding effects update its WXML. The
-parent does not render the child in JS.
+`properties`. Its parent passes WXML attributes. A prop used only in WXML is
+projected directly as `{{title}}`, so the property path updates the template
+without a child effect. A prop read by generated JavaScript gets a prop signal
+and an observer; the child's binding effects then update its WXML. The parent
+does not render the child in JS.
 
 ## Why this shape
 

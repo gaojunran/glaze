@@ -70,7 +70,7 @@ test('compiles props and an imported component', () => {
 
   assert.deepEqual(result.props, ['title'])
   assert.deepEqual(result.components, [{ name: 'TodoItem', source: './TodoItem' }])
-  assert.match(result.wxml, /<todo-item title="\{\{b0\}\}" done="\{\{b1\}\}" \/>/)
+  assert.match(result.wxml, /<todo-item title="\{\{title\}\}" done="\{\{true\}\}" \/>/)
   assert.match(result.js, /properties: \["title"\]/)
   assert.match(result.js, /setup\(ctx, props\)/)
 })
@@ -671,9 +671,9 @@ test('compiles For fallback and Repeat', () => {
       )
     }
   `)
-  assert.match(forResult.wxml, /<block wx:if="\{\{b1\}\}">/)
+  assert.match(forResult.wxml, /<block wx:if="\{\{\(items \|\| \[\]\)\.length > 0\}\}">/)
+  assert.match(forResult.wxml, /<block wx:for="\{\{items\}\}"/)
   assert.match(forResult.wxml, /<text wx:else>empty<\/text>/)
-  assert.match(forResult.js, /ctx.bind\(1, \(\) => \(\(props\.items \|\| \[\]\)\.length > 0\)\)/)
 
   const repeatResult = compileComponent(`
     export default function Page(props) {
@@ -765,9 +765,9 @@ test('hoists outer expressions inside For', () => {
       )
     }
   `)
-  assert.match(result.wxml, /<text>\{\{b1\}\}\{\{b2\}\}<\/text>/)
-  assert.match(result.js, /ctx\.bind\(1, \(\) => \(props\.prefix\)\)/)
-  assert.match(result.js, /ctx\.bind\(2, \(\) => \(format\(props\.suffix\)\)\)/)
+  assert.match(result.wxml, /<text>\{\{b0\}\}\{\{b1\}\}<\/text>/)
+  assert.match(result.js, /ctx\.bind\(0, \(\) => \(props\.prefix\)\)/)
+  assert.match(result.js, /ctx\.bind\(1, \(\) => \(format\(props\.suffix\)\)\)/)
 })
 
 test('rejects calls that depend on a loop item', () => {
@@ -992,9 +992,9 @@ test('keeps wx:if on nested control flow and inline components', () => {
       `,
     },
   )
-  assert.match(result.wxml, /<block wx:if="\{\{b0\}\}">/)
-  assert.match(result.wxml, /<text wx:if="\{\{b1\}\}">both<\/text>/)
-  assert.match(result.wxml, /<block wx:if="\{\{b0\}\}">.*<view><text>\{\{b2\}\}<\/text><\/view>/)
+  assert.match(result.wxml, /<block wx:if="\{\{outer\}\}">/)
+  assert.match(result.wxml, /<text wx:if="\{\{inner\}\}">both<\/text>/)
+  assert.match(result.wxml, /<block wx:if="\{\{outer\}\}">.*<view><text>\{\{b0\}\}<\/text><\/view>/)
 })
 
 test('guards conditional and fallback bindings against nullish values', () => {
@@ -1012,8 +1012,7 @@ test('guards conditional and fallback bindings against nullish values', () => {
       )
     }
   `)
-  assert.match(result.js, /\(\(props\.user\)\) \? \(props\.user\.name\) : undefined/)
-  assert.match(result.js, /\(\(!\(props\.user\)\)\) \? \(props\.empty\.value\) : undefined/)
+  assert.match(result.wxml, /<text wx:if="\{\{user\}\}">\{\{user\.name\}\}<\/text><text wx:else>\{\{empty\.value\}\}<\/text>/)
   assert.match(result.js, /\(\(\(props\.items \|\| \[\]\)\.length === 0\)\) \? \(props\.items\[0\]\.title\) : undefined/)
 })
 
@@ -1207,7 +1206,7 @@ test('preserves text whitespace without WXML brace collisions', () => {
       return <text>Hello {props.name}!</text>
     }
   `)
-  assert.match(result.wxml, /Hello \{\{b0\}\}!/)
+  assert.match(result.wxml, /Hello \{\{name\}\}!/)
 
   const literal = compileComponent(`
     export default function Page() {
@@ -1415,7 +1414,7 @@ test('marks relative resource literals for build-time asset rewriting', () => {
     }
   `)
   assert.equal(dynamic.assets.length, 0)
-  assert.match(dynamic.wxml, /src="\{\{b0\}\}"/)
+  assert.match(dynamic.wxml, /src="\{\{src\}\}"/)
 })
 
 test('compiles an Errored function fallback with an error accessor', () => {
@@ -1506,7 +1505,7 @@ test('trims multiline JSX text indentation without touching inline expression sp
     }
   `)
   assert.match(result.wxml, /<button class="status-toggle">cycle status<\/button>/)
-  assert.match(result.wxml, /Hello \{\{b0\}\}!/)
+  assert.match(result.wxml, /Hello \{\{value\}\}!/)
 })
 
 test('detects a boundary context read in JSX, not only in setup', () => {
@@ -1560,8 +1559,8 @@ test('does not render boolean expression children as text', () => {
       return <text>{props.on && 'x'}</text>
     }
   `)
-  assert.match(result.wxml, /<text>\{\{b0\}\}<\/text>/)
-  assert.match(result.js, /textValue\(props\.on && 'x'\)/)
+  assert.match(result.wxml, /<text>\{\{glazeValue\.value\(on && 'x'\)\}\}<\/text>/)
+  assert.doesNotMatch(result.js, /textValue/)
 })
 
 test('drops empty JSX expression children instead of emitting invalid JS', () => {

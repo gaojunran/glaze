@@ -60,6 +60,7 @@ export type CompileResult = {
   namedSlots: string[]
   boundaryContexts: BoundaryContext[]
   asyncStatus: { index: number; kind: 'loading' | 'error'; boundary: number }[]
+  propSignals: string[]
   components: ComponentRef[]
   inlineComponents: ComponentRef[]
   assets: AssetEntry[]
@@ -79,6 +80,7 @@ export type EmitOptions = {
   namedSlots: string[]
   boundaryContexts: BoundaryContext[]
   asyncStatus: { index: number; kind: 'loading' | 'error'; boundary: number }[]
+  propSignals: string[]
 }
 export type CompilerContext = {
   bindings: BindingEntry[]
@@ -96,6 +98,7 @@ export type CompilerContext = {
   inlineChildrenUsed: boolean
   inlineChildrenCount: number
   rootPropsParam: string | null
+  propMap: Record<string, string>
   contextNames: Set<string>
   contextKeys: Map<string, { key: string; imported: boolean }>
   activeProviders: ContextProvider[]

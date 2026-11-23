@@ -111,6 +111,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     inlineChildrenUsed: false,
     inlineChildrenCount: 0,
     rootPropsParam: propsParam?.name ?? null,
+    propMap: {},
     contextNames,
     contextKeys,
     activeProviders: [],
@@ -249,13 +250,41 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     throw new Error('Component props may not use compiler data keys such as b0')
   }
   const propMap = Object.fromEntries(plainProps.map((name, index) => [name, propertyNames[index]]))
-
+  ctx.propMap = propMap
   const bodyWxml = compileNode(jsx, ctx, null)
   const wxs = [
     ctx.usesWxs ? `<wxs module="glazeRange">${WXS_SOURCE}</wxs>` : '',
     ctx.usesWxsValue ? `<wxs module="glazeValue">${WXS_VALUE_SOURCE}</wxs>` : '',
   ].join('')
   const wxml = `${wxs}${bodyWxml}`
+  const usedProps = new Set<string>()
+  if (propsParam) {
+    const param = propsParam.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const memberPattern = new RegExp(`\\b${param}\\s*\\.\\s*([A-Za-z_$][\\w$]*)`, 'g')
+    const codes = [
+      ...statements.slice(0, returnIndex).map((statement) => codeOf(statement)),
+      ...ctx.bindings.map((binding) => binding.code),
+      ...ctx.events.map((event) => event.code),
+      ...ctx.refs.map((ref) => ref.code),
+    ]
+    for (const code of codes) {
+      let rest = code
+      for (const match of code.matchAll(memberPattern)) {
+        usedProps.add(match[1])
+      }
+      rest = rest.replace(memberPattern, '')
+      if (new RegExp(`\\b${param}\\b`).test(rest)) {
+        for (const name of plainProps) usedProps.add(name)
+      }
+    }
+  }
+  const propSignals = plainProps
+    .filter((name) => usedProps.has(name))
+    .map((name) => propMap[name])
+  if (ctx.boundaryContexts.length > 0 && !propSignals.includes('glazecontext')) {
+    propSignals.push('glazecontext')
+  }
+
   const effectivePropsParam =
     propsParam?.name ?? (ctx.boundaryContexts.length > 0 ? '__glazeProps' : null)
   const js = emitModule(ast, statements.slice(0, returnIndex), ctx, {
@@ -270,6 +299,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     namedSlots: [...ctx.namedSlots],
     boundaryContexts: ctx.boundaryContexts,
     asyncStatus: ctx.asyncStatus,
+    propSignals,
   })
 
   return {
@@ -284,6 +314,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     namedSlots: [...ctx.namedSlots],
     boundaryContexts: ctx.boundaryContexts,
     asyncStatus: ctx.asyncStatus,
+    propSignals,
     components: ctx.components,
     inlineComponents: ctx.inlineComponents,
     assets: ctx.assets,

@@ -217,14 +217,18 @@ child components.
 | Native WXML | 3237–3303 ms | 54 ms | **54 ms** |
 | uni-app Vue3 Vite | 3280–3318 ms | 55 ms | **59–66 ms** |
 | Vue Mini 1.2.16 | 3259–3311 ms | 56 ms | 120–138 ms |
-| Glaze, stateful row | 3350–3371 ms | 54 ms | 199–222 ms |
-| Glaze, pure row inline | 3183–3193 ms | — | **54–56 ms** |
+| Glaze, stateful row (before prop projection) | 3350–3371 ms | 54 ms | 199–222 ms |
+| Glaze, stateful row (after prop projection) | 3262–3317 ms | 53–55 ms | 131–144 ms |
+| Glaze, pure row inline | 3183–3201 ms | — | **54–56 ms** |
 
 This is the opposite of the earlier assumption that uni-app's component
 boundary would dominate. On 500 simple stateful components, uni-app is close to
 native; Vue Mini is roughly 2–2.5× slower on all-row updates because each child's
 top-level `label` watcher calls its own `setData`; Glaze's **stateful** boundary
-is even slower, while its **pure** row inline path is back at native speed.
+was slower before prop projection, improved by about 30–35% after it, and its
+**pure** row inline path is back at native speed. Prop projection still leaves
+500 real property writes, so it does not reach native; only inlining removes the
+boundaries.
 
 The benchmark therefore separates two costs:
 

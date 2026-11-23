@@ -221,8 +221,11 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       name === 'glazecontext' ? { type: Object, value: null } : { type: null, value: null },
     ]),
   )
+  const signalNames = new Set(config.propSignals ?? propertyNames)
+  // Context is always observed so a boundary can wait for the property bridge.
+  if (deferredContext) signalNames.add('glazecontext')
   const observers = Object.fromEntries(
-    propertyNames.map((name) => [
+    propertyNames.filter((name) => signalNames.has(name)).map((name) => [
       name,
       function observeProperty(this: { __glaze?: InstanceState | null }, value: unknown) {
         const state = this.__glaze
@@ -706,7 +709,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         }
         this.__glaze = state
 
-        for (const name of propertyNames) {
+        for (const name of signalNames) {
           state.props[name] = createSignal(normalizePropValue(this.properties?.[name]))
         }
         const sourceNames =
