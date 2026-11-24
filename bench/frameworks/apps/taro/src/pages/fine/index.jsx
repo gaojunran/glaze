@@ -71,6 +71,20 @@ export default function Fine() {
 
   const deleteTail = () => setRows((items) => items.slice(0, -1))
 
+  const mixed = () => {
+    const nextTick = tick + 1
+    setTick(nextTick)
+    setRows((items) => items.map((row, index) => (
+      index < 10 ? { ...row, title: `Row ${row.id} ${nextTick}`, done: !row.done } : row
+    )))
+  }
+
+  const noop = () => {
+    const nextTick = tick + 1
+    setTick(nextTick)
+    setRows((items) => items.map((row, index) => (index === 0 ? { ...row } : row)))
+  }
+
   return (
     <View className="bench">
       <Text id="tick">{tick}</Text>
@@ -91,6 +105,8 @@ export default function Fine() {
       <Button id="dm" className="dm" onClick={deleteMid}>delete mid</Button>
       <Button id="it" className="it" onClick={insertTail}>insert tail</Button>
       <Button id="dt" className="dt" onClick={deleteTail}>delete tail</Button>
+      <Button id="mixed" className="mixed" onClick={mixed}>mixed</Button>
+      <Button id="noop" className="noop" onClick={noop}>noop</Button>
       {rows.map((row) => (
         <View key={row.id} className="row">
           <Text className="row-title">{row.title}</Text>

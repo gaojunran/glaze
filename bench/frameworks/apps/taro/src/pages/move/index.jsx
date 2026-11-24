@@ -25,6 +25,18 @@ export default function Move() {
 
   const rotate = () => setRows((items) => [items[items.length - 1], ...items.slice(0, -1)])
   const reverse = () => setRows((items) => items.slice().reverse())
+  const moveFront = () => setRows((items) => {
+    const next = [...items]
+    const [row] = next.splice(1000, 1)
+    return [row, ...next]
+  })
+  const swap = () => setRows((items) => {
+    if (items.length < 2) return items
+    const next = [...items]
+    const last = next.length - 1
+    ;[next[0], next[last]] = [next[last], next[0]]
+    return next
+  })
 
   return (
     <View className="bench">
@@ -34,6 +46,8 @@ export default function Move() {
       <Button id="deep" className="deep" onClick={deepUpdate}>deep</Button>
       <Button id="rotate" className="rotate" onClick={rotate}>rotate</Button>
       <Button id="reverse" className="reverse" onClick={reverse}>reverse</Button>
+      <Button id="mfront" className="mfront" onClick={moveFront}>move front</Button>
+      <Button id="swap" className="swap" onClick={swap}>swap ends</Button>
       {rows.map((row) => (
         <View key={row.id} className="row">
           <Text className="row-title">{row.title}</Text>

@@ -21,4 +21,15 @@ Page({
   reverse() {
     this.setData({ rows: this.data.rows.slice().reverse() })
   },
+  moveFront() {
+    const rows = this.data.rows.slice()
+    const [row] = rows.splice(1000, 1)
+    this.setData({ rows: [row, ...rows] })
+  },
+  swap() {
+    const rows = this.data.rows.slice()
+    const last = rows.length - 1
+    ;[rows[0], rows[last]] = [rows[last], rows[0]]
+    this.setData({ rows })
+  },
 })

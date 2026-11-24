@@ -442,6 +442,57 @@ updates are close to native, but 500 child updates cost ~3× native, while
 uni-app stays flat. Taro already pays ~110 ms for one child update, so its
 500-child number is not purely boundary fan-out.
 
+### Prop-shape, mixed and move microbenchmarks (2026-11-24)
+
+The prop-shape pages use 500 real child components and pass only the first N of
+sixteen props. `#last` reads the last row's last passed prop; `#update-all`
+rewrites those N props on every row. `#update` rewrites row 0 only. The child is
+one text node that renders all sixteen prop reads, so only the property fan-out
+changes between variants.
+
+Prop-shape `update-all`, 500 children (ms, median of five warmed runs):
+
+| Implementation | 1 prop | 2 props | 4 props | 8 props | 16 props |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Glaze | 146 | 153 | 155 | 175 | 192 |
+| Native WXML | 55 | 55 | 54 | 54 | 67 |
+| Vue Mini 1.2.16 | 133 | 192 | 371 | 633 | 1275 |
+| Taro 4.3.3 (Vite) | 84 | 81 | 83 | 84 | 92 |
+| uni-app Vue3 Vite | 63 | 65 | 68 | 73 | 92 |
+
+Glaze keeps the per-prop increment small (146 → 192 ms across 1 → 16 props),
+but pays a ~90 ms base over native for 500 real boundaries. Vue Mini grows
+almost linearly with the number of props, reaching 1275 ms at 16 props. Taro's
+prop page stays flat at 81–92 ms, so its high component cost is not prop fan-out.
+
+`#mixed` on the fine page updates a scalar, ten row titles and ten row `done`
+flags in one handler; `#noop` writes a new array whose first row has the same
+title. `move-shapes` adds middle→front and swap-ends to the 2000-row keyed page.
+
+| Implementation | Mixed handler | No-op list write | Middle→front | Swap ends |
+| --- | ---: | ---: | ---: | ---: |
+| Glaze | 78 | 70 | 414 | 396 |
+| Native WXML | 75 | 86 | 423 | 405 |
+| Vue Mini 1.2.16 | 135 | 132 | 453 | 425 |
+| Taro 4.3.3 (Vite) | 561 | 540 | 2210 | 2128 |
+| uni-app Vue3 Vite | 77 | 72 | 467 | 394 |
+
+Mixed updates merge into one batch for Glaze and native; Vue still pays its
+whole-array watcher, Taro its recursive tree, and uni-app stays at native time.
+Glaze's no-op is not free (70 ms) but close to a scalar/list batch; Vue's no-op
+is as expensive as a real change.
+
+```bash
+# Prop-shape page N; routes are bench-props-N (Glaze), native-props-N,
+# props-N (Vue/Taro/uni). Repeat with N = 1,2,4,8,16.
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
+  --port 9574 --route /pages/bench-props-16/index \
+  --neutral /pages/index/index --root '#app' --count 500 \
+  --row '.row-card' --first-text '.row-title' --last-text '#last' \
+  --tick '#last' --warm '#update-all' --update-all '#update-all' \
+  --skip-reverse --runs 5
+```
+
 ## Repeated-run correctness
 
 A 3-run benchmark exposed a real runtime bug: the mini-program platform applies

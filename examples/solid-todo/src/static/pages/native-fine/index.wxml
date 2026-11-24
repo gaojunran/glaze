@@ -17,6 +17,8 @@
   <button id="dm" class="dm" bindtap="deleteMid">delete mid</button>
   <button id="it" class="it" bindtap="insertTail">insert tail</button>
   <button id="dt" class="dt" bindtap="deleteTail">delete tail</button>
+  <button id="mixed" class="mixed" bindtap="mixed">mixed</button>
+  <button id="noop" class="noop" bindtap="noop">noop</button>
   <view wx:for="{{rows}}" wx:key="id" class="row">
     <text class="row-title">{{item.title}}</text>
     <text class="row-done">{{item.done}}</text>

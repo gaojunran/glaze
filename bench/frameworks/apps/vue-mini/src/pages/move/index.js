@@ -33,5 +33,19 @@ definePage(() => {
     rows.value = [...rows.value].reverse();
   };
 
-  return { rows, tick, updateDeep, rotate, reverse };
+  const moveFront = () => {
+    const next = [...rows.value];
+    const [row] = next.splice(1000, 1);
+    rows.value = [row, ...next];
+  };
+
+  const swap = () => {
+    if (rows.value.length < 2) return;
+    const next = [...rows.value];
+    const last = next.length - 1;
+    [next[0], next[last]] = [next[last], next[0]];
+    rows.value = next;
+  };
+
+  return { rows, tick, updateDeep, rotate, reverse, moveFront, swap };
 });

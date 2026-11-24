@@ -18,6 +18,8 @@
     <button id="dm" class="dm" @click="deleteMid">delete mid</button>
     <button id="it" class="it" @click="insertTail">insert tail</button>
     <button id="dt" class="dt" @click="deleteTail">delete tail</button>
+    <button id="mixed" class="mixed" @click="mixed">mixed</button>
+    <button id="noop" class="noop" @click="noop">noop</button>
     <view v-for="row in rows" :key="row.id" class="row">
       <text class="row-title">{{ row.title }}</text>
       <text class="row-done">{{ row.done }}</text>
@@ -94,6 +96,18 @@ export default {
     },
     deleteTail() {
       this.rows = this.rows.slice(0, -1)
+    },
+    mixed() {
+      const nextTick = this.tick + 1
+      this.tick = nextTick
+      this.rows = this.rows.map((row, index) => (
+        index < 10 ? { ...row, title: `Row ${row.id} ${nextTick}`, done: !row.done } : row
+      ))
+    },
+    noop() {
+      const nextTick = this.tick + 1
+      this.tick = nextTick
+      this.rows = this.rows.map((row, index) => (index === 0 ? { ...row } : row))
     },
   },
 }

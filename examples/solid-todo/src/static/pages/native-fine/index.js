@@ -66,6 +66,22 @@ Page({
   deleteTail() {
     this.setData({ rows: this.data.rows.slice(0, -1) })
   },
+  mixed() {
+    const tick = this.data.tick + 1
+    const next = { tick }
+    for (let index = 0; index < 10; index += 1) {
+      next[`rows[${index}].title`] = `Row ${index} ${tick}`
+      next[`rows[${index}].done`] = !this.data.rows[index].done
+    }
+    this.setData(next)
+  },
+  noop() {
+    const tick = this.data.tick + 1
+    this.setData({
+      tick,
+      rows: this.data.rows.map((row, index) => (index === 0 ? { ...row } : row)),
+    })
+  },
   reverse() {
     this.setData({ rows: this.data.rows.slice().reverse() })
   },

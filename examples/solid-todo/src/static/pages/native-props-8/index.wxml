@@ -1,0 +1,8 @@
+<view class="bench">
+  <text id="last">{{rows[499].p8}}</text>
+  <button id="update" class="update" bindtap="updateFirst">update</button>
+  <button id="update-all" class="update-all" bindtap="updateAll">update all</button>
+  <view class="list">
+    <props-shape-row class="row-card" wx:for="{{rows}}" wx:key="id" wx:for-item="row" p1="{{row.p1}}" p2="{{row.p2}}" p3="{{row.p3}}" p4="{{row.p4}}" p5="{{row.p5}}" p6="{{row.p6}}" p7="{{row.p7}}" p8="{{row.p8}}" />
+  </view>
+</view>

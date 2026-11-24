@@ -1,0 +1,2 @@
+.bench { display: flex; flex-direction: column; }
+.list { display: flex; flex-direction: column; }

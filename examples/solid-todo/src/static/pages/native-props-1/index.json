@@ -1,0 +1,6 @@
+{
+  "usingComponents": {
+    "props-shape-row": "/components/props-shape-row/index"
+  },
+  "navigationBarTitleText": "native props 1"
+}

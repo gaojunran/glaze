@@ -25,6 +25,20 @@ export default function MoveBench() {
 
   const reverse = () => setRows((items) => [...items].reverse())
 
+  const moveFront = () => setRows((items) => {
+    const next = [...items]
+    const [row] = next.splice(1000, 1)
+    return [row, ...next]
+  })
+
+  const swap = () => setRows((items) => {
+    if (items.length < 2) return items
+    const next = [...items]
+    const last = next.length - 1
+    ;[next[0], next[last]] = [next[last], next[0]]
+    return next
+  })
+
   return (
     <view class="bench">
       <text id="tick">{tick()}</text>
@@ -33,6 +47,8 @@ export default function MoveBench() {
       <button id="deep" class="deep" onClick={updateDeep}>deep</button>
       <button id="rotate" class="rotate" onClick={rotate}>rotate</button>
       <button id="reverse" class="reverse" onClick={reverse}>reverse</button>
+      <button id="mfront" class="mfront" onClick={moveFront}>move front</button>
+      <button id="swap" class="swap" onClick={swap}>swap ends</button>
       <view class="list">
         <For each={rows()} keyed={(row) => row.id}>
           {(row) => (

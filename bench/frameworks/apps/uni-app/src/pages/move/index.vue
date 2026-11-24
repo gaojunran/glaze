@@ -6,6 +6,8 @@
     <button id="deep" class="deep" @click="deep">deep</button>
     <button id="rotate" class="rotate" @click="rotate">rotate</button>
     <button id="reverse" class="reverse" @click="reverse">reverse</button>
+    <button id="mfront" class="mfront" @click="moveFront">move front</button>
+    <button id="swap" class="swap" @click="swap">swap ends</button>
     <view v-for="row in rows" :key="row.id" class="row">
       <text class="row-title">{{ row.title }}</text>
       <text class="row-done">{{ row.done }}</text>
@@ -42,6 +44,18 @@ export default {
     },
     reverse() {
       this.rows = this.rows.slice().reverse()
+    },
+    moveFront() {
+      const next = this.rows.slice()
+      const [row] = next.splice(1000, 1)
+      this.rows = [row, ...next]
+    },
+    swap() {
+      if (this.rows.length < 2) return
+      const next = this.rows.slice()
+      const last = next.length - 1
+      ;[next[0], next[last]] = [next[last], next[0]]
+      this.rows = next
     },
   },
 }

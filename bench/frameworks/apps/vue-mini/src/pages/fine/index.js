@@ -76,7 +76,21 @@ definePage(() => {
     rows.value = rows.value.slice(0, -1);
   };
 
+  const mixed = () => {
+    const nextTick = tick.value + 1;
+    tick.value = nextTick;
+    rows.value = rows.value.map((row, index) => (
+      index < 10 ? { ...row, title: `Row ${row.id} ${nextTick}`, done: !row.done } : row
+    ));
+  };
+
+  const noop = () => {
+    const nextTick = tick.value + 1;
+    tick.value = nextTick;
+    rows.value = rows.value.map((row, index) => (index === 0 ? { ...row } : row));
+  };
+
   return { rows, tick, bump, updateFirst, toggleFirst, insertFirst, deleteFirst, reverse,
     update10: () => updateRange(10), update100: () => updateRange(100), update500: () => updateRange(500),
-    insertMid, deleteMid, insertTail, deleteTail };
+    insertMid, deleteMid, insertTail, deleteTail, mixed, noop };
 });

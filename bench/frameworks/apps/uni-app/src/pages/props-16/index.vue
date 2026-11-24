@@ -1,0 +1,43 @@
+<template>
+  <view class="bench">
+    <text id="last">{{ rows[499].p16 }}</text>
+    <button id="update" class="update" @click="updateFirst">update</button>
+    <button id="update-all" class="update-all" @click="updateAll">update all</button>
+    <props-shape-row
+      v-for="row in rows"
+      :key="row.id"
+      class="row-card"
+      :p1="row.p1"
+      :p2="row.p2"
+      :p3="row.p3"
+      :p4="row.p4"
+      :p5="row.p5"
+      :p6="row.p6"
+      :p7="row.p7"
+      :p8="row.p8"
+      :p9="row.p9"
+      :p10="row.p10"
+      :p11="row.p11"
+      :p12="row.p12"
+      :p13="row.p13"
+      :p14="row.p14"
+      :p15="row.p15"
+      :p16="row.p16"
+    />
+  </view>
+</template>
+
+<script>
+import PropsShapeRow from '../../components/PropsShapeRow.vue'
+import { createPropsShapePage } from '../../bench/props-shape.js'
+
+export default {
+  components: { PropsShapeRow },
+  ...createPropsShapePage(16),
+}
+</script>
+
+<style>
+.bench { display: flex; flex-direction: column; }
+.row-card { display: flex; height: 20px; align-items: center; }
+</style>

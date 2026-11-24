@@ -53,6 +53,36 @@
 			"style": {
 				"navigationBarTitleText": "props object"
 			}
+		},
+		{
+			"path": "pages/props-1/index",
+			"style": {
+				"navigationBarTitleText": "props 1"
+			}
+		},
+		{
+			"path": "pages/props-2/index",
+			"style": {
+				"navigationBarTitleText": "props 2"
+			}
+		},
+		{
+			"path": "pages/props-4/index",
+			"style": {
+				"navigationBarTitleText": "props 4"
+			}
+		},
+		{
+			"path": "pages/props-8/index",
+			"style": {
+				"navigationBarTitleText": "props 8"
+			}
+		},
+		{
+			"path": "pages/props-16/index",
+			"style": {
+				"navigationBarTitleText": "props 16"
+			}
 		}
 	],
 	"globalStyle": {

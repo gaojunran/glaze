@@ -57,6 +57,22 @@ export default function FineBench() {
 
   const reverse = () => setRows((items) => [...items].reverse())
 
+  const mixed = () => {
+    const next = tick() + 1
+    setTick(next)
+    setRows((items) => items.map((row, index) => (
+      index < 10 ? { ...row, title: `Row ${row.id} ${next}`, done: !row.done } : row
+    )))
+  }
+
+  const noop = () => {
+    const next = tick() + 1
+    setTick(next)
+    setRows((items) => items.map((row, index) => (
+      index === 0 ? { ...row } : row
+    )))
+  }
+
   return (
     <view class="bench">
       <text id="tick">{tick()}</text>
@@ -77,6 +93,8 @@ export default function FineBench() {
       <button id="dm" class="dm" onClick={() => deleteAt(2500)}>delete mid</button>
       <button id="it" class="it" onClick={() => insertAt(rows().length)}>insert tail</button>
       <button id="dt" class="dt" onClick={() => deleteAt(rows().length - 1)}>delete tail</button>
+      <button id="mixed" class="mixed" onClick={mixed}>mixed</button>
+      <button id="noop" class="noop" onClick={noop}>noop</button>
       <view class="list">
         <For each={rows()} keyed={(row) => row.id}>
           {(row) => (

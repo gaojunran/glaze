@@ -8,7 +8,12 @@ export default defineAppConfig({
     'pages/grid/index',
     'pages/move/index',
     'pages/props/index',
-    'pages/props-object/index'
+    'pages/props-object/index',
+    'pages/props-1/index',
+    'pages/props-2/index',
+    'pages/props-4/index',
+    'pages/props-8/index',
+    'pages/props-16/index'
   ],
   window: {
     backgroundTextStyle: 'light',

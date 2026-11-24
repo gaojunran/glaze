@@ -16,6 +16,11 @@ const config: GlazeConfig = {
     'pages/bench-move/index': 'MoveBench.tsx',
     'pages/bench-props/index': 'PropsRows.tsx',
     'pages/bench-props-object/index': 'PropsRowsObject.tsx',
+    'pages/bench-props-1/index': 'BenchProps1.tsx',
+    'pages/bench-props-2/index': 'BenchProps2.tsx',
+    'pages/bench-props-4/index': 'BenchProps4.tsx',
+    'pages/bench-props-8/index': 'BenchProps8.tsx',
+    'pages/bench-props-16/index': 'BenchProps16.tsx',
     'pages/reactive/index': 'ReactiveCases.tsx',
     'pages/tailwind/index': 'TailwindCase.tsx',
     'pages/context/index': 'ContextPage.tsx',
@@ -40,6 +45,11 @@ const config: GlazeConfig = {
     'pages/native-move/index',
     'pages/native-props/index',
     'pages/native-props-object/index',
+    'pages/native-props-1/index',
+    'pages/native-props-2/index',
+    'pages/native-props-4/index',
+    'pages/native-props-8/index',
+    'pages/native-props-16/index',
   ],
 }
 
