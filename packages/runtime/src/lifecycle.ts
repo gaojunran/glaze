@@ -62,10 +62,11 @@ export function attachWhileWaiting(state: LifecycleState): LifecycleState {
 }
 
 /**
- * Deferred `ready`: build the root and call the runtime attach. If the
- * platform had already attached, the phase becomes `attached`; otherwise it
- * stays `mounted` because the phase tracks platform attachment, even though
- * `ready` already installed the effects.
+ * Deferred mount: `ready`, or the context property arriving before `ready`.
+ * Both build the root and call the runtime attach. If the platform had already
+ * attached, the phase becomes `attached`; otherwise it stays `mounted` because
+ * the phase tracks platform attachment, even though the mount path already
+ * installed the effects.
  */
 export function readyMount(state: LifecycleState): LifecycleState {
   if (state.phase !== 'waiting-context') return state
