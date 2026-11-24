@@ -50,8 +50,10 @@ export type Scope = {
   isIndexRepeat?: boolean
   aliases?: Record<string, string[]>
   direct?: string
+  directKey?: string
   eventItem?: string
   listBinding?: number | null
+  itemAst?: AnyNode
 }
 export type CompileResult = {
   wxml: string

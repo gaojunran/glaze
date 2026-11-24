@@ -50,7 +50,7 @@ export function assignAlias(node, path, aliases) {
   throw new Error('Unsupported destructuring pattern')
 }
 
-export function aliasValue(name, scope) {
+export function aliasValue(name: string, scope: Scope | null) {
   for (let cursor = scope; cursor; cursor = cursor.parent) {
     if (cursor.aliases?.[name] !== undefined) return cursor.aliases[name]
   }
@@ -112,6 +112,93 @@ export function mergeAliases(patternAliasesValue, locals) {
   return Object.keys(aliases).length > 0 ? aliases : null
 }
 
+type LoopScopeOptions = {
+  item: string
+  index: string
+  parent: Scope | null
+  source?: string | null
+  jsSource?: string | null
+  offset?: string
+  itemAccessor?: boolean
+  indexAccessor?: boolean
+  isIndexRepeat?: boolean
+  aliases?: Scope['aliases']
+  listBinding?: number | null
+}
+
+/** Build a loop scope. Level always follows the parent, as loop callbacks do. */
+export function makeLoopScope({
+  item,
+  index,
+  parent,
+  source = null,
+  jsSource = null,
+  offset,
+  itemAccessor,
+  indexAccessor,
+  isIndexRepeat,
+  aliases,
+  listBinding = null,
+}: LoopScopeOptions): Scope {
+  return {
+    item,
+    index,
+    source,
+    jsSource,
+    ...(offset === undefined ? {} : { offset }),
+    parent,
+    level: parent ? parent.level + 1 : 0,
+    ...(itemAccessor === undefined ? {} : { itemAccessor }),
+    ...(indexAccessor === undefined ? {} : { indexAccessor }),
+    ...(isIndexRepeat === undefined ? {} : { isIndexRepeat }),
+    ...(aliases === undefined ? {} : { aliases }),
+    listBinding,
+  }
+}
+
+type CallbackScopeOptions = LoopScopeOptions & {
+  itemAst?: AnyNode
+  eventItem?: string
+  direct?: string
+  directKey?: string
+}
+
+/** Build a scope for a callback render (Show/Match/Errored fallback). */
+export function makeCallbackScope({
+  item,
+  index,
+  parent,
+  source = null,
+  jsSource = null,
+  offset,
+  itemAccessor,
+  indexAccessor,
+  aliases,
+  listBinding = null,
+  itemAst,
+  eventItem,
+  direct,
+  directKey,
+}: CallbackScopeOptions): Scope {
+  return {
+    item,
+    ...(itemAst === undefined ? {} : { itemAst }),
+    ...(eventItem === undefined ? {} : { eventItem }),
+    index,
+    source,
+    jsSource,
+    ...(offset === undefined ? {} : { offset }),
+    ...(direct === undefined ? {} : { direct }),
+    ...(directKey === undefined ? {} : { directKey }),
+    parent,
+    level: parent ? parent.level + 1 : 0,
+    ...(itemAccessor === undefined ? {} : { itemAccessor }),
+    ...(indexAccessor === undefined ? {} : { indexAccessor }),
+    ...(aliases === undefined ? {} : { aliases }),
+    listBinding,
+  }
+}
+
 export function inferKeyedField(fn) {
   const param = t.isIdentifier(fn.params[0]) ? fn.params[0].name : null
   if (!param) return null
@@ -136,7 +223,7 @@ export function inferKeyedField(fn) {
   return t.isIdentifier(body.property) ? body.property.name : null
 }
 
-function itemScope(scope, name) {
+function itemScope(scope: Scope | null, name: string) {
   for (let cursor = scope; cursor; cursor = cursor.parent) {
     if (cursor.item === name) return cursor
   }
@@ -159,7 +246,7 @@ function addListField(ctx, binding, field) {
  * Anything the compiler cannot prove is a static field access disables
  * projection for that loop; falling back to the full row is always correct.
  */
-export function noteListFields(expression, scope, ctx) {
+export function noteListFields(expression, scope: Scope | null, ctx) {
   if (!scope) return
   const visit = (node, parent) => {
     if (!node || typeof node !== 'object') return
@@ -206,7 +293,7 @@ export function noteListFields(expression, scope, ctx) {
   }
 }
 
-export function inlineExpression(expression, scope, ctx) {
+export function inlineExpression(expression, scope: Scope | null, ctx) {
   if (
     t.isStringLiteral(expression) ||
     t.isNumericLiteral(expression) ||
@@ -225,7 +312,7 @@ export function inlineExpression(expression, scope, ctx) {
   return wxmlCodeOf(hoisted)
 }
 
-export function isLoopName(name, scope) {
+export function isLoopName(name: string, scope: Scope | null) {
   for (let cursor = scope; cursor; cursor = cursor.parent) {
     if (cursor.item === name || cursor.index === name || cursor.directKey === name) return true
     if (cursor.aliases && Object.prototype.hasOwnProperty.call(cursor.aliases, name)) return true
@@ -233,7 +320,7 @@ export function isLoopName(name, scope) {
   return false
 }
 
-export function dependsOnLoop(expression, scope) {
+export function dependsOnLoop(expression, scope: Scope | null) {
   let found = false
   const visit = (node, parent) => {
     if (found || !node || typeof node !== 'object') return
@@ -262,7 +349,7 @@ export function isHoistable(node) {
   )
 }
 
-export function hoistLoopExpression(expression, scope, ctx) {
+export function hoistLoopExpression(expression, scope: Scope | null, ctx) {
   const visit = (node, isRoot) => {
     if (!node || typeof node !== 'object') return node
     if (t.isTemplateLiteral(node) && dependsOnLoop(node, scope)) {
@@ -294,7 +381,7 @@ export function hoistLoopExpression(expression, scope, ctx) {
   return visit(expression, true)
 }
 
-export function accessorTarget(name, scope) {
+export function accessorTarget(name: string, scope: Scope | null) {
   for (let cursor = scope; cursor; cursor = cursor.parent) {
     if (cursor.item === name && cursor.itemAccessor) return { kind: 'item', scope: cursor }
     if (cursor.index === name && cursor.indexAccessor) return { kind: 'index', scope: cursor }
@@ -302,11 +389,11 @@ export function accessorTarget(name, scope) {
   return null
 }
 
-export function accessorKind(name, scope) {
+export function accessorKind(name: string, scope: Scope | null) {
   return accessorTarget(name, scope)?.kind ?? null
 }
 
-export function rewriteAccessorCalls(expression, scope, js = false) {
+export function rewriteAccessorCalls(expression, scope: Scope | null, js = false) {
   if (!scope) return expression
   const cloned = t.cloneNode(expression, true)
   const visit = (node, parent = null) => {
@@ -342,7 +429,7 @@ export function rewriteAccessorCalls(expression, scope, js = false) {
   return visit(cloned)
 }
 
-export function validateInline(expression, scope) {
+export function validateInline(expression, scope: Scope | null) {
   const allowedIdentifiers = new Set()
   let cursor = scope
   while (cursor) {

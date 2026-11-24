@@ -14,6 +14,8 @@ import {
   callbackBody,
   inferKeyedField,
   inlineExpression,
+  makeCallbackScope,
+  makeLoopScope,
   mergeAliases,
   patternAliases,
   rewriteAccessorCalls,
@@ -68,24 +70,21 @@ export function compileCallbackBranch(fn, label, when, keyed, ctx, scope, direct
   const indexName = scope ? `__glazeIndex${scope.level + 1}` : '__glazeIndex'
 
   if (!keyed) {
-    const itemScope = {
+    const itemScope = makeCallbackScope({
       item: param,
-      itemAst: scope
-        ? rewriteAccessorCalls(when, scope)
-        : t.identifier(condition),
+      itemAst: scope ? rewriteAccessorCalls(when, scope) : t.identifier(condition),
       eventItem: `__glazeValue${scope ? scope.level + 1 : ''}`,
       index: indexName,
       source: `[(${whenCode})]`,
       jsSource: `[(${jsWhenCode})]`,
       direct: jsWhenCode,
-      directKey: scope ? null : condition,
+      directKey: scope ? undefined : condition,
       parent: scope,
-      level: scope ? scope.level + 1 : 0,
       itemAccessor: true,
       indexAccessor: false,
       aliases,
       listBinding: scope?.listBinding ?? null,
-    }
+    })
     const content = ctx.withGuard(scope ? null : codeOf(when), () =>
       compileNode(body, ctx, itemScope),
     )
@@ -97,18 +96,17 @@ export function compileCallbackBranch(fn, label, when, keyed, ctx, scope, direct
       ? `__glazeValue${scope.level + 1}`
       : '__glazeValue'
     : param
-  const itemScope = {
+  const itemScope = makeCallbackScope({
     item: itemName,
     index: indexName,
     source: `[(${whenCode})]`,
     jsSource: `[(${jsWhenCode})]`,
     parent: scope,
-    level: scope ? scope.level + 1 : 0,
     itemAccessor: false,
     indexAccessor: false,
     aliases,
     listBinding: scope?.listBinding ?? null,
-  }
+  })
   const content = compileNode(body, ctx, itemScope)
   let valuesExpr
   if (scope) {
@@ -210,18 +208,17 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
       throw new Error('<Errored> fallback function must return JSX')
     }
     const values = ctx.addBindingCode(`ctx.errorArray(${boundary})`)
-    const errorScope = {
+    const errorScope = makeCallbackScope({
       item: param.name,
       index: '__glazeErrorIndex',
       source: `b${values}`,
       jsSource: `ctx.errorArray(${boundary})`,
       parent: null,
-      level: 0,
       itemAccessor: true,
       indexAccessor: false,
       aliases: callback.aliases,
       listBinding: null,
-    }
+    })
     fallbackContent = `<block wx:for="{{b${values}}}" wx:for-item="${param.name}" wx:for-index="__glazeErrorIndex" wx:key="*this">${compileNode(callback.jsx, ctx, errorScope)}</block>`
   } else if (fallback) {
     // The fallback and the boundary's own condition belong to the enclosing
@@ -573,18 +570,17 @@ export function compileFor(node, ctx, scope) {
     }
   }
 
-  const itemScope = {
+  const itemScope = makeLoopScope({
     item: itemName,
     index: indexName,
     source: eachCode,
     jsSource: jsEachCode,
     parent: scope,
-    level: scope ? scope.level + 1 : 0,
     itemAccessor,
     indexAccessor: keyed !== false,
     aliases,
     listBinding,
-  }
+  })
   const children = compileNode(body, ctx, itemScope)
   if (listBinding != null) {
     const entry = ctx.bindings[listBinding]
@@ -654,20 +650,17 @@ export function compileRepeatInScope(node, ctx, scope) {
   }
 
   ctx.addWxs()
-  const itemScope = {
+  const itemScope = makeLoopScope({
     item: itemName,
     index: indexName,
-    source: null,
-    jsSource: null,
     offset: fromCode,
     parent: scope,
-    level: scope.level + 1,
     itemAccessor: false,
     indexAccessor: false,
     isIndexRepeat: true,
     aliases,
     listBinding: null,
-  }
+  })
   const children = compileNode(body, ctx, itemScope)
   const loopAttributes = `wx:for="{{glazeRange.range(${countCode}, ${fromCode})}}" wx:for-item="${itemName}" wx:for-index="${indexName}" wx:key="*this"`
   const loop = addLoopAttributes(children, loopAttributes) ?? `<block ${loopAttributes}>${children}</block>`
@@ -719,15 +712,14 @@ export function compileRepeat(node, ctx, scope) {
     null,
     from ? [count, from] : count,
   )
-  const itemScope = {
+  const itemScope = makeLoopScope({
     item: itemName,
     index: '__glazeIndex',
     source: `b${binding}`,
     jsSource: `Array.from({ length: (${codeOf(count)}) }, (_, index) => index + (${fromCode}))`,
     parent: null,
-    level: 0,
     listBinding: null,
-  }
+  })
   const children = compileNode(body, ctx, itemScope)
   const loopAttributes = `wx:for="{{b${binding}}}" wx:for-item="${itemName}" wx:for-index="__glazeIndex" wx:key="*this"`
   const loop = addLoopAttributes(children, loopAttributes) ?? `<block ${loopAttributes}>${children}</block>`
