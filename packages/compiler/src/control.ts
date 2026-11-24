@@ -121,7 +121,7 @@ export function compileCallbackBranch(fn, label, when, keyed, ctx, scope, direct
   return `<block ${directive}="{{${condition}}}">${loop}</block>`
 }
 
-export function compileShowCallback(node, ctx, scope, when, keyed, fn, fallback) {
+export function compileShowCallback(ctx, scope, when, keyed, fn, fallback) {
   const thenNode = compileCallbackBranch(fn, '<Show>', when, keyed, ctx, scope, 'wx:if')
   if (!fallback) return thenNode
   const guard = scope ? null : `!(${codeOf(when)})`
@@ -272,7 +272,7 @@ export function compileShow(node, ctx, scope) {
     (t.isArrowFunctionExpression(children[0].expression) ||
       t.isFunctionExpression(children[0].expression))
   ) {
-    return compileShowCallback(node, ctx, scope, when, keyed, children[0].expression, fallback)
+    return compileShowCallback(ctx, scope, when, keyed, children[0].expression, fallback)
   }
 
   const condition = conditionExpression(when, ctx, scope)

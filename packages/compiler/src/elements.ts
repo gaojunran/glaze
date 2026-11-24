@@ -10,7 +10,6 @@ import {
   getExpression,
   isWhitespaceText,
   normalizeText,
-  skipChildKey,
   tagName,
   unwrapTs,
   wxmlCodeOf,

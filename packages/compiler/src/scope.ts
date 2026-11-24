@@ -8,7 +8,7 @@ import {
   visitChildren,
   wxmlCodeOf,
 } from './ast.ts'
-import type { AnyNode, CompilerContext, Scope } from './types.ts'
+import type { AnyNode, Scope } from './types.ts'
 
 export function patternAliases(pattern, base, aliases = {}) {
   if (t.isObjectPattern(pattern)) {
@@ -36,7 +36,7 @@ export function patternAliases(pattern, base, aliases = {}) {
   throw new Error('Unsupported destructuring pattern')
 }
 
-export function assignAlias(node, path, aliases) {
+function assignAlias(node, path, aliases) {
   if (t.isIdentifier(node)) {
     aliases[node.name] = path
     return
@@ -51,14 +51,14 @@ export function assignAlias(node, path, aliases) {
   throw new Error('Unsupported destructuring pattern')
 }
 
-export function aliasValue(name: string, scope: Scope | null) {
+function aliasValue(name: string, scope: Scope | null) {
   for (let cursor = scope; cursor; cursor = cursor.parent) {
     if (cursor.aliases?.[name] !== undefined) return cursor.aliases[name]
   }
   return null
 }
 
-export function buildMember(path) {
+function buildMember(path) {
   return path.slice(1).reduce(
     (node, segment) =>
       t.memberExpression(
@@ -247,7 +247,7 @@ function addListField(ctx, binding, field) {
  * Anything the compiler cannot prove is a static field access disables
  * projection for that loop; falling back to the full row is always correct.
  */
-export function noteListFields(expression, scope: Scope | null, ctx) {
+function noteListFields(expression, scope: Scope | null, ctx) {
   if (!scope) return
   const visit = (node, parent) => {
     if (!node || typeof node !== 'object') return
@@ -313,7 +313,7 @@ export function inlineExpression(expression, scope: Scope | null, ctx) {
   return wxmlCodeOf(hoisted)
 }
 
-export function isLoopName(name: string, scope: Scope | null) {
+function isLoopName(name: string, scope: Scope | null) {
   for (let cursor = scope; cursor; cursor = cursor.parent) {
     if (cursor.item === name || cursor.index === name || cursor.directKey === name) return true
     if (cursor.aliases && Object.prototype.hasOwnProperty.call(cursor.aliases, name)) return true
@@ -321,7 +321,7 @@ export function isLoopName(name: string, scope: Scope | null) {
   return false
 }
 
-export function dependsOnLoop(expression, scope: Scope | null) {
+function dependsOnLoop(expression, scope: Scope | null) {
   let found = false
   const visit = (node, parent) => {
     if (found || !node || typeof node !== 'object') return
@@ -335,7 +335,7 @@ export function dependsOnLoop(expression, scope: Scope | null) {
   return found
 }
 
-export function isHoistable(node) {
+function isHoistable(node) {
   if (!node || typeof node !== 'object') return false
   if (t.isStringLiteral(node) || t.isNumericLiteral(node) || t.isBooleanLiteral(node)) return false
   if (t.isNullLiteral(node) || t.isBigIntLiteral(node) || t.isRegExpLiteral(node)) return false
@@ -350,7 +350,7 @@ export function isHoistable(node) {
   )
 }
 
-export function hoistLoopExpression(expression, scope: Scope | null, ctx) {
+function hoistLoopExpression(expression, scope: Scope | null, ctx) {
   const visit = (node, isRoot) => {
     if (!node || typeof node !== 'object') return node
     if (t.isTemplateLiteral(node) && dependsOnLoop(node, scope)) {
@@ -382,7 +382,7 @@ export function hoistLoopExpression(expression, scope: Scope | null, ctx) {
   return visit(expression, true)
 }
 
-export function accessorTarget(name: string, scope: Scope | null) {
+function accessorTarget(name: string, scope: Scope | null) {
   for (let cursor = scope; cursor; cursor = cursor.parent) {
     if (cursor.item === name && cursor.itemAccessor) return { kind: 'item', scope: cursor }
     if (cursor.index === name && cursor.indexAccessor) return { kind: 'index', scope: cursor }
@@ -390,7 +390,7 @@ export function accessorTarget(name: string, scope: Scope | null) {
   return null
 }
 
-export function accessorKind(name: string, scope: Scope | null) {
+function accessorKind(name: string, scope: Scope | null) {
   return accessorTarget(name, scope)?.kind ?? null
 }
 
@@ -430,7 +430,7 @@ export function rewriteAccessorCalls(expression, scope: Scope | null, js = false
   return visit(cloned)
 }
 
-export function validateInline(expression, scope: Scope | null) {
+function validateInline(expression, scope: Scope | null) {
   const allowedIdentifiers = new Set()
   let cursor = scope
   while (cursor) {
