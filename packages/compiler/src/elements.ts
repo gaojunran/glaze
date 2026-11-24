@@ -1,5 +1,5 @@
 import * as t from '@babel/types'
-import { CONTEXT_PROP, bindingKey, dataIndexAttr, kebabCase, refId } from '@glaze/shared'
+import { CONTEXT_PROP, bindingKey, dataIndexAttr, eventHandlerName, kebabCase, refId } from '@glaze/shared'
 import {
   codeOf,
   containsJsx,
@@ -87,6 +87,35 @@ function staticAssetAttr(name, value, ctx) {
   const token = `__GLAZE_ASSET_${ctx.assets.length}__`
   ctx.assets.push({ token, specifier: value, fromFile: ctx.currentFile })
   return token
+}
+
+/**
+ * Compile the tail every dynamic attribute shares: a projected prop
+ * expression, a loop inline expression, or a binding. `expr` is the same WXML
+ * expression for contexts (structured props) that need it separately.
+ */
+function emitAttrValue(expression, ctx, scope): { value: string; expr: string } {
+  const projected = projectExpression(expression, ctx, scope)
+  if (projected != null) return { value: projected, expr: projected }
+  if (scope) {
+    const inline = inlineExpression(expression, scope, ctx)
+    return { value: inline, expr: inline }
+  }
+  const index = ctx.addBinding(expression)
+  return { value: bindingKey(index), expr: bindingKey(index) }
+}
+
+/** Register a handler and write its event attribute and loop index attrs. */
+function emitEventAttr(attrs, scope, ctx, binding, eventName: string, expression, custom: boolean) {
+  const index = ctx.addEvent(expression, scope, custom)
+  attrs.push(`${eventAttrFor(binding.kind, eventName, custom)}="${eventHandlerName(index)}"`)
+  pushScopeIndexAttrs(attrs, scope)
+}
+
+function emitTag(tag: string, attrs: string[], children: string) {
+  const attrText = attrs.length > 0 ? ` ${attrs.join(' ')}` : ''
+  if (children === '') return `<${tag}${attrText} />`
+  return `<${tag}${attrText}>${children}</${tag}>`
 }
 
 export function compileElement(node, ctx, scope, extraAttrs = []) {
@@ -181,9 +210,7 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
       if (containsJsx(expression)) {
         throw new Error(`Event handler "${attrName}" cannot be JSX`)
       }
-      const index = ctx.addEvent(expression, scope)
-      attrs.push(`${eventAttrFor(binding.kind, EVENT_MAP[binding.base], false)}="e${index}"`)
-      pushScopeIndexAttrs(attrs, scope)
+      emitEventAttr(attrs, scope, ctx, binding, EVENT_MAP[binding.base], expression, false)
       continue
     }
 
@@ -208,22 +235,11 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
       continue
     }
 
-    const projected = projectExpression(expression, ctx, scope)
-    if (projected != null) {
-      attrs.push(`${propName}="{{${projected}}}"`)
-    } else if (scope) {
-      attrs.push(`${propName}="{{${inlineExpression(expression, scope, ctx)}}}"`)
-    } else {
-      const index = ctx.addBinding(expression)
-      attrs.push(`${propName}="{{${bindingKey(index)}}}"`)
-    }
+    const value = emitAttrValue(expression, ctx, scope).value
+    attrs.push(`${propName}="{{${value}}}"`)
   }
 
-  const allAttrs = [...attrs, ...extraAttrs]
-  const attrText = allAttrs.length > 0 ? ` ${allAttrs.join(' ')}` : ''
-  const children = compileChildren(node.children, ctx, scope)
-  if (children === '') return `<${name}${attrText} />`
-  return `<${name}${attrText}>${children}</${name}>`
+  return emitTag(name, [...attrs, ...extraAttrs], compileChildren(node.children, ctx, scope))
 }
 
 export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
@@ -285,11 +301,7 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
       if (containsJsx(expression)) {
         throw new Error(`Event handler "${attrName}" cannot be JSX`)
       }
-      const index = ctx.addEvent(expression, scope, true)
-      attrs.push(
-        `${eventAttrFor(binding.kind, eventNameFor(binding.base), true)}="e${index}"`,
-      )
-      pushScopeIndexAttrs(attrs, scope)
+      emitEventAttr(attrs, scope, ctx, binding, eventNameFor(binding.base), expression, true)
       continue
     }
     // data-* and aria-* pass through to the component host element. They are
@@ -303,15 +315,7 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
       if (t.isStringLiteral(expression) || t.isNumericLiteral(expression)) {
         attrs.push(`${attrName}="${escapeAttr(String(expression.value))}"`)
       } else {
-        const projected = projectExpression(expression, ctx, scope)
-        if (projected != null) {
-          attrs.push(`${attrName}="{{${projected}}}"`)
-        } else if (scope) {
-          attrs.push(`${attrName}="{{${inlineExpression(expression, scope, ctx)}}}"`)
-        } else {
-          const index = ctx.addBinding(expression)
-          attrs.push(`${attrName}="{{${bindingKey(index)}}}"`)
-        }
+        attrs.push(`${attrName}="{{${emitAttrValue(expression, ctx, scope).value}}}"`)
       }
       continue
     }
@@ -358,31 +362,13 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
       })
       continue
     }
-    const projected = projectExpression(expression, ctx, scope)
-    if (projected != null) {
-      scalarProps.push({
-        name: propName,
-        attr: `${propName}="{{${projected}}}"`,
-        expr: projected,
-        group,
-      })
-    } else if (scope) {
-      const inline = inlineExpression(expression, scope, ctx)
-      scalarProps.push({
-        name: propName,
-        attr: `${propName}="{{${inline}}}"`,
-        expr: inline,
-        group,
-      })
-    } else {
-      const index = ctx.addBinding(expression)
-      scalarProps.push({
-        name: propName,
-        attr: `${propName}="{{${bindingKey(index)}}}"`,
-        expr: bindingKey(index),
-        group,
-      })
-    }
+    const { value, expr } = emitAttrValue(expression, ctx, scope)
+    scalarProps.push({
+      name: propName,
+      attr: `${propName}="{{${value}}}"`,
+      expr,
+      group,
+    })
   }
 
   const grouped = scalarProps.filter((prop) => prop.group)
@@ -395,11 +381,11 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
     for (const prop of scalarProps) attrs.push(prop.attr)
   }
 
-  const allAttrs = [...attrs, ...extraAttrs]
-  const attrText = allAttrs.length > 0 ? ` ${allAttrs.join(' ')}` : ''
-  const children = compileChildren(node.children, ctx, scope)
-  if (children === '') return `<${kebabCase(name)}${attrText} />`
-  return `<${kebabCase(name)}${attrText}>${children}</${kebabCase(name)}>`
+  return emitTag(
+    kebabCase(name),
+    [...attrs, ...extraAttrs],
+    compileChildren(node.children, ctx, scope),
+  )
 }
 
 function canUseStructuredProps(name, source, ctx) {
