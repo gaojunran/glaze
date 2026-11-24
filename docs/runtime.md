@@ -68,11 +68,25 @@ A list binding used to keep `array.slice()`, which preserves the same row
 objects. `items[0].done = true` followed by `setItems([...items])` therefore
 compared the mutated row against itself and produced no patch. `snapshotList`
 now clones each object row deeply, so a direct field mutation and a nested
-field mutation are both visible to `listPatch` and become a field path. Only the
-changed top-level field is sent: the path still stops at the row field, and a
-nested object value travels whole. Prototype-less data and cycles are handled;
+field mutation are both visible to `listPatch` and become a field path. A
+single-field edit sends only that field; a row whose majority of projected
+fields changed is sent as one row replacement (see below). A nested object value
+travels whole. Prototype-less data and cycles are handled;
 class instances beyond arrays, dates and regular expressions are copied as plain
 objects, so replace such a row instead of mutating it.
+
+### Multi-field row replacement
+
+`listPatch` normally emits one data path per changed top-level field, which is
+right for the common one- or two-field edit. When a row changes more than two
+fields, it instead emits one `[binding, index]` replacement carrying the
+projected row. The child property receives the same row object either way; the
+parent just sends 500 paths instead of 8,000 for a 500-row, 16-field update.
+
+On the 500-child prop-shape benchmark, `update-all` at 16 props measured a
+median of 185 ms before this change and 158 ms after it (10 warmed minidev runs
+per side, same host). The one- and two-field cases keep field paths, so the
+single-row update path and the two-prop benchmark are unchanged.
 
 ### List view-model projection
 

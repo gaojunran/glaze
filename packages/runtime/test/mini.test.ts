@@ -949,6 +949,15 @@ test('listOps and listPatch describe structural changes', () => {
     listPatch([{ id: 1 }, { id: 2 }], [{ id: 2 }, { id: 1 }], 'id', 'b0'),
     null,
   )
+  assert.deepEqual(
+    listPatch(
+      [{ id: 1, a: 1, b: 2, c: 3 }],
+      [{ id: 1, a: 9, b: 8, c: 7 }],
+      'id',
+      'b0',
+    ),
+    [{ path: ['b0', 0], value: { id: 1, a: 9, b: 8, c: 7 } }],
+  )
 })
 
 test('flushes structured DataChange tuples through the glass-easel data proxy', async () => {

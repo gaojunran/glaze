@@ -243,13 +243,24 @@ export function listPatch(
     if (!before || !item || typeof before !== 'object' || typeof item !== 'object') return null
     if (!Object.is(keyOf(before, key), keyOf(item, key))) return null
 
+    const changed: DataChange[] = []
     for (const field of Object.keys(item)) {
       if (equalValue(before[field], item[field], seen)) continue
       if (!(field in before)) return null
-      patch.push({ path: [binding, index, field], value: item[field] })
+      changed.push({ path: [binding, index, field], value: item[field] })
     }
     for (const field of Object.keys(before)) {
       if (!(field in item)) return null
+    }
+    // A row with several changed fields is cheaper to replace as one data
+    // path than as one path per field; the child property receives the same
+    // projected row either way. Keep field paths for small or sparse edits so
+    // replacing a row does not fan out unchanged fields to the child.
+    const total = Object.keys(item).length
+    if (changed.length > 2 && changed.length * 2 > total) {
+      patch.push({ path: [binding, index], value: item })
+    } else {
+      patch.push(...changed)
     }
   }
 

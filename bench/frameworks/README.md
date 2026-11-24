@@ -454,16 +454,18 @@ Prop-shape `update-all`, 500 children (ms, median of five warmed runs):
 
 | Implementation | 1 prop | 2 props | 4 props | 8 props | 16 props |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Glaze | 146 | 153 | 155 | 175 | 192 |
+| Glaze | 146 | 153 | 155 | 175 | 158 |
 | Native WXML | 55 | 55 | 54 | 54 | 67 |
 | Vue Mini 1.2.16 | 133 | 192 | 371 | 633 | 1275 |
 | Taro 4.3.3 (Vite) | 84 | 81 | 83 | 84 | 92 |
 | uni-app Vue3 Vite | 63 | 65 | 68 | 73 | 92 |
 
-Glaze keeps the per-prop increment small (146 → 192 ms across 1 → 16 props),
-but pays a ~90 ms base over native for 500 real boundaries. Vue Mini grows
-almost linearly with the number of props, reaching 1275 ms at 16 props. Taro's
-prop page stays flat at 81–92 ms, so its high component cost is not prop fan-out.
+Glaze keeps the per-prop increment small, but the 16-prop row now uses one
+row replacement per changed row instead of one field path per prop; that
+single change moved the 16-prop median from 192 ms to 158 ms (10 warmed runs,
+same host). Vue Mini grows almost linearly with the number of props, reaching
+1275 ms at 16 props. Taro's prop page stays flat at 81–92 ms, so its high
+component cost is not prop fan-out.
 
 `#mixed` on the fine page updates a scalar, ten row titles and ten row `done`
 flags in one handler; `#noop` writes a new array whose first row has the same
