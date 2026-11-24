@@ -189,8 +189,12 @@ const profile = createMemo(async () => {
   `NotReadyError`) shows the nearest `Loading` fallback. A real error shows the
   nearest `Errored` fallback.
 - Nested boundaries are supported: an inner pending read shows the inner
-  fallback without replacing the outer content. A boundary inside a loop is
-  rejected.
+  fallback without replacing the outer content.
+- A boundary placed directly inside `<For>` is rejected: WXML rows have no
+  per-row JS execution or owner. Put the async memo and the boundary in a row
+  component and render it from `<For>` (`<For each={rows()}>{(row) =>
+  <AsyncRow row={row} />}</For>`). Each row instance then owns independent
+  pending/error/reset state.
 - A failed binding is skipped rather than written as `undefined`, so one failed
   read does not clear another binding's value.
 - Error objects crossing into WXML are normalized to `{ name, message }`.

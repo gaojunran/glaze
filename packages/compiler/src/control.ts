@@ -135,7 +135,11 @@ export function compileShowCallback(ctx, scope, when, keyed, fn, fallback) {
 }
 
 export function compileAsyncBoundary(node, ctx, scope, kind) {
-  if (scope) throw new Error(`<${kind}> inside a loop is not supported yet`)
+  if (scope) {
+    throw new Error(
+      `<${kind}> inside a loop is not supported: move the boundary and its async computation into a component rendered per row (for example <AsyncRow item={item} />)`,
+    )
+  }
   const onAttr = getAttribute(node, 'on')
   const on = onAttr ? getExpression(onAttr) : null
   if (on && kind !== 'Loading') throw new Error('<Errored> does not support the "on" prop')

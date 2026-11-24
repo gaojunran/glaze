@@ -1,4 +1,5 @@
-import { createMemo, createSignal, Errored, Loading } from 'solid-js'
+import { createMemo, createSignal, Errored, For, Loading } from 'solid-js'
+import AsyncRow from './AsyncRow'
 
 export default function AsyncPage() {
   const later = createMemo(async () => {
@@ -9,6 +10,11 @@ export default function AsyncPage() {
     throw new Error('boom')
   })
   const [flakyAttempt, setFlakyAttempt] = createSignal(0)
+  const rows = createMemo(() => [
+    { id: 1, title: 'row-a', delay: 40 },
+    { id: 2, title: 'row-b', delay: 80 },
+    { id: 3, title: 'row-c', delay: 40, fail: true },
+  ])
   const flaky = createMemo(() => {
     if (flakyAttempt() === 0) throw new Error('flaky')
     return 'recovered'
@@ -28,6 +34,9 @@ export default function AsyncPage() {
       <Errored fallback={(error) => <text class="async-error">{error().message}</text>}>
         <text class="async-broken">{broken()}</text>
       </Errored>
+      <view class="async-rows">
+        <For each={rows()}>{(row) => <AsyncRow row={row} class="async-row-host" />}</For>
+      </view>
       <Errored
         fallback={(error, reset) => (
           <view class="async-retry">

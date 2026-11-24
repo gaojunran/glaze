@@ -15,6 +15,32 @@ import { parseComponent } from './parse.ts'
 import { rewriteContextAccess } from './context.ts'
 import type { AnyNode, CompilerContext, Scope } from './types.ts'
 
+function usesAsyncBoundary(child) {
+  const solidAsync = new Set<string>()
+  for (const node of child.ast.program.body) {
+    if (!t.isImportDeclaration(node) || !node.source.value.startsWith('solid-js')) continue
+    for (const specifier of node.specifiers) {
+      if (!t.isImportSpecifier(specifier)) continue
+      const imported = importedName(specifier.imported)
+      if (imported === 'Loading' || imported === 'Errored') {
+        solidAsync.add(specifier.local.name)
+      }
+    }
+  }
+  if (solidAsync.size === 0) return false
+  let found = false
+  walkAst(child.jsx, (node) => {
+    if (
+      t.isJSXElement(node) &&
+      t.isJSXIdentifier(node.openingElement.name) &&
+      solidAsync.has(node.openingElement.name.name)
+    ) {
+      found = true
+    }
+  })
+  return found
+}
+
 export function usesSlotElement(node) {
   let found = false
   walkAst(node, (item) => {
@@ -379,6 +405,9 @@ export function inlineComponent(node, ctx, scope, name, source) {
     const child = parseInlineChild(childSource)
     if (!child) return null
     rewriteContextAccess(...child.statements)
+    // A boundary owns async state on the component instance; inlining it would
+    // move that state into the parent and collide across loop rows.
+    if (usesAsyncBoundary(child)) return null
     if (usesSlotElement(child.jsx)) return null
     const inLoop = Boolean(scope)
     if (inLoop && !isLoopInlineEligible(child)) return null

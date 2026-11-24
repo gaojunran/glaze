@@ -1136,6 +1136,51 @@ test('tracks async pending and errored bindings for Loading and Errored', async 
   assert.equal(instance.calls[0].b2, undefined)
 })
 
+test('two async row instances keep independent boundary state', async () => {
+  const rows = []
+  const def = defineGlazeComponent({
+    asyncStatus: [
+      { index: 1, kind: 'loading', boundary: 0 },
+      { index: 3, kind: 'error', boundary: 0 },
+    ],
+    data: { b0: null, b1: null, b2: null, b3: null, b4: null },
+    setup(ctx) {
+      const [phase, setPhase] = createSignal(0)
+      const [fail, setFail] = createSignal(false)
+      rows.push({ setPhase, setFail })
+      ctx.bind(0, () => {
+        if (phase() === 0) throw new NotReadyError()
+        return 'row-a'
+      }, 0)
+      ctx.bind(1, () => ctx.loading(0))
+      ctx.bind(2, () => {
+        if (fail()) throw new Error('row-b')
+        return 'row-a'
+      }, 0)
+      ctx.bind(3, () => ctx.errored(0))
+      ctx.bind(4, () => (ctx.error(0) as Error)?.message)
+    },
+  })
+  const first = createInstance(def)
+  def.lifetimes.attached.call(first)
+  const second = createInstance(def)
+  def.lifetimes.attached.call(second)
+  await tick()
+
+  assert.equal(first.calls.some((call) => call.b1 === true), true)
+  assert.equal(second.calls.some((call) => call.b1 === true), true)
+  rows[0].setPhase(1)
+  await tick()
+  assert.equal(first.calls.some((call) => call.b1 === false), true)
+  assert.equal(second.calls.some((call) => call.b1 === true), true)
+
+  rows[1].setFail(true)
+  await tick()
+  assert.equal(second.calls.some((call) => call.b3 === true), true)
+  assert.equal(second.calls.some((call) => call.b4 === 'row-b'), true)
+  assert.equal(first.calls.some((call) => call.b3 === true), false)
+})
+
 test('tracks nested async boundaries separately', async () => {
   const def = defineGlazeComponent({
     asyncStatus: [

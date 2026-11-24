@@ -35,6 +35,34 @@ test('rejects Loading on inside a loop like any other boundary', () => {
   )
 })
 
+test('keeps an async row component as a per-row boundary inside a loop', () => {
+  const child = `
+    import { Loading } from 'solid-js'
+    export default function AsyncRow(props) {
+      return (
+        <Loading fallback={<text>wait</text>}>
+          <text>{props.item}</text>
+        </Loading>
+      )
+    }
+  `
+  const result = compileComponent(
+    `
+      import AsyncRow from './AsyncRow'
+      export default function Page(props) {
+        return <For each={props.items}>{item => <AsyncRow item={item} />}</For>
+      }
+    `,
+    {
+      sourceFile: '/project/src/Page.tsx',
+      resolveComponent: () => ({ source: child, file: '/project/src/AsyncRow.tsx' }),
+    },
+  )
+  assert.match(result.wxml, /<async-row [^>]*wx:for=/)
+  assert.doesNotMatch(result.wxml, /wait/)
+  assert.match(result.wxml, /item="\{\{item\}\}"/)
+})
+
 test('rejects Errored on', () => {
   assert.throws(
     () =>

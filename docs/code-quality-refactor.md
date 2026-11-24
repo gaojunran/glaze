@@ -152,13 +152,13 @@ Final state is `4789cff` on `main` plus the lifecycle tests:
 
 ```
 pnpm -r test
-# shared 2, runtime 189, compiler 291, build 122 = 604 tests, 0 failed
+# shared 2, runtime 190, compiler 292, build 122 = 606 tests, 0 failed
 
 pnpm -r --if-present typecheck
 # shared, compiler, runtime, build, vite-plugin: Done
 
 cd examples/solid-todo && pnpm build
-# glaze build: 17 pages, 31 components
+# glaze build: 17 pages, 32 components
 
 cd ~/Playground/minibuild
 target/debug/minidev test --project /data/home/nebula/Projects/glaze/examples/solid-todo ...

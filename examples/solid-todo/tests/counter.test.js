@@ -283,6 +283,9 @@ test('async Loading and Errored boundaries render fallbacks and resolved values'
   await (await app.$('.async-reset')).tap()
   await page.waitFor(400)
   await expect(app).toMatchText('.async-flaky-value', 'recovered')
+
+  const rows = await app.$$('.async-row-host')
+  if (rows.length !== 3) throw new Error(`expected 3 async row instances, got ${rows.length}`)
 })
 
 test('independent subpackage loads its own runtime and updates state', async (miniProgram) => {

@@ -137,6 +137,13 @@ error id. That is what lets an outer `Errored` catch a failure inside an inner
 `Loading`, and an outer `Loading` show pending work inside an inner `Errored`,
 while same-kind nesting still follows the nearest boundary.
 
+For a list, each row needs its own instance-level boundary. Render a row
+component from `<For>` and put its async memo plus `Loading`/`Errored` inside
+that component; the component's root owns one binding set and status map, so
+pending, errors and reset are independent per row. A boundary placed directly
+inside `<For>` is still rejected because the loop template has no per-row JS
+execution or owner.
+
 ### Context readers
 
 `withProvider` accepts an optional `read` callback and wraps it in a context
@@ -386,12 +393,12 @@ wrong signal set or skip a generated feature.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 186, pass 186, fail 0
+# tests 190, pass 190, fail 0
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json (no output)
 pnpm --filter @glaze/build test
-# tests 121, pass 121, fail 0
+# tests 122, pass 122, fail 0
 cd examples/solid-todo && pnpm build
-# glaze build: 17 pages, 31 components
+# glaze build: 17 pages, 32 components
 # minidev e2e: 10 cases, 10 passed (the context case scrolls and asserts the root sees the page event)
 ```

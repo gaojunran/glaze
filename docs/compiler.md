@@ -626,10 +626,19 @@ WXML data bridge; `error()` in an `Errored` fallback reads that normalized
 value. The fallback is rendered through a single-element `wx:for`, so `error()`
 is rewritten to the WXML loop item and the dependency graph itself stays in JS.
 
-Boundaries inside a loop are rejected because their condition would need a
-per-row async identity; a single component-level status cannot distinguish one
-list row from another. `Loading on` and an `Errored` reset function are
-supported.
+Direct boundaries inside a loop are rejected because their condition would
+need a per-row async identity; a single component-level status cannot
+distinguish one list row from another. Wrap the row in a component instead:
+
+```tsx
+<For each={rows()}>{(row) => <AsyncRow row={row} />}</For>
+```
+
+`AsyncRow` owns the `Loading`/`Errored` boundaries, so every row created by
+`wx:for` gets its own Solid root and async state; rows can be pending or
+failed independently. The child stays a real component boundary (it is not
+inlined) because it contains a control-flow boundary. `Loading on` and an
+`Errored` reset function remain supported inside that component.
 
 Async behavior that is implemented:
 
