@@ -184,6 +184,28 @@ this only matters for a deferred `attached` event followed by `ready` later in
 the same tick, where the projection is rerun after mount and component data is
 unchanged.
 
+### Mini-program lifecycle mapping
+
+Glass-easel component lifetimes are the only platform hooks the runtime
+subscribes to. The mapping is:
+
+| Platform | Runtime behavior |
+| --- | --- |
+| `created` | Create `InstanceState`, prop signals and the props proxy. A non-deferred component mounts its Solid root here. |
+| `attached` | Deferred context: record `attachedBeforeMount` only. Normal: install effects. After `detached`: rebuild the root, then install effects. |
+| `ready` | Deferred context: build the root and install effects once. Already rooted: no-op. After `detached`: ignored, so a late ready cannot revive a detached root. |
+| `moved` | No handler. The same root and signals survive a move (verified with two attached parents). |
+| `beforeDetach` | Not handled. Teardown happens at `detached`; glass-easel detaches children first, so a parent's `onCleanup` runs after its child components are already detached. |
+| `detached` | Dispose the Solid root, clear pending writes, events/refs and status projection, and move to the `detached` phase. |
+| `error` | Not wired. Binding failures go to `state.error` and the log; lifecycle-callback failures stay with glass-easel. |
+| `pageLifetimes` (`show`, `hide`, `resize`) | Not bridged. There is no Glaze-level page-visibility API; page-level behavior must live in the mini-program page or a native component. |
+
+The real glass-easel tests cover the normal `attached` -> `ready` order,
+`ready` before `attached`, `detached` before `ready` (no late mount),
+`detached` -> `attached` -> `ready` (rebuild once), and a `moved` component
+keeping its root. The earlier pre-root test also asserts that a deferred async
+component writes no data before `ready`.
+
 ### Replaced error sources release the old consumer
 
 `binding.source` remembers the last source this binding reported. When a later
@@ -232,7 +254,7 @@ wrong signal set or skip a generated feature.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 169, pass 169, fail 0
+# tests 174, pass 174, fail 0
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json (no output)
 pnpm --filter @glaze/build test

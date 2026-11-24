@@ -67,9 +67,9 @@ test('ready before attached keeps the platform phase at mounted', () => {
   assert.deepEqual(attach(mounted), ATTACHED)
 })
 
-test('detach before ready drops the recorded attach and stays waiting', () => {
-  assert.deepEqual(detach(WAITING_ATTACHED), WAITING)
-  assert.deepEqual(detach(WAITING), WAITING)
+test('detach before ready moves a deferred instance to detached', () => {
+  assert.deepEqual(detach(WAITING_ATTACHED), DETACHED)
+  assert.deepEqual(detach(WAITING), DETACHED)
 })
 
 test('detach outside a root keeps the phase unchanged', () => {

@@ -830,6 +830,9 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       ready(this: any) {
         const state: InstanceState | undefined = this.__glaze
         if (!state || !deferredContext || hasRoot(state.lifecycle)) return
+        // A platform that detached before `ready` must not get a root from a
+        // late ready: nothing would own that root until the next attach.
+        if (state.lifecycle.phase === 'detached') return
         // A context passed through the property bridge is not available while
         // `created` runs (the parent's first setData may land afterwards).
         // Wait for `ready`, when the property is materialized, then build the
@@ -837,10 +840,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         // providers are skipped and `useContext` falls back to its default.
         // `ready` always mounts and attaches (as before); the phase only
         // records whether the platform had attached before the root existed.
-        state.lifecycle =
-          state.lifecycle.phase === 'detached'
-            ? { phase: 'mounted' }
-            : readyMount(state.lifecycle)
+        state.lifecycle = readyMount(state.lifecycle)
         mount(this, state)
         attach(this, state)
       },

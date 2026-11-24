@@ -9,8 +9,8 @@
  *   `attachedBeforeMount` records that the platform's `attached` ran first.
  * - `mounted`: a root exists, the platform has not attached.
  * - `attached`: a root exists and the platform attached it.
- * - `detached`: the platform detached after a root existed; the next attach
- *   rebuilds the root.
+ * - `detached`: the platform detached; a root may never have existed for a
+ *   deferred instance, and the next attach rebuilds it.
  *
  * A phase says nothing about installed effects. `waiting-context` with
  * `attachedBeforeMount: true` is attached-but-not-mounted, and `mounted` is
@@ -79,18 +79,16 @@ export function attach(state: LifecycleState): LifecycleState {
 }
 
 /**
- * Platform `detached`. A root is dropped; a waiting deferred instance only
- * loses the recorded attach because it never had a root.
+ * Platform `detached`. A root is dropped; a waiting deferred instance also
+ * moves to `detached` even though it never built one, so a late `ready` cannot
+ * revive it.
  */
 export function detach(state: LifecycleState): LifecycleState {
   switch (state.phase) {
     case 'mounted':
     case 'attached':
-      return { phase: 'detached' }
     case 'waiting-context':
-      return state.attachedBeforeMount
-        ? { phase: 'waiting-context', attachedBeforeMount: false }
-        : state
+      return { phase: 'detached' }
     default:
       return state
   }

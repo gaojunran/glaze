@@ -148,11 +148,11 @@ The new models made several existing gaps testable:
 
 ## Validation
 
-Final state is `4789cff` on `main`:
+Final state is `4789cff` on `main` plus the lifecycle tests:
 
 ```
 pnpm -r test
-# shared 2, runtime 169, compiler 289, build 120 = 580 tests, 0 failed
+# shared 2, runtime 174, compiler 289, build 120 = 585 tests, 0 failed
 
 pnpm -r --if-present typecheck
 # shared, compiler, runtime, build, vite-plugin: Done

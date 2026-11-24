@@ -18,15 +18,28 @@ after(() => {
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 5))
 
-function mount(config) {
+function create(config, id = 'root') {
   const def = defineGlazeComponent(config)
-  const element = glassEasel.Component.createWithContext(
-    'root',
+  return glassEasel.Component.createWithContext(
+    id,
     def,
     new glassEasel.EmptyBackendContext(),
   ).general()
+}
+
+function mount(config) {
+  const element = create(config)
   glassEasel.Component.pretendAttached(element)
   return element
+}
+
+function deferredConfig(setup) {
+  return {
+    properties: ['glazecontext'],
+    boundaryContexts: [{ name: 'Ctx', key: 'ctx' }],
+    data: { b0: null },
+    setup,
+  }
 }
 
 test('real glass-easel lifecycle applies scalar bindings into DataGroup data', async () => {
@@ -125,6 +138,125 @@ test('real glass-easel property observer updates a prop signal', async () => {
   await tick()
   assert.equal(element.data.b0, 'hello')
   assert.equal(seen(), 'hello')
+})
+
+test('deferred component builds its root at ready, not at attached', async () => {
+  let setups = 0
+  const element = create(
+    deferredConfig((ctx) => {
+      setups += 1
+      ctx.bind(0, () => 'ready')
+    }),
+  )
+
+  glassEasel.Component.pretendAttached(element)
+  await tick()
+  assert.equal(setups, 0)
+  assert.equal(element.data.b0, null)
+
+  element.triggerLifetime('ready', [])
+  await tick()
+  assert.equal(setups, 1)
+  assert.equal(element.data.b0, 'ready')
+})
+
+test('ready before attached installs one root and later attach applies updates', async () => {
+  let setups = 0
+  let setValue
+  const element = create(
+    deferredConfig((ctx) => {
+      setups += 1
+      const [value, set] = createSignal('first')
+      setValue = set
+      ctx.bind(0, () => value())
+    }),
+  )
+
+  element.triggerLifetime('ready', [])
+  await tick()
+  assert.equal(setups, 1)
+  assert.equal(element.data.b0, 'first')
+
+  glassEasel.Component.pretendAttached(element)
+  setValue('after-attach')
+  await tick()
+  assert.equal(setups, 1)
+  assert.equal(element.data.b0, 'after-attach')
+})
+
+test('a detached deferred instance can attach and ready again', async () => {
+  let setups = 0
+  const element = create(
+    deferredConfig((ctx) => {
+      setups += 1
+      ctx.bind(0, () => 'ready')
+    }),
+  )
+
+  glassEasel.Component.pretendAttached(element)
+  glassEasel.Component.pretendDetached(element)
+  glassEasel.Component.pretendAttached(element)
+  element.triggerLifetime('ready', [])
+  await tick()
+
+  assert.equal(setups, 1)
+  assert.equal(element.data.b0, 'ready')
+})
+
+test('ready after detached does not revive a deferred root', async () => {
+  let setups = 0
+  const element = create(
+    deferredConfig((ctx) => {
+      setups += 1
+      ctx.bind(0, () => 'ready')
+    }),
+  )
+
+  glassEasel.Component.pretendAttached(element)
+  glassEasel.Component.pretendDetached(element)
+  element.triggerLifetime('ready', [])
+  await tick()
+
+  assert.equal(setups, 0)
+  assert.equal(element.data.b0, null)
+})
+
+test('a moved component keeps its root and state', async () => {
+  let setValue
+  let setups = 0
+  const element = create({
+    data: { b0: null },
+    setup(ctx) {
+      setups += 1
+      const [value, set] = createSignal('first')
+      setValue = set
+      ctx.bind(0, () => value())
+    },
+  })
+  const parent = (name) => {
+    const parentElement = glassEasel.Component.createWithContext(
+      name,
+      space.defineComponent({}),
+      new glassEasel.EmptyBackendContext(),
+    ).general()
+    glassEasel.Component.pretendAttached(parentElement)
+    return parentElement
+  }
+  const first = parent('first')
+  const second = parent('second')
+
+  first.appendChild(element)
+  await tick()
+  assert.equal(setups, 1)
+  assert.equal(element.data.b0, 'first')
+
+  second.appendChild(element)
+  await tick()
+  assert.equal(setups, 1, 'moving must not rebuild the root')
+
+  setValue('moved')
+  await tick()
+  assert.equal(element.data.b0, 'moved')
 })
 
 test('real glass-easel keeps an error in one binding from freezing another', async () => {
