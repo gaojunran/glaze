@@ -11,6 +11,7 @@ export {
   useAppVisible,
   useLaunchOptions,
   usePageEvent,
+  usePageOptions,
   usePageSize,
   usePageVisible,
 } from './mini.ts'

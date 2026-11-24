@@ -1750,3 +1750,48 @@ test('clears Loading when a binding fails without an Errored boundary', async ()
   await tick()
   assert.equal(instance.calls.at(-1).b1, false)
 })
+test('page context shares options and events across component boundaries', async () => {
+  let root
+  let child
+  const seen = []
+  const routes = []
+  const rootDef = defineGlazeComponent({
+    data: {},
+    properties: ['glazepage'],
+    pageContext: true,
+    pageRoot: true,
+    setup(ctx) {
+      root = ctx
+    },
+  })
+  const childDef = defineGlazeComponent({
+    data: {},
+    properties: ['glazepage'],
+    pageContext: true,
+    setup(ctx) {
+      child = ctx
+      ctx.onPageEvent('scroll', (payload) => seen.push(payload))
+      ctx.onPageEvent('routeDone', (payload) => routes.push(payload))
+    },
+  })
+  const page = { id: 'page-1', query: { from: 'scan' } }
+  const rootInstance = createInstance(rootDef, { glazepage: page })
+  const childInstance = createInstance(childDef, { glazepage: page })
+
+  assert.deepEqual(root.pageOptions(), page)
+  assert.deepEqual(child.pageOptions(), page)
+  rootDef.methods.__glazePageEvent.call(rootInstance, 'scroll', { scrollTop: 5 })
+  assert.deepEqual(seen, [{ scrollTop: 5 }])
+  assert.deepEqual(child.pageEvent('scroll'), { scrollTop: 5 })
+
+  // routeDone reaches every component through pageLifetimes; the root owns the
+  // channel write, so the handler fires once, not once per component.
+  rootDef.pageLifetimes.routeDone.call(rootInstance, { path: '/home' })
+  childDef.pageLifetimes.routeDone.call(childInstance, { path: '/home' })
+  assert.deepEqual(routes, [{ path: '/home' }])
+  assert.deepEqual(child.pageEvent('routeDone'), { path: '/home' })
+
+  childDef.lifetimes.detached.call(childInstance)
+  rootDef.pageLifetimes.routeDone.call(rootInstance, { path: '/next' })
+  assert.equal(routes.length, 1)
+})

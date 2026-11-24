@@ -196,7 +196,7 @@ subscribes to. The mapping is:
 | `ready` | Deferred context: build the root and install effects once. Already rooted: no-op. After `detached`: ignored, so a late ready cannot revive a detached root. |
 | `moved` | Keep the same root and signals, then notify `onComponentMoved` / `ctx.onComponentMoved` handlers. |
 | `beforeDetach` | Notify `onBeforeDetach` / `ctx.onBeforeDetach` handlers while the root is still alive. Teardown still happens at `detached`; glass-easel detaches children first, so a parent's `onCleanup` runs after its child components are already detached. |
-| `detached` | Dispose the Solid root, clear pending writes, events/refs, error handlers, page handlers and status projection, and move to the `detached` phase. |
+| `detached` | Dispose the Solid root, clear pending writes, events/refs, error handlers, page handlers, page-channel subscriptions and status projection, and move to the `detached` phase. |
 | `error` | Store the error in `state.error` and notify every `ctx.onComponentError` handler. Binding failures now use the same observer in addition to their `Errored` channel. |
 | `pageLifetimes` (`show`, `hide`, `resize`, `routeDone`) | Drive `ctx.pageVisible()`, `ctx.pageSize()` and the `routeDone` page event; `pageSize` is seeded from `wx.getWindowInfo()` when available. |
 
@@ -205,6 +205,30 @@ callbacks, `onPullDownRefresh`, `onReachBottom`, `onTabItemTap`,
 `onSaveExitState`) are forwarded by the generated page wrapper to the root
 component's `__glazePageEvent` method when a compiled source references them.
 The wrapper caches the root component once `selectComponent('#app')` succeeds.
+
+### Page context channel
+
+When a page or any component uses `usePageOptions`, `usePageEvent` or
+`onPageEvent`, the build marks the page and every boundary on the path to that
+component as `pageContext`. The page wrapper then owns a per-instance id and
+query and passes them to the root as one object property:
+
+```xml
+<glaze-page id="app" glazepage="{{__glazePage}}" />
+```
+
+The runtime registers every page-context component under that page id. Page
+events are stored in one `PageChannel` per id, so a child component observes
+`usePageEvent('scroll')` without receiving a copy of page state and pages in the
+navigation stack cannot see each other's events. The id is generated in
+`onLoad`, so a component that mounts before it can still subscribe; the read
+waits on the `glazepage` property and joins the channel when the id arrives.
+Only components on the path to a page hook receive the property; unrelated
+boundaries keep the old shape. A page root removes its channel at `detached`.
+
+The channel deliberately does not call `getCurrentPages()`: the top page is
+ambiguous while several pages are alive and would route a hidden page's event
+to the visible one.
 
 ### Page visibility, page events and component errors
 
@@ -224,6 +248,7 @@ import {
   useAppVisible,
   useLaunchOptions,
   usePageEvent,
+  usePageOptions,
   usePageSize,
   usePageVisible,
 } from '@glaze/runtime'
@@ -232,6 +257,7 @@ export default function Page() {
   const pageVisible = usePageVisible()
   const pageSize = usePageSize()
   const appVisible = useAppVisible()
+  const options = usePageOptions()
   const scroll = usePageEvent('scroll')
 
   createEffect(() => {
@@ -240,6 +266,10 @@ export default function Page() {
   createEffect(() => {
     const size = pageSize()
     if (size) layout(size.windowWidth, size.windowHeight)
+  })
+  createEffect(() => {
+    const page = options()
+    if (page) trackPageQuery(page.query)
   })
   createEffect(() => {
     const event = scroll()
@@ -254,11 +284,11 @@ export default function Page() {
 
 Hand-written `defineGlazeComponent` components use the same values as
 `ctx.pageVisible()`, `ctx.pageSize()`, `ctx.appVisible()`,
-`ctx.appLaunchOptions()`, `ctx.onAppShow(handler)`, `ctx.onAppHide(handler)`,
-`ctx.onAppError(handler)`, `ctx.onUnhandledRejection(handler)`,
-`ctx.pageEvent(name)`, `ctx.onPageEvent(name, handler)`,
-`ctx.onComponentError(handler)`, `ctx.onComponentMoved(handler)` and
-`ctx.onBeforeDetach(handler)`.
+`ctx.pageOptions()`, `ctx.appLaunchOptions()`, `ctx.onAppShow(handler)`,
+`ctx.onAppHide(handler)`, `ctx.onAppError(handler)`,
+`ctx.onUnhandledRejection(handler)`, `ctx.pageEvent(name)`,
+`ctx.onPageEvent(name, handler)`, `ctx.onComponentError(handler)`,
+`ctx.onComponentMoved(handler)` and `ctx.onBeforeDetach(handler)`.
 
 - `usePageVisible()` starts `true`, then follows `pageLifetimes.hide` and
   `pageLifetimes.show`.
@@ -274,16 +304,19 @@ Hand-written `defineGlazeComponent` components use the same values as
   bridge `wx.onError` / `wx.onUnhandledRejection`. Their unsubscribe functions
   are also run when the component root is disposed.
   `onUnhandledRejection` receives `event.reason` when present.
+- `usePageOptions()` returns the owning page's `{ id, query }` when the
+  component is inside a page-context subtree; it is `undefined` otherwise.
+  Query values come from the page wrapper's `onLoad(query)`.
 - `usePageEvent(name)` reads the latest payload of a page event. The event
   names are `scroll`, `shareAppMessage`, `shareTimeline`, `addToFavorites`,
   `tabItemTap`, `saveExitState`, `pullDownRefresh`, `reachBottom` and
-  `routeDone`.
+  `routeDone`. Page-context components share the page's channel, so a child
+  can read the event directly.
 - `onPageEvent(name, handler)` returns an unsubscribe function. Its return
   value is forwarded for page methods that expect one (`onShareAppMessage`,
-  `onShareTimeline`, `onAddToFavorites`, `onSaveExitState`). Page events reach
-  the page root component; pass the values to child components through props or
-  context. `routeDone` is the exception because `pageLifetimes` reaches every
-  component.
+  `onShareTimeline`, `onAddToFavorites`, `onSaveExitState`). The channel is
+  shared across the page-context subtree; `routeDone` also continues to reach
+  every component through `pageLifetimes`.
 - `onComponentError(handler)` receives glass-easel errors and binding failures;
   binding failures also keep their `Errored` channel.
 - `onComponentMoved(handler)` runs when the component is moved in the node tree;

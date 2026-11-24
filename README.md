@@ -73,7 +73,7 @@ Working spike, not a production framework. It covers:
 - data: keyed lists project only the fields WXML reads, so unused row payload
   never crosses the `setData` boundary; Glaze-to-Glaze child props cross the
   component boundary as one internal object property;
-- validation: 602 unit tests (shared 2, runtime 188, compiler 291, build 121),
+- validation: 604 unit tests (shared 2, runtime 189, compiler 291, build 122),
   glass-easel rendering tests and 10 minidev e2e cases.
 
 Known limits are documented in [Compiler](docs/compiler.md),

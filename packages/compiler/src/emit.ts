@@ -193,6 +193,8 @@ ${indent(rawSetup, 4)}
   if (Object.keys(options.eventProps ?? {}).length > 0) metadata.eventProps = options.eventProps
   if (Object.keys(options.listFields ?? {}).length > 0) metadata.listFields = options.listFields
   if (options.structuredProps) metadata.structuredProps = true
+  if (options.pageContext) metadata.pageContext = true
+  if (options.pageRoot) metadata.pageRoot = true
   if (options.bindingGroupSize !== undefined) metadata.bindingGroupSize = options.bindingGroupSize
   if (hasBoundaryContext) {
     metadata.boundaryContexts = boundaryContexts.map((item) => ({
@@ -210,6 +212,8 @@ ${indent(rawSetup, 4)}
       config.propSignals && line('propSignals', config.propSignals),
       config.asyncStatus && line('asyncStatus', config.asyncStatus),
       config.structuredProps && line('structuredProps', config.structuredProps),
+      config.pageContext && line('pageContext', config.pageContext),
+      config.pageRoot && line('pageRoot', config.pageRoot),
       config.bindingGroupSize !== undefined &&
         line('bindingGroupSize', config.bindingGroupSize),
       config.boundaryContexts && line('boundaryContexts', config.boundaryContexts),

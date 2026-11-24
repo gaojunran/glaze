@@ -12,6 +12,7 @@ import {
 } from 'solid-js'
 import {
   CONTEXT_PROP,
+  PAGE_PROP,
   STRUCTURED_PROP,
   eventHandlerName,
   isPrototypePropName,
@@ -60,6 +61,7 @@ import {
 } from './lifecycle.ts'
 declare const Component: (options: Record<string, unknown>) => unknown
 
+import type { PageContextValue } from '@glaze/shared'
 import type {
   AppLaunchOptions,
   AppShowHandler,
@@ -193,7 +195,83 @@ const reportUnhandledComponentError = (state: InstanceState, error: unknown): vo
   if (state.errorHandlers.length === 0) reportComponentError(error)
 }
 
+type PageChannel = {
+  events: Map<PageEventName, { value: unknown; version: [() => number, (value: number) => void] }>
+  handlers: Map<PageEventName, Set<(payload: unknown) => unknown>>
+}
+
+// A page channel is keyed by the generated page id, so sibling pages in the
+// navigation stack cannot see each other's scroll/share events. Only page
+// context components are registered; everything else keeps the old local state.
+const pageChannels = new Map<string, PageChannel>()
+
+const pageContextOf = (state: InstanceState): PageContextValue | undefined => {
+  const value = state.props[PAGE_PROP]?.[0]()
+  if (!value || typeof value !== 'object') return undefined
+  const id = (value as { id?: unknown }).id
+  return typeof id === 'string' && id !== '' ? (value as PageContextValue) : undefined
+}
+
+const pageChannelFor = (state: InstanceState): PageChannel | null => {
+  const page = pageContextOf(state)
+  if (!page) return null
+  let channel = pageChannels.get(page.id)
+  if (!channel) {
+    const created: PageChannel = { events: new Map(), handlers: new Map() }
+    channel = created
+    pageChannels.set(page.id, created)
+    // Handlers registered before the page id reached this component were kept
+    // locally; move them now that the shared channel exists.
+    for (const [name, handlers] of state.pageHandlers) {
+      const target = created.handlers.get(name) ?? new Set()
+      for (const handler of handlers) {
+        target.add(handler)
+        state.pageChannelCleanups.push(() => {
+          target.delete(handler)
+          if (target.size === 0) created.handlers.delete(name)
+        })
+      }
+      created.handlers.set(name, target)
+    }
+    state.pageHandlers.clear()
+  }
+  return channel
+}
+
+const channelEvent = (channel: PageChannel, name: PageEventName) => {
+  let entry = channel.events.get(name)
+  if (!entry) {
+    entry = { value: undefined, version: createSignal(0) }
+    channel.events.set(name, entry)
+  }
+  return entry
+}
+
 const emitPageEvent = (state: InstanceState, name: PageEventName, payload: unknown): unknown => {
+  // Page lifetimes reach every component; only the page root owns the channel
+  // write, or one routeDone would notify every handler once per component.
+  const channel = state.pageRoot ? pageChannelFor(state) : null
+  if (channel) {
+    const entry = channelEvent(channel, name)
+    entry.value = payload
+    entry.version[1](entry.version[0]() + 1)
+    const handlers = channel.handlers.get(name)
+    if (!handlers) return undefined
+    let result: unknown
+    for (const handler of [...handlers]) {
+      try {
+        const value = handler(payload)
+        if (result === undefined) result = value
+      } catch (error) {
+        notifyComponentError(state, error)
+        reportUnhandledComponentError(state, error)
+      }
+    }
+    return result
+  }
+  // A page-context child receives `routeDone` through pageLifetimes too; only
+  // the page root owns the channel write.
+  if (state.pageContext) return undefined
   state.pageEvents.set(name, payload)
   state.pageEventVersion[1](state.pageEventVersion[0]() + 1)
   const handlers = state.pageHandlers.get(name)
@@ -238,6 +316,12 @@ export const useAppVisible = (): (() => boolean) => {
   requireSetupContext('useAppVisible')
   installAppLifecycle()
   return appVisible
+}
+
+/** Query of the page that owns the current component, when page context is enabled. */
+export const usePageOptions = (): (() => PageContextValue | undefined) => {
+  const ctx = requireSetupContext('usePageOptions')
+  return () => ctx.pageOptions()
 }
 
 /** Launch options captured when the mini-program starts. */
@@ -321,17 +405,29 @@ const bindingIndexOf = (change: DataChange): number | null => {
 
 export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   validateConfig(config)
-  const publicPropertyNames = config.properties ?? []
+  const publicPropertyNames = (config.properties ?? []).filter(
+    (name) => name.toLowerCase() !== PAGE_PROP,
+  )
   const structuredProps = config.structuredProps === true
+  const pageContext = config.pageContext === true || config.pageRoot === true
+  const pageRoot = config.pageRoot === true
   if (
     structuredProps &&
     publicPropertyNames.some((name) => name.toLowerCase() === STRUCTURED_PROP)
   ) {
     throw new Error(`Component props may not use the reserved property "${STRUCTURED_PROP}"`)
   }
-  const propertyNames = structuredProps
-    ? [...publicPropertyNames, STRUCTURED_PROP]
-    : publicPropertyNames
+  if (
+    pageContext &&
+    publicPropertyNames.some((name) => name.toLowerCase() === PAGE_PROP)
+  ) {
+    throw new Error(`Component props may not use the reserved property "${PAGE_PROP}"`)
+  }
+  const propertyNames = [
+    ...publicPropertyNames,
+    ...(structuredProps ? [STRUCTURED_PROP] : []),
+    ...(pageContext ? [PAGE_PROP] : []),
+  ]
   const isNotReady = (error: unknown) =>
     error instanceof NotReadyError || (error as { name?: string } | null)?.name === 'NotReadyError'
   // Only a binding with an async boundary surfaces its failure through the
@@ -476,7 +572,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   const properties = Object.fromEntries(
     propertyNames.map((name) => [
       name,
-      name === CONTEXT_PROP || name === STRUCTURED_PROP
+      name === CONTEXT_PROP || name === STRUCTURED_PROP || name === PAGE_PROP
         ? { type: Object, value: null }
         : { type: null, value: null },
     ]),
@@ -484,6 +580,9 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   const signalNames = new Set(config.propSignals ?? propertyNames)
   // Context is always observed so a boundary can wait for the property bridge.
   if (deferredContext) signalNames.add(CONTEXT_PROP)
+  // Page context must be observed even when the source never reads `props`:
+  // the channel is created from this property, not from a binding.
+  if (pageContext) signalNames.add(PAGE_PROP)
   // Compact props only need a signal when the child reads a prop from JS. A
   // WXML-only child reads `glazeprops` directly, so adding a signal there would
   // recreate the per-prop observer cost this property exists to avoid.
@@ -500,6 +599,11 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       function observeProperty(this: { __glaze?: InstanceState | null }, value: unknown) {
         const state = this.__glaze
         state?.props[name]?.[1](normalizePropValue(value))
+        if (name === PAGE_PROP && state?.pageContext) {
+          // Join the shared channel as soon as the id arrives so handlers
+          // registered during setup are not left in the local fallback map.
+          pageChannelFor(state)
+        }
         if (
           name === CONTEXT_PROP &&
           state &&
@@ -570,6 +674,8 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     state.errorHandlers.length = 0
     state.movedHandlers.length = 0
     state.beforeDetachHandlers.length = 0
+    for (const cleanup of state.pageChannelCleanups) cleanup()
+    state.pageChannelCleanups.length = 0
     state.pageHandlers.clear()
     state.error = undefined
     state.owner = null
@@ -617,7 +723,17 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         onAppHide: (handler) => subscribeApp(appHideHandlers, handler),
         onAppError: (handler) => subscribeApp(appErrorHandlers, handler),
         onUnhandledRejection: (handler) => subscribeApp(unhandledRejectionHandlers, handler),
+        pageOptions: () => pageContextOf(state),
         pageEvent: <K extends PageEventName>(name: K) => {
+          if (state.pageContext) {
+            // Subscribe to the page property too: the id can arrive after setup.
+            state.props[PAGE_PROP]?.[0]()
+            const channel = pageChannelFor(state)
+            if (!channel) return undefined
+            const entry = channel.events.get(name) ?? channelEvent(channel, name)
+            entry.version[0]()
+            return entry.value as PageEventPayloads[K] | undefined
+          }
           state.pageEventVersion[0]()
           return state.pageEvents.get(name) as PageEventPayloads[K] | undefined
         },
@@ -625,13 +741,25 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           name: K,
           handler: (payload: PageEventPayloads[K]) => unknown,
         ) => {
-          const handlers = state.pageHandlers.get(name) ?? new Set()
+          const channel = state.pageContext ? pageChannelFor(state) : null
+          const handlers = channel
+            ? channel.handlers.get(name) ?? new Set()
+            : state.pageHandlers.get(name) ?? new Set()
           handlers.add(handler as (payload: unknown) => unknown)
-          state.pageHandlers.set(name, handlers)
-          return () => {
-            handlers.delete(handler as (payload: unknown) => unknown)
-            if (handlers.size === 0) state.pageHandlers.delete(name)
+          if (channel) {
+            channel.handlers.set(name, handlers)
+          } else {
+            state.pageHandlers.set(name, handlers)
           }
+          const remove = () => {
+            handlers.delete(handler as (payload: unknown) => unknown)
+            if (handlers.size === 0) {
+              if (channel) channel.handlers.delete(name)
+              else state.pageHandlers.delete(name)
+            }
+          }
+          if (channel) state.pageChannelCleanups.push(remove)
+          return remove
         },
         onComponentError(handler) {
           state.errorHandlers.push(handler)
@@ -1024,6 +1152,9 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           pageEvents: new Map(),
           pageEventVersion: createSignal(0),
           pageHandlers: new Map(),
+          pageContext,
+          pageRoot,
+          pageChannelCleanups: [],
           errorHandlers: [],
           movedHandlers: [],
           beforeDetachHandlers: [],
@@ -1038,21 +1169,26 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         for (const name of signalNames) {
           state.props[name] = createSignal(normalizePropValue(this.properties?.[name]))
         }
-        const sourceNames =
+        const sourceNames = (
           Object.keys(propMap).length > 0 ? Object.keys(propMap) : publicPropertyNames
+        ).filter((name) => name !== PAGE_PROP)
         state.propsProxy = new Proxy(
           {},
           {
             get: (_, key: string | symbol) => {
               if (typeof key !== 'string') return undefined
-              if (key === STRUCTURED_PROP) return undefined
+              if (key === STRUCTURED_PROP || key === PAGE_PROP) return undefined
               if (Object.hasOwn(eventProps, key)) {
                 const eventName = eventProps[key]!
                 return (...args: unknown[]) =>
                   this.triggerEvent(eventName, args.length <= 1 ? args[0] : args, GLAZE_EVENT_OPTIONS)
               }
               const mapped = Object.hasOwn(propMap, key) ? propMap[key]! : key
-              if (mapped !== CONTEXT_PROP && !isPrototypePropName(mapped)) {
+              if (
+                mapped !== CONTEXT_PROP &&
+                mapped !== PAGE_PROP &&
+                !isPrototypePropName(mapped)
+              ) {
                 const structured = state.props[STRUCTURED_PROP]?.[0]()
                 if (
                   structured != null &&
@@ -1070,6 +1206,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
             has: (_, key: string | symbol) =>
               typeof key === 'string' &&
               key !== STRUCTURED_PROP &&
+              key !== PAGE_PROP &&
               (Object.hasOwn(eventProps, key) ||
                 Object.hasOwn(propMap, key) ||
                 Object.hasOwn(state.props, key)),
@@ -1092,6 +1229,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
             getOwnPropertyDescriptor: (_, key: string | symbol) =>
               typeof key === 'string' &&
               key !== STRUCTURED_PROP &&
+              key !== PAGE_PROP &&
               (Object.hasOwn(eventProps, key) ||
                 Object.hasOwn(propMap, key) ||
                 Object.hasOwn(state.props, key))
@@ -1199,9 +1337,15 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         state.errorHandlers.length = 0
         state.movedHandlers.length = 0
         state.beforeDetachHandlers.length = 0
+        for (const cleanup of state.pageChannelCleanups) cleanup()
+        state.pageChannelCleanups.length = 0
         state.pageHandlers.clear()
         state.applyStatus = null
         state.effectsInstalled = false
+        if (state.pageRoot) {
+          const page = pageContextOf(state)
+          if (page) pageChannels.delete(page.id)
+        }
         state.dispose?.()
         state.dispose = null
         state.owner = null

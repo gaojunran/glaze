@@ -123,9 +123,9 @@ miniprogram/
   app.js                 copied from src/app.js
   app.wxss               copied from src/app.wxss
   app.json               copied from src/app.json, pages replaced
-  pages/<route>.js       Page({ data: {} })
+  pages/<route>.js       Page({ data: {} }); page-context pages add onLoad
   pages/<route>.json     usingComponents: { "glaze-page": ... }
-  pages/<route>.wxml     <glaze-page id="app" />
+  pages/<route>.wxml     <glaze-page id="app" />; page-context pages add glazepage
   pages/<route>.wxss     empty
   components/glaze-*/    compiled Solid components
   glaze-runtime/index.js shared Solid + Glaze runtime
@@ -137,6 +137,13 @@ miniprogram/
 A page is a thin wrapper over a compiled component. That keeps the page itself
 free of Solid runtime code and lets the same page component be tested as a
 component.
+
+When the page subtree uses page hooks, the wrapper adds an `onLoad` that
+creates a per-instance page id and stores the route query in
+`data.__glazePage`, and the WXML passes that object to `glaze-page` as
+`glazepage`. The builder marks every page-context boundary on that path and
+recompiles it with `pageContext`/`pageRoot`; unrelated components keep the
+plain wrapper shape.
 
 Each compiled component directory contains:
 

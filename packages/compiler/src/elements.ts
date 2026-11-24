@@ -1,5 +1,13 @@
 import * as t from '@babel/types'
-import { CONTEXT_PROP, bindingKey, dataIndexAttr, eventHandlerName, kebabCase, refId } from '@glaze/shared'
+import {
+  CONTEXT_PROP,
+  PAGE_PROP,
+  bindingKey,
+  dataIndexAttr,
+  eventHandlerName,
+  kebabCase,
+  refId,
+} from '@glaze/shared'
 import {
   codeOf,
   containsJsx,
@@ -259,6 +267,7 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
   const inlined = inlineComponent(node, ctx, scope, name, source)
   if (inlined != null) return wrapDirectives(inlined, extraAttrs)
 
+  const child = resolveComponentInfo(name, source, ctx)
   ctx.addComponent(name, source, ctx.currentFile)
 
   const attrs = []
@@ -328,6 +337,9 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
     if (attrName.toLowerCase() === CONTEXT_PROP) {
       throw new Error(`"${CONTEXT_PROP}" is reserved for compiled context props`)
     }
+    if (attrName.toLowerCase() === PAGE_PROP) {
+      throw new Error(`"${PAGE_PROP}" is reserved for compiled page context`)
+    }
 
     const propName = attrName.toLowerCase()
     const expression = getExpression(attr)
@@ -370,8 +382,12 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
     })
   }
 
+  if (ctx.pageContext && child?.pageContext === true) {
+    attrs.push(`${PAGE_PROP}="{{${PAGE_PROP}}}"`)
+  }
+
   const grouped = scalarProps.filter((prop) => prop.group)
-  if (grouped.length >= 2 && canUseStructuredProps(name, source, ctx)) {
+  if (grouped.length >= 2 && child?.structuredProps === true) {
     attrs.push(
       `${STRUCTURED_PROPS}="{{ {${grouped.map((prop) => `${prop.name}: ${prop.expr}`).join(', ')}} }}"`,
     )
@@ -387,9 +403,10 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
   )
 }
 
-function canUseStructuredProps(name, source, ctx) {
+function resolveComponentInfo(name, source, ctx) {
   const resolved = ctx.resolveComponent?.(name, source, ctx.currentFile ?? undefined)
-  return typeof resolved === 'object' && resolved != null && resolved.structuredProps === true
+  if (typeof resolved === 'string') return { source: resolved }
+  return resolved && typeof resolved === 'object' ? resolved : null
 }
 
 export function compileChildren(children, ctx, scope) {

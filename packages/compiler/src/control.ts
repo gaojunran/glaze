@@ -21,11 +21,14 @@ import {
   patternAliases,
   rewriteAccessorCalls,
 } from './scope.ts'
-import { STRUCTURED_PROPS } from './constants.ts'
+import { PAGE_PROP, STRUCTURED_PROPS } from './constants.ts'
 
 const assertScopeName = (name: string, label: string) => {
   if (name === STRUCTURED_PROPS) {
     throw new Error(`${label} parameter may not use "${STRUCTURED_PROPS}"`)
+  }
+  if (name === PAGE_PROP) {
+    throw new Error(`${label} parameter may not use "${PAGE_PROP}"`)
   }
 }
 import type { AnyNode, CompilerContext, Scope } from './types.ts'

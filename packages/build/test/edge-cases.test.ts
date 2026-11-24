@@ -642,6 +642,8 @@ export default function App() {
   assert.match(pageScript, /onPageScroll\(event\)/)
   assert.match(pageScript, /onShareAppMessage\(event\)/)
   assert.match(pageScript, /__glazePageEvent/)
+  assert.match(pageScript, /onLoad\(query\)/)
+  assert.match(pageScript, /nextGlazePageId/)
 
   let pageOptions
   runInNewContext(pageScript, {
@@ -656,9 +658,16 @@ export default function App() {
       return name === 'shareAppMessage' ? { title: 'shared' } : undefined
     },
   }
+  const pageData = {}
   const page = {
     selectComponent: (selector) => (selector === '#app' ? root : null),
+    setData(data) {
+      Object.assign(pageData, data)
+    },
   }
+  pageOptions.onLoad.call(page, { from: 'scan' })
+  assert.equal(pageData.__glazePage.query.from, 'scan')
+  assert.ok(pageData.__glazePage.id)
   pageOptions.onPageScroll.call(page, { scrollTop: 7 })
   assert.deepEqual(calls[0], ['scroll', { scrollTop: 7 }])
   assert.deepEqual(
@@ -666,11 +675,74 @@ export default function App() {
     { title: 'shared' },
   )
   assert.equal(await readFile(`${pageDir}.wxss`, 'utf8'), '')
-  assert.equal(await readFile(`${pageDir}.wxml`, 'utf8'), '<glaze-page id="app" />\n')
+  assert.equal(
+    await readFile(`${pageDir}.wxml`, 'utf8'),
+    '<glaze-page id="app" glazepage="{{__glazePage}}" />\n',
+  )
   const pageJson = await readJson(`${pageDir}.json`)
   assert.deepEqual(pageJson.usingComponents, {
     'glaze-page': '/components/glaze-app/index',
   })
+})
+
+test('page context reaches only boundaries whose subtree uses page hooks', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `
+        import Hooked from './Hooked'
+        import Plain from './Plain'
+        export default function App() { return <view><Hooked /><Plain /></view> }
+      `,
+      'src/Hooked.tsx': `
+        import { usePageEvent, usePageOptions } from '@glaze/runtime'
+        export default function Hooked() {
+          usePageEvent('scroll')
+          usePageOptions()
+          return <view>hooked</view>
+        }
+      `,
+      'src/Plain.tsx': `
+        export default function Plain() {
+          return <view><slot name="label" /></view>
+        }
+      `,
+    },
+  })
+  await appShell(project)
+  await buildProject(project)
+
+  const pageDir = path.join(project, 'miniprogram/pages/home/index')
+  const pageScript = await readFile(`${pageDir}.js`, 'utf8')
+  assert.match(pageScript, /onPageScroll\(event\)/)
+  assert.match(pageScript, /onLoad\(query\)/)
+  assert.equal(
+    await readFile(`${pageDir}.wxml`, 'utf8'),
+    '<glaze-page id="app" glazepage="{{__glazePage}}" />\n',
+  )
+
+  const rootDir = path.join(project, 'miniprogram/components/glaze-app')
+  const rootWxml = await readFile(`${rootDir}/index.wxml`, 'utf8')
+  assert.equal((rootWxml.match(/glazepage="\{\{glazepage\}\}"/g) ?? []).length, 1)
+  const rootConfig = await readFile(`${rootDir}/index.js`, 'utf8')
+  assert.match(rootConfig, /pageContext:!0/)
+  assert.match(rootConfig, /pageRoot:!0/)
+
+  const hookedConfig = await readFile(
+    path.join(project, 'miniprogram/components/glaze-hooked/index.js'),
+    'utf8',
+  )
+  assert.match(hookedConfig, /pageContext:!0/)
+  assert.doesNotMatch(hookedConfig, /pageRoot:!0/)
+  const plainConfig = await readFile(
+    path.join(project, 'miniprogram/components/glaze-plain/index.js'),
+    'utf8',
+  )
+  assert.doesNotMatch(plainConfig, /pageContext:!0/)
 })
 
 test('writes a component JSON without options when there are no named slots', async () => {

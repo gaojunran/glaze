@@ -1,6 +1,6 @@
 import path from 'node:path'
 import * as t from '@babel/types'
-import { CONTEXT_PROP } from '@glaze/shared'
+import { CONTEXT_PROP, PAGE_PROP } from '@glaze/shared'
 import { codeOf, containsJsx, isStaticPropertyKey, walkAst } from './ast.ts'
 import { STRUCTURED_PROPS, WXS_SOURCE, WXS_VALUE_SOURCE } from './constants.ts'
 import { emitModule } from './emit.ts'
@@ -137,7 +137,12 @@ function analyzeComponent(
  * Decide the child component property interface. Runs before template
  * compilation so prop projections see the final property names.
  */
-function finalizeProps(props: string[], boundaryContexts: BoundaryContext[], structured: boolean) {
+function finalizeProps(
+  props: string[],
+  boundaryContexts: BoundaryContext[],
+  structured: boolean,
+  pageContext: boolean,
+) {
   const eventProps = Object.fromEntries(
     props
       .filter((name) => isEventProp(name))
@@ -158,9 +163,15 @@ function finalizeProps(props: string[], boundaryContexts: BoundaryContext[], str
       `Component props may not use the reserved compiler property "${CONTEXT_PROP}"`,
     )
   }
+  if (props.some((name) => name.toLowerCase() === PAGE_PROP)) {
+    throw new Error(
+      `Component props may not use the reserved compiler property "${PAGE_PROP}"`,
+    )
+  }
   const plainProps = [
     ...props.filter((name) => !Object.hasOwn(eventProps, name)),
     ...(boundaryContexts.length > 0 ? [CONTEXT_PROP] : []),
+    ...(pageContext ? [PAGE_PROP] : []),
   ]
   // A one-prop child has no property fan-out to remove, and its parent keeps
   // the normal attribute path; do not add the compact property or fallback.
@@ -205,6 +216,8 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     propReads: new Set<string>(),
     allPropsRead: false,
     structuredProps: options.structuredProps === true,
+    pageContext: options.pageContext === true,
+    pageRoot: options.pageRoot === true,
     contextNames,
     contextKeys,
     activeProviders: [],
@@ -410,7 +423,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     propertyNames,
     propMap,
     structuredProps,
-  } = finalizeProps(props, ctx.boundaryContexts, ctx.structuredProps)
+  } = finalizeProps(props, ctx.boundaryContexts, ctx.structuredProps, ctx.pageContext)
   ctx.structuredProps = structuredProps
   ctx.propMap = propMap
   const bodyWxml = compileNode(jsx, ctx, null)
@@ -471,6 +484,8 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     propSignals,
     listFields,
     structuredProps: ctx.structuredProps,
+    pageContext: ctx.pageContext,
+    pageRoot: ctx.pageRoot,
   })
 
   return {
@@ -492,5 +507,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     bindingCount: ctx.bindings.length,
     handlerCount: ctx.events.length,
     structuredProps: ctx.structuredProps,
+    pageContext: ctx.pageContext,
+    pageRoot: ctx.pageRoot,
   }
 }

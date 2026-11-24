@@ -1,4 +1,9 @@
-import { CONTEXT_PROP, STRUCTURED_PROP, isPrototypePropName } from '@glaze/shared'
+import {
+  CONTEXT_PROP,
+  PAGE_PROP,
+  STRUCTURED_PROP,
+  isPrototypePropName,
+} from '@glaze/shared'
 
 /**
  * One predicate decides which props travel in the compact `glazeprops` object.
@@ -14,6 +19,7 @@ const NON_GROUPABLE_PROPS = new Set([
   'children',
   CONTEXT_PROP,
   STRUCTURED_PROP,
+  PAGE_PROP,
 ])
 
 export const isEventProp = (name: string) => /^on[A-Z]/.test(name)

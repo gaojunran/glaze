@@ -12,11 +12,18 @@ export type CompileOptions = {
   bindingGroupSize?: number
   sourceFile?: string
   structuredProps?: boolean
+  pageContext?: boolean
+  pageRoot?: boolean
   resolveComponent?: (
     name: string,
     source: string,
     fromFile?: string,
-  ) => string | { source: string; file?: string; structuredProps?: boolean } | null
+  ) => string | {
+    source: string
+    file?: string
+    structuredProps?: boolean
+    pageContext?: boolean
+  } | null
 }
 
 export type ComponentRef = { name: string; source: string; fromFile?: string; file?: string }
@@ -80,6 +87,8 @@ export type CompileResult = {
   bindingCount: number
   handlerCount: number
   structuredProps: boolean
+  pageContext: boolean
+  pageRoot: boolean
 }
 
 /**
@@ -94,6 +103,8 @@ export type GeneratedConfigMetadata = Pick<
   | 'eventProps'
   | 'propSignals'
   | 'structuredProps'
+  | 'pageContext'
+  | 'pageRoot'
   | 'boundaryContexts'
   | 'asyncStatus'
   | 'bindingGroupSize'
@@ -115,6 +126,8 @@ export type EmitOptions = {
   propSignals: string[]
   listFields: Record<string, string[]>
   structuredProps?: boolean
+  pageContext?: boolean
+  pageRoot?: boolean
 }
 export type CompilerContext = {
   bindings: BindingEntry[]
@@ -136,6 +149,8 @@ export type CompilerContext = {
   propReads: Set<string>
   allPropsRead: boolean
   structuredProps: boolean
+  pageContext: boolean
+  pageRoot: boolean
   contextNames: Set<string>
   contextKeys: Map<string, { key: string; imported: boolean }>
   activeProviders: ContextProvider[]

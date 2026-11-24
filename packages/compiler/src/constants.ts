@@ -1,4 +1,4 @@
-export { STRUCTURED_PROP as STRUCTURED_PROPS } from '@glaze/shared'
+export { PAGE_PROP, STRUCTURED_PROP as STRUCTURED_PROPS } from '@glaze/shared'
 
 // Built-in WXML tags. A component name must not kebab-case onto one of these,
 // or the generated tree mixes a user component with a native element.

@@ -59,6 +59,7 @@ import {
   useAppVisible,
   useLaunchOptions,
   usePageEvent,
+  usePageOptions,
   usePageSize,
   usePageVisible,
 } from '@glaze/runtime'
@@ -96,14 +97,17 @@ onBeforeDetach(() => saveDraft())
 - `useLaunchOptions()` returns `wx.getLaunchOptionsSync()` values when available.
   `onAppShow` / `onAppHide` / `onAppError` / `onUnhandledRejection` are
   setup-only hooks whose unsubscribe functions also run on root disposal.
+- `usePageOptions()` returns `{ id, query }` for the owning page when the
+  component is inside a page-context subtree.
 - `usePageEvent(name)` reads the latest page event. Names: `scroll`,
   `shareAppMessage`, `shareTimeline`, `addToFavorites`, `tabItemTap`,
   `saveExitState`, `pullDownRefresh`, `reachBottom`, `routeDone`. The generated
-  page wrapper forwards these; do not add `Page.onPageScroll` yourself.
+  page wrapper forwards these and page-context children share the channel; do
+  not add `Page.onPageScroll` yourself.
 - `onPageEvent(name, handler)` returns an unsubscribe function. Return a value
   for share/favorite/save hooks; it is forwarded to the platform. Page events
-  reach the page root; pass values to child components via props or context
-  (`routeDone` reaches every component through `pageLifetimes`).
+  reach the page-context subtree (`routeDone` also reaches every component via
+  `pageLifetimes`).
 - `onComponentError` receives lifecycle, event and binding failures; binding
   failures still also use `Loading`/`Errored`. The returned function
   unsubscribes.

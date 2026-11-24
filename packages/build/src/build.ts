@@ -1,4 +1,5 @@
 import { compileComponent, hasMultipleProps } from '@glaze/compiler'
+import { PAGE_PROP } from '@glaze/shared'
 import { build as esbuild } from 'esbuild'
 import { existsSync } from 'node:fs'
 import {
@@ -67,6 +68,9 @@ const PAGE_EVENT_METHODS: Record<string, string> = {
   },\n`,
 }
 
+const usesPageContext = (js: string) =>
+  /\b(?:usePageOptions|usePageEvent|onPageEvent)\b/.test(js)
+
 const collectPageEventNames = (js: string) => {
   const names = new Set<string>()
   for (const match of js.matchAll(/\b(?:onPageEvent|usePageEvent)\(\s*['"]([A-Za-z]+)['"]/g)) {
@@ -80,13 +84,15 @@ const collectPageEventNames = (js: string) => {
   return names
 }
 
-const pageWrapperSource = (events: Set<string>): string => {
+const pageWrapperSource = (events: Set<string>, pageContext: boolean): string => {
   const methods = Object.keys(PAGE_EVENT_METHODS)
     .filter((name) => events.has(name))
     .map((name) => PAGE_EVENT_METHODS[name])
     .join('')
-  if (methods === '') return `Page({\n  data: {},\n})\n`
-  return `function dispatchGlazePageEvent(page, name, payload) {
+  const dispatch =
+    methods === ''
+      ? ''
+      : `function dispatchGlazePageEvent(page, name, payload) {
   let root = page.__glazePageRoot
   if (!root && typeof page.selectComponent === 'function') {
     root = page.selectComponent('#app')
@@ -96,8 +102,23 @@ const pageWrapperSource = (events: Set<string>): string => {
   return root.__glazePageEvent(name, payload)
 }
 
+`
+  if (!pageContext) {
+    if (methods === '') return `Page({\n  data: {},\n})\n`
+    return `${dispatch}Page({\n  data: {},\n${methods}})
+`
+  }
+  return `${dispatch}function nextGlazePageId() {
+  return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+}
+
 Page({
-  data: {},\n${methods}})
+  data: { __glazePage: { id: '', query: {} } },
+  onLoad(query) {
+    this.__glazePageId = this.__glazePageId || nextGlazePageId()
+    this.setData({ __glazePage: { id: this.__glazePageId, query: query || {} } })
+  },
+${methods}})
 `
 }
 
@@ -375,6 +396,62 @@ async function buildProjectInternal(
       dependencyGraph.set(child, parents)
     }
     edges.set(file, children)
+  }
+
+  // Page hooks are opt-in. Mark components that use the page channel, then
+  // walk parents so an unrelated component never receives the extra property.
+  const pageContextFiles = new Set(
+    [...used].filter((file) => usesPageContext(compiled.get(file).result.js)),
+  )
+  const pageContextQueue = [...pageContextFiles]
+  while (pageContextQueue.length > 0) {
+    const file = pageContextQueue.pop()
+    for (const parent of dependencyGraph.get(file) ?? []) {
+      if (pageContextFiles.has(parent)) continue
+      pageContextFiles.add(parent)
+      pageContextQueue.push(parent)
+    }
+  }
+  for (const file of pageContextFiles) {
+    const entry = compiled.get(file)
+    if (!entry) continue
+    const result = compileComponent(sources.get(file), {
+      inline: true,
+      sourceFile: file,
+      bindingGroupSize,
+      structuredProps: structuredFor(file),
+      pageContext: true,
+      pageRoot: pageFiles.has(file),
+      resolveComponent: (_name, specifier, fromFile = file) => {
+        const child = resolveSourceImport(fromFile, specifier, sources)
+        return child
+          ? {
+              source: sources.get(child),
+              file: child,
+              structuredProps: structuredFor(child),
+              pageContext: pageContextFiles.has(child),
+            }
+          : null
+      },
+    })
+    entry.result = result
+    compileCache.delete(file)
+  }
+
+  const pageEventsFor = (file: string) => {
+    const names = new Set<string>()
+    const seen = new Set<string>()
+    const stack = [file]
+    while (stack.length > 0) {
+      const current = stack.pop()
+      if (!current || seen.has(current)) continue
+      seen.add(current)
+      for (const name of collectPageEventNames(compiled.get(current)?.result.js ?? '')) {
+        names.add(name)
+      }
+      for (const child of edges.get(current) ?? []) stack.push(child)
+    }
+    return names
   }
 
   // A page may only reach components in its own package, plus (for a normal
@@ -786,12 +863,16 @@ async function buildProjectInternal(
     for (const entry of pageEntries) {
       const { route, file, owner } = entry
       if (staticRoutes.has(route)) continue
-      const pageEvents = collectPageEventNames(compiled.get(file)?.result.js ?? '')
+      const pageEvents = pageEventsFor(file)
+      const pageContext = pageContextFiles.has(file)
       const outName = names.get(file)
       const pageDir = path.join(stagingDir, path.dirname(route))
       const pageName = path.basename(route)
       await mkdir(pageDir, { recursive: true })
-      await writeFile(path.join(pageDir, `${pageName}.js`), pageWrapperSource(pageEvents))
+      await writeFile(
+        path.join(pageDir, `${pageName}.js`),
+        pageWrapperSource(pageEvents, pageContext),
+      )
       const pageConfig = pageConfigForRoute.get(route) ?? {}
       const usingComponents = {
         ...(pageConfig.usingComponents as Record<string, string> | undefined),
@@ -803,7 +884,9 @@ async function buildProjectInternal(
       )
       await writeFile(
         path.join(pageDir, `${pageName}.wxml`),
-        '<glaze-page id="app" />\n',
+        pageContext
+          ? `<glaze-page id="app" ${PAGE_PROP}="{{__glazePage}}" />\n`
+          : '<glaze-page id="app" />\n',
       )
       await writeFile(path.join(pageDir, `${pageName}.wxss`), '')
     }

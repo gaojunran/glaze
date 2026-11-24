@@ -1,4 +1,5 @@
 import type { getOwner } from 'solid-js'
+import type { PageContextValue } from '@glaze/shared'
 import type { BoundaryState } from './boundary.ts'
 import type { LifecycleState } from './lifecycle.ts'
 import type { RuntimeStateCore } from './state.ts'
@@ -103,6 +104,8 @@ export type GlazeContext = {
   appVisible(): boolean
   /** Launch options captured from `wx.getLaunchOptionsSync` when available. */
   appLaunchOptions(): AppLaunchOptions | undefined
+  /** Query/options of the page that owns this component, when page context is enabled. */
+  pageOptions(): PageContextValue | undefined
   onAppShow(handler: AppShowHandler): () => void
   onAppHide(handler: () => void): () => void
   onAppError(handler: (error: unknown) => void): () => void
@@ -132,6 +135,8 @@ export type GlazeComponentConfig = {
   listBindings?: Record<string, string>
   listFields?: Record<string, string[]>
   structuredProps?: boolean
+  pageContext?: boolean
+  pageRoot?: boolean
   handlerCount?: number
   setup(ctx: GlazeContext, props: GlazeProps): void
 }
@@ -152,6 +157,9 @@ export type InstanceState = {
   pageEvents: Map<PageEventName, unknown>
   pageEventVersion: [() => number, (value: number) => void]
   pageHandlers: Map<PageEventName, Set<(payload: unknown) => unknown>>
+  pageContext: boolean
+  pageRoot: boolean
+  pageChannelCleanups: (() => void)[]
   errorHandlers: ((error: unknown) => void)[]
   movedHandlers: (() => void)[]
   beforeDetachHandlers: (() => void)[]

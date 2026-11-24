@@ -3,7 +3,13 @@
 
 export const STRUCTURED_PROP = 'glazeprops'
 export const CONTEXT_PROP = 'glazecontext'
+export const PAGE_PROP = 'glazepage'
 export const LIST_KEY_WHOLE = '*this'
+
+export type PageContextValue = {
+  id: string
+  query?: Record<string, unknown>
+}
 
 /**
  * Mini-program property names are lowercased. A prop whose lowercased name is
@@ -42,6 +48,8 @@ export type GeneratedConfigJson = {
   eventProps?: Record<string, string>
   propSignals?: string[]
   structuredProps?: boolean
+  pageContext?: boolean
+  pageRoot?: boolean
   boundaryContexts?: BoundaryContextEntry[]
   asyncStatus?: AsyncStatusEntry[]
   bindingGroupSize?: number

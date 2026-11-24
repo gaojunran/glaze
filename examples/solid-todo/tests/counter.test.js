@@ -227,7 +227,7 @@ test('Tailwind utilities reach WXML and app.wxss', async (miniProgram) => {
 })
 
 test('cross-file context reaches a component boundary', async (miniProgram) => {
-  await miniProgram.reLaunch('/pages/context/index')
+  await miniProgram.reLaunch('/pages/context/index?from=e2e')
   const page = await miniProgram.currentPage()
   await page.waitFor(800)
   const app = await page.$('#app')
@@ -241,6 +241,7 @@ test('cross-file context reaches a component boundary', async (miniProgram) => {
   await expect(updated).toContain('class="context-boundary">dark-file')
 
   await expect(app).toMatchText('.app-visible', 'visible')
+  await expect(app).toMatchText('.page-query', 'e2e')
   const launchPath = await (await app.$('.launch-path')).text()
   // minidev returns an empty path but a real options object; a device returns
   // the entry route. Either way the wrapper must deliver the object.

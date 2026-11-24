@@ -213,8 +213,8 @@ The build marker, the parent grouping decision and the child projection all call
 one `isGroupableProp` predicate (`packages/compiler/src/props.ts`), so a
 component is marked `structuredProps` exactly when it has at least two groupable
 props. `@glaze/build` asserts the marker and the compiler decision agree.
-`glazeprops` and `glazecontext` are reserved: passing them as an attribute or
-declaring them as a prop is a compile error. A prop whose lowercased name is an
+`glazeprops`, `glazecontext` and `glazepage` are reserved: passing them as an
+attribute or declaring them as a prop is a compile error. A prop whose lowercased name is an
 `Object.prototype` member (`constructor`, `__proto__`, `toString`, ...) is never
 put in the compact object: WXML would read the prototype value while the runtime
 uses an own-property check, so the two sides would disagree. Such props always
@@ -226,6 +226,24 @@ and at least one prop signal; an all-WXML child needs no observer. The `props`
 proxy reads a non-`undefined` object field first and hides the internal key from
 `Object.keys`, `in` and property descriptors. See
 [optimizations.md](optimizations.md) for the measured 500-boundary result.
+
+### Page context
+
+A page or component that calls `usePageOptions`, `usePageEvent` or
+`onPageEvent` is compiled with `pageContext`; `<For>`/`<Show>`/`Errored`
+parameters may not be named `glazepage`. `@glaze/build` walks the import graph
+and marks the page and every ancestor on the path to such a component. Only
+those boundaries emit the internal object property:
+
+```xml
+<child glazepage="{{glazepage}}" />
+```
+
+The page root also gets `pageRoot`. The page wrapper generates an `onLoad`
+that assigns a per-instance id and the route query, and its WXML passes the
+object to `glaze-page`. Components outside that subtree keep the old shape, so
+the extra property never becomes a framework-wide cost. See
+[runtime.md](runtime.md#page-context-channel) for the channel semantics.
 
 ### When a prop actually gets a signal
 
