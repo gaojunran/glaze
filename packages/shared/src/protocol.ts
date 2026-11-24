@@ -50,6 +50,7 @@ export type GeneratedConfigJson = {
   structuredProps?: boolean
   pageContext?: boolean
   pageRoot?: boolean
+  componentFramework?: 'exparser'
   boundaryContexts?: BoundaryContextEntry[]
   asyncStatus?: AsyncStatusEntry[]
   bindingGroupSize?: number

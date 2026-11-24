@@ -19,7 +19,8 @@ Glaze 将现代 Web 框架编译为原生小程序 WXML，运行时只运行它�
 （见 [构建](docs/build.md)）。
 
 Glaze 直接面向 glass-easel。它生成 WXML/WXSS/JSON 和少量 JS 模块来定义
-glass-easel 组件，不替换平台渲染器。
+glass-easel 组件，不替换平台渲染器。也可以通过可选的兼容模式，让同一份产物运行在
+旧版 Exparser 框架上（见 [旧版 exparser](docs/exparser.md)）。
 
 ## 为什么叫 Glaze？
 
@@ -71,8 +72,8 @@ glass-easel 组件，不替换平台渲染器。
 - UI：`@glaze/ui` 把 UI SDK 组件（button、toggle、switch、field、input、
   dialog、checkbox、radio、tabs、collapsible）移植为原生 WXML 组件，
   包含非受控变体与仅触屏的 dialog；
-- 验证：639 个单元测试（shared 2、store 8、runtime 202、compiler 303、
-  build 124）、glass-easel 渲染测试和 12 个 minidev e2e 用例。
+- 验证：641 个单元测试（shared 2、store 8、runtime 203、compiler 303、
+  build 125）、glass-easel 渲染测试和 12 个 minidev e2e 用例。
 
 已知限制记录在 [编译器](docs/compiler.md)、[Store](docs/store.md)、
 [UI SDK 移植](docs/ui.md)、[构建](docs/build.md) 和 [优化](docs/optimizations.md) 中。编译器与运行时的结构重构记录在
@@ -167,6 +168,7 @@ Chromium 1248）：
 - [UI SDK 移植](docs/ui.md)
 - [实现计划](docs/plan.md)
 - [构建](docs/build.md)
+- [旧版 exparser 组件框架](docs/exparser.md)
 - [单文件 snippet](docs/snippet.md)
 - [Tailwind CSS](docs/tailwind.md)
 - [minidev 之下的测试](docs/glass-easel-testing.md)

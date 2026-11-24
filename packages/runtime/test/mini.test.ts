@@ -376,6 +376,30 @@ test('error lifetime stores the error and notifies and unsubscribes handlers', (
   }
 })
 
+test('defers exparser setup to attached so parent props are visible', () => {
+  let seen: unknown = 'not-run'
+  const def = defineGlazeComponent({
+    componentFramework: 'exparser',
+    properties: ['title'],
+    data: { b0: null },
+    setup(ctx, props) {
+      seen = props.title
+      ctx.bind(0, () => props.title)
+    },
+  })
+
+  assert.deepEqual(def.options, {})
+  const instance = createInstance(def, { title: 'default' })
+  assert.equal(seen, 'not-run')
+  assert.deepEqual(instance.calls, [])
+
+  instance.properties.title = 'Parent'
+  def.lifetimes.attached.call(instance)
+
+  assert.equal(seen, 'Parent')
+  assert.equal(instance.calls[0].b0, 'Parent')
+})
+
 test('initializes properties before created so first paint has prop values', () => {
   const def = defineGlazeComponent({
     properties: ['title'],

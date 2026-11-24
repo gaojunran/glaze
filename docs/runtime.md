@@ -249,8 +249,8 @@ subscribes to. The mapping is:
 
 | Platform | Runtime behavior |
 | --- | --- |
-| `created` | Create `InstanceState`, prop signals and the props proxy. A non-deferred component mounts its Solid root here. |
-| `attached` | Deferred context: record `attachedBeforeMount` only. Normal: install effects. After `detached`: rebuild the root, then install effects. |
+| `created` | Create `InstanceState`, prop signals and the props proxy. A non-deferred glass-easel component mounts its Solid root here; a legacy exparser component waits for `attached` because its parent props are assigned after `created`. |
+| `attached` | Deferred context: record `attachedBeforeMount` only. Legacy exparser: re-seed props and mount before installing effects. Normal: install effects. After `detached`: rebuild the root, then install effects. |
 | `ready` | Deferred context: build the root and install effects once. Already rooted: no-op. After `detached`: ignored, so a late ready cannot revive a detached root. |
 | `moved` | Keep the same root and signals, then notify `onComponentMoved` / `ctx.onComponentMoved` handlers. |
 | `beforeDetach` | Notify `onBeforeDetach` / `ctx.onBeforeDetach` handlers while the root is still alive. Teardown still happens at `detached`; glass-easel detaches children first, so a parent's `onCleanup` runs after its child components are already detached. |
@@ -263,6 +263,10 @@ callbacks, `onPullDownRefresh`, `onReachBottom`, `onTabItemTap`,
 `onSaveExitState`) are forwarded by the generated page wrapper to the root
 component's `__glazePageEvent` method when a compiled source references them.
 The wrapper caches the root component once `selectComponent('#app')` succeeds.
+
+Projects that set `componentFramework: "exparser"` in `app.json` use the same
+mapping with one timing change: the root is created at `attached`, after the
+legacy parent has assigned props. See [Legacy exparser](exparser.md).
 
 ### Page context channel
 

@@ -186,6 +186,13 @@ async function buildProjectInternal(
     throw new Error(`Config "source" directory not found: ${config.source}`)
   }
 
+  const appJsonSource = path.join(sourceDir, 'app.json')
+  const sourceAppJson = existsSync(appJsonSource)
+    ? JSON.parse((await readFile(appJsonSource, 'utf8')).replace(/^\uFEFF/, ''))
+    : null
+  const componentFramework =
+    sourceAppJson?.componentFramework === 'exparser' ? 'exparser' : undefined
+
   const sourceFiles = await collectTsx(sourceDir)
   const sources = new Map()
   for (const file of sourceFiles) sources.set(file, await readFile(file, 'utf8'))
@@ -309,6 +316,7 @@ async function buildProjectInternal(
     runtime: config.runtime,
     static: config.static,
     staticPages: config.staticPages,
+    componentFramework: componentFramework ?? 'glass-easel',
   })}`
   if (cacheTag !== compileCacheTag) {
     compileCache.clear()
@@ -359,6 +367,7 @@ async function buildProjectInternal(
       sourceFile: file,
       bindingGroupSize,
       structuredProps: structuredFor(file),
+      componentFramework,
       resolveComponent: (_name, specifier, fromFile = file) => {
         const child = resolveComponentFile(fromFile, specifier)
         if (child) dependencies.add(child)
@@ -452,6 +461,7 @@ async function buildProjectInternal(
       sourceFile: file,
       bindingGroupSize,
       structuredProps: structuredFor(file),
+      componentFramework,
       pageContext: true,
       pageRoot: pageFiles.has(file),
       resolveComponent: (_name, specifier, fromFile = file) => {
@@ -928,13 +938,16 @@ async function buildProjectInternal(
       await writeFile(path.join(pageDir, `${pageName}.wxss`), '')
     }
 
-    const appJsonSource = path.join(sourceDir, 'app.json')
     const appJsonFile = path.join(stagingDir, 'app.json')
-    const appJson = existsSync(appJsonSource)
-      ? JSON.parse((await readFile(appJsonSource, 'utf8')).replace(/^\uFEFF/, ''))
-      : { componentFramework: 'glass-easel', window: { glassEaselWebview: true } }
+    const appJson = sourceAppJson ?? {
+      componentFramework: 'glass-easel',
+      window: { glassEaselWebview: true },
+    }
     delete appJson.subpackages
     delete appJson.subPackages
+    if (appJson.componentFramework === 'exparser' && appJson.window?.glassEaselWebview) {
+      delete appJson.window.glassEaselWebview
+    }
     const routeList = []
     const seenRoutes = new Set()
     for (const entry of pageEntries) {

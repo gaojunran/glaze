@@ -5,6 +5,7 @@ import {
   NotReadyError,
   createRoot,
   createSignal,
+  flush,
   getOwner,
   onCleanup,
   runWithOwner,
@@ -411,6 +412,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     (name) => name.toLowerCase() !== PAGE_PROP,
   )
   const structuredProps = config.structuredProps === true
+  const legacyFramework = config.componentFramework === 'exparser'
   const pageContext = config.pageContext === true || config.pageRoot === true
   const pageRoot = config.pageRoot === true
   if (
@@ -1188,6 +1190,27 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     state.effectsInstalled = true
   }
 
+  // Exparser initializes a child's properties from the parent only after
+  // `created`; its caller exposes the live values through `properties`/`data`.
+  // Re-seed the signals before the delayed mount so setup reads real props.
+  const syncLegacyProperties = (component: any, state: InstanceState) => {
+    const source = component.properties ?? component.data
+    if (!source || typeof source !== 'object') return
+    let seeded = false
+    for (const name of propertyNames) {
+      const signal = state.props[name]
+      if (!signal) continue
+      const value = Object.hasOwn(source, name)
+        ? source[name]
+        : source[name.toLowerCase()]
+      signal[1](normalizePropValue(value))
+      seeded = true
+    }
+    // Solid 2 stages signal writes until the next flush. The legacy mount
+    // reads `props` synchronously right after this callback, so flush here.
+    if (seeded) flush()
+  }
+
   return Component({
     data: config.data ?? {},
     properties,
@@ -1195,7 +1218,9 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     // glass-easel defaults to initializing properties after `created`, which
     // would make the first binding pass see every prop as null. Initialize them
     // before `created` so the first paint already has real prop values.
-    options: { propertyEarlyInit: true },
+    // Exparser rejects that option; it mounts at `attached` instead, after the
+    // parent has assigned the properties.
+    options: legacyFramework ? {} : { propertyEarlyInit: true },
     lifetimes: {
       created(this: any) {
         const state: InstanceState = {
@@ -1301,7 +1326,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           },
         )
 
-        if (!deferredContext) {
+        if (!deferredContext && !legacyFramework) {
           state.lifecycle = mountImmediately(state.lifecycle)
           mount(this, state)
         }
@@ -1310,27 +1335,30 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       attached(this: any) {
         const state: InstanceState | undefined = this.__glaze
         if (!state) return
-        const phase = state.lifecycle
+        const stage = state.lifecycle
+        if (legacyFramework && !hasRoot(stage)) {
+          syncLegacyProperties(this, state)
+        }
         // A repeated `attached`, including one recorded while waiting for a
         // deferred root, is a no-op (the old `state.active` guard).
         if (
-          phase.phase === 'attached' ||
-          (phase.phase === 'waiting-context' && phase.attachedBeforeMount)
+          stage.phase === 'attached' ||
+          (stage.phase === 'waiting-context' && stage.attachedBeforeMount)
         ) {
           return
         }
-        if (phase.phase === 'waiting-context') {
+        if (stage.phase === 'waiting-context') {
           // No root yet: record the platform attach without building effects.
-          state.lifecycle = attachWhileWaiting(phase)
-        } else if (phase.phase === 'detached') {
+          state.lifecycle = attachWhileWaiting(stage)
+        } else if (stage.phase === 'detached') {
           // Re-attaching after `detached`: rebuild the disposed root first.
-          state.lifecycle = reattach(phase)
+          state.lifecycle = reattach(stage)
           mount(this, state)
-        } else if (phase.phase === 'unmounted') {
-          state.lifecycle = attachLifecycle(mountImmediately(phase))
+        } else if (stage.phase === 'unmounted') {
+          state.lifecycle = attachLifecycle(mountImmediately(stage))
           mount(this, state)
         } else {
-          state.lifecycle = attachLifecycle(phase)
+          state.lifecycle = attachLifecycle(stage)
         }
         attach(this, state)
       },
@@ -1348,6 +1376,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         // providers are skipped and `useContext` falls back to its default.
         // `ready` always mounts and attaches (as before); the phase only
         // records whether the platform had attached before the root existed.
+        if (legacyFramework) syncLegacyProperties(this, state)
         state.lifecycle = readyMount(state.lifecycle)
         mount(this, state)
         attach(this, state)

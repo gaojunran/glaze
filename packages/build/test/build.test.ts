@@ -93,6 +93,46 @@ export default function App() {
   assert.ok(pageJson.usingComponents['ui-button'])
 })
 
+test('emits exparser-compatible app config and component metadata', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view>legacy</view>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+  await writeProjectFile(
+    project,
+    'src/app.json',
+    JSON.stringify({
+      componentFramework: 'exparser',
+      window: { glassEaselWebview: true, navigationBarTitleText: 'Legacy' },
+    }),
+  )
+
+  await buildProject(project)
+
+  const appJson = JSON.parse(
+    await readFile(path.join(project, 'miniprogram/app.json'), 'utf8'),
+  )
+  assert.equal(appJson.componentFramework, 'exparser')
+  assert.equal(appJson.window.glassEaselWebview, undefined)
+  assert.equal(appJson.window.navigationBarTitleText, 'Legacy')
+
+  const component = await readFile(
+    path.join(project, 'miniprogram/components/glaze-app/index.js'),
+    'utf8',
+  )
+  assert.match(component, /componentFramework:\s*"exparser"/)
+})
+
 test('bundles runtime lifecycle hooks imported by page source', async () => {
   const project = await createProject({
     config: {

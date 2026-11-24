@@ -512,6 +512,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     structuredProps: ctx.structuredProps,
     pageContext: ctx.pageContext,
     pageRoot: ctx.pageRoot,
+    componentFramework: options.componentFramework,
   })
 
   return {

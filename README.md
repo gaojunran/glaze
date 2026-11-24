@@ -22,6 +22,8 @@ glass-easel. Enabling it requires `componentFramework: "glass-easel"` and
 
 Glaze targets glass-easel directly. It emits WXML/WXSS/JSON and small JS modules
 that define glass-easel components; it does not replace the platform renderer.
+An opt-in compatibility mode runs the same output on the legacy Exparser
+framework for older base libraries (see [Legacy exparser](docs/exparser.md)).
 
 ## Why "Glaze"?
 
@@ -78,8 +80,8 @@ Working spike, not a production framework. It covers:
 - UI: `@glaze/ui` ports UI SDK primitives (button, toggle, switch, field,
   input, dialog, checkbox, radio, tabs, collapsible) as native WXML
   components, including uncontrolled variants and a touch-only dialog;
-- validation: 639 unit tests (shared 2, store 8, runtime 202, compiler 303,
-  build 124), glass-easel rendering tests and 12 minidev e2e cases.
+- validation: 641 unit tests (shared 2, store 8, runtime 203, compiler 303,
+  build 125), glass-easel rendering tests and 12 minidev e2e cases.
 
 Known limits are documented in [Compiler](docs/compiler.md),
 [Store](docs/store.md), [UI SDK port](docs/ui.md), [Build](docs/build.md)
@@ -183,6 +185,7 @@ fallback rather than pretending the compiler can cover everything.
 - [UI SDK port](docs/ui.md)
 - [Implementation plan](docs/plan.md)
 - [Build](docs/build.md)
+- [Legacy exparser framework](docs/exparser.md)
 - [Single-file snippets](docs/snippet.md)
 - [Tailwind CSS](docs/tailwind.md)
 - [Testing below minidev](docs/glass-easel-testing.md)

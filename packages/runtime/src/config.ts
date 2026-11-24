@@ -20,6 +20,12 @@ export function validateConfig(config: GlazeComponentConfig): void {
   const known = new Set(propertyNames)
   if (config.structuredProps) known.add(STRUCTURED_PROP)
   if ((config.boundaryContexts?.length ?? 0) > 0) known.add(CONTEXT_PROP)
+  if (
+    config.componentFramework !== undefined &&
+    config.componentFramework !== 'exparser'
+  ) {
+    invalid('componentFramework must be "exparser" when present')
+  }
   for (const name of config.propSignals ?? []) {
     if (!known.has(name.toLowerCase())) {
       invalid(`propSignals entry "${name}" is not a declared property`)

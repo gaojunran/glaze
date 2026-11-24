@@ -139,6 +139,7 @@ export type GlazeComponentConfig = {
   structuredProps?: boolean
   pageContext?: boolean
   pageRoot?: boolean
+  componentFramework?: 'exparser'
   handlerCount?: number
   setup(ctx: GlazeContext, props: GlazeProps): void
 }

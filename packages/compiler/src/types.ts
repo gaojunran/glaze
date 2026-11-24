@@ -15,6 +15,8 @@ export type CompileOptions = {
   structuredProps?: boolean
   pageContext?: boolean
   pageRoot?: boolean
+  /** Set when the project runs on the legacy exparser component framework. */
+  componentFramework?: 'exparser'
   resolveComponent?: (
     name: string,
     source: string,
@@ -107,6 +109,7 @@ export type GeneratedConfigMetadata = Pick<
   | 'structuredProps'
   | 'pageContext'
   | 'pageRoot'
+  | 'componentFramework'
   | 'boundaryContexts'
   | 'asyncStatus'
   | 'bindingGroupSize'
@@ -130,6 +133,7 @@ export type EmitOptions = {
   structuredProps?: boolean
   pageContext?: boolean
   pageRoot?: boolean
+  componentFramework?: 'exparser'
 }
 export type CompilerContext = {
   bindings: BindingEntry[]

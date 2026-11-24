@@ -195,6 +195,7 @@ ${indent(rawSetup, 4)}
   if (options.structuredProps) metadata.structuredProps = true
   if (options.pageContext) metadata.pageContext = true
   if (options.pageRoot) metadata.pageRoot = true
+  if (options.componentFramework === 'exparser') metadata.componentFramework = 'exparser'
   if (options.bindingGroupSize !== undefined) metadata.bindingGroupSize = options.bindingGroupSize
   if (hasBoundaryContext) {
     metadata.boundaryContexts = boundaryContexts.map((item) => ({
@@ -214,6 +215,7 @@ ${indent(rawSetup, 4)}
       config.structuredProps && line('structuredProps', config.structuredProps),
       config.pageContext && line('pageContext', config.pageContext),
       config.pageRoot && line('pageRoot', config.pageRoot),
+      config.componentFramework && line('componentFramework', config.componentFramework),
       config.bindingGroupSize !== undefined &&
         line('bindingGroupSize', config.bindingGroupSize),
       config.boundaryContexts && line('boundaryContexts', config.boundaryContexts),

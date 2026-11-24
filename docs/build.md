@@ -384,7 +384,10 @@ wrapper over it, so the static page keeps ownership of that route.
 predecessor) is read, URL-rewritten, and written. If either is missing the build
 still succeeds, but warns clearly because a mini-program normally needs both.
 `app.json` is copied when present; otherwise a minimal glass-easel default is
-written.
+written. An existing `componentFramework: "exparser"` is preserved, its
+glass-easel-only `window.glassEaselWebview` flag is removed, and the generated
+components switch to the legacy mount timing (see
+[Legacy exparser](exparser.md)).
 
 ## Compiler warnings
 
