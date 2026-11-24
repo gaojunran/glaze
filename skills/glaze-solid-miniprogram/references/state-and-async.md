@@ -43,6 +43,38 @@ onSettled(() => {
 - Keep timers/listeners paired with `onCleanup` so a detached component does
   not keep them alive.
 
+## Page visibility and component errors
+
+```tsx
+import { createEffect } from 'solid-js'
+import {
+  onComponentError,
+  usePageSize,
+  usePageVisible,
+} from '@glaze/runtime'
+
+const pageVisible = usePageVisible()
+const pageSize = usePageSize()
+
+createEffect(() => {
+  if (!pageVisible()) pauseTimers()
+})
+createEffect(() => {
+  const size = pageSize()
+  if (size) layout(size.windowWidth, size.windowHeight)
+})
+onComponentError((error) => reportToTelemetry(error))
+```
+
+- Call these hooks during component setup, not later in an event handler or
+  effect; later calls throw.
+- `usePageVisible()` starts `true` and follows page show/hide.
+- `usePageSize()` is the latest resize size, seeded from `wx.getWindowInfo()`;
+  it can be `null` on an unsupported base library.
+- `onComponentError` receives errors from lifecycle and event callbacks; it
+  does not replace `Loading`/`Errored`, which still handle binding failures.
+  The returned function unsubscribes.
+
 ## Stores
 
 ```tsx

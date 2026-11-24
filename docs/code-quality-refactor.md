@@ -152,7 +152,7 @@ Final state is `4789cff` on `main` plus the lifecycle tests:
 
 ```
 pnpm -r test
-# shared 2, runtime 174, compiler 289, build 120 = 585 tests, 0 failed
+# shared 2, runtime 181, compiler 290, build 121 = 594 tests, 0 failed
 
 pnpm -r --if-present typecheck
 # shared, compiler, runtime, build, vite-plugin: Done

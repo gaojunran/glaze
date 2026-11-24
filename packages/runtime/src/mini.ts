@@ -15,6 +15,7 @@ import {
   normalizePropValue,
   GLAZE_EVENT_OPTIONS,
   reportBindingError as logBindingError,
+  reportComponentError,
   reportTransportError,
   SCALAR_BINDING_GROUP,
 } from './data.ts'
@@ -55,8 +56,10 @@ declare const Component: (options: Record<string, unknown>) => unknown
 import type {
   DataChange,
   GlazeComponentConfig,
+  GlazeContext,
   GlazeContextProvider,
   InstanceState,
+  PageSize,
 } from './types.ts'
 
 export { className, styleName, textValue } from './styles.ts'
@@ -72,6 +75,52 @@ const platformAttached = (lifecycle: LifecycleState): boolean =>
 /** A Solid root exists (mounted or attached); waiting-context has none yet. */
 const hasRoot = (lifecycle: LifecycleState): boolean =>
   lifecycle.phase === 'mounted' || lifecycle.phase === 'attached'
+
+/** The setup context while the user component body runs; hooks read it. */
+let activeSetupContext: GlazeContext | null = null
+
+const requireSetupContext = (hook: string): GlazeContext => {
+  if (!activeSetupContext) {
+    throw new Error(`[glaze] ${hook} must be called during component setup`)
+  }
+  return activeSetupContext
+}
+
+/** Reactive page visibility for the component currently being set up. */
+export const usePageVisible = (): (() => boolean) =>
+  requireSetupContext('usePageVisible').pageVisible
+
+/** Reactive page size for the component currently being set up. */
+export const usePageSize = (): (() => PageSize | null) =>
+  requireSetupContext('usePageSize').pageSize
+
+/** Subscribe to the component error lifetime from inside setup. */
+export const onComponentError = (handler: (error: unknown) => void): (() => void) =>
+  requireSetupContext('onComponentError').onComponentError(handler)
+
+/** Accept either a resize event or its `size` payload. */
+const pageSizeFrom = (value: unknown): PageSize | null => {
+  if (value == null || typeof value !== 'object') return null
+  const source = (value as { size?: unknown }).size ?? value
+  if (source == null || typeof source !== 'object') return null
+  const { windowWidth, windowHeight } = source as {
+    windowWidth?: unknown
+    windowHeight?: unknown
+  }
+  return typeof windowWidth === 'number' && typeof windowHeight === 'number'
+    ? { windowWidth, windowHeight }
+    : null
+}
+
+/** Seed the size signal so layout code does not wait for the first resize. */
+const initialPageSize = (): PageSize | null => {
+  try {
+    const wx = (globalThis as { wx?: { getWindowInfo?: () => unknown } }).wx
+    return pageSizeFrom(wx?.getWindowInfo?.call(wx))
+  } catch {
+    return null
+  }
+}
 
 /**
  * A binding baseline is only valid once its batch reached the platform. A
@@ -327,42 +376,56 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     clearBoundaryContent(state.boundaries)
     state.events.length = 0
     state.refs.length = 0
+    state.errorHandlers.length = 0
     state.error = undefined
     state.owner = null
 
     state.dispose = createRoot((dispose) => {
-      config.setup(
-        {
-          bind(index, fn, asyncBoundary = null, errorBoundary = asyncBoundary) {
-            state.core.bindings[index] = createBindingState({
-              raw: fn,
-              loadingBoundary: asyncBoundary,
-              errorBoundary,
-            })
-          },
-          event(index, fn) {
-            state.events[index] = fn
-          },
-          ref(index, fn) {
-            state.refs[index] = { id: `glaze-r${index}`, fn }
-          },
-          context(context: GlazeContextProvider) {
-            const value = useContext(context as never)
-            return isContextReader(value) ? value : () => value
-          },
-          loadingOn(boundary: number, fn: () => unknown) {
-            state.boundaries.loadingOn.set(boundary, fn)
-          },
-          reset(boundary: number) {
-            resetBoundary(state, boundary)
-          },
-          loading: (boundary) => loadingOf(state.boundaries, boundary),
-          errored: (boundary) => erroredOf(state.boundaries, boundary),
-          error: (boundary) => errorValueOf(state.boundaries, boundary),
-          errorArray: (boundary) => errorArrayOf(state.boundaries, boundary),
+      const setupContext: GlazeContext = {
+        bind(index, fn, asyncBoundary = null, errorBoundary = asyncBoundary) {
+          state.core.bindings[index] = createBindingState({
+            raw: fn,
+            loadingBoundary: asyncBoundary,
+            errorBoundary,
+          })
         },
-        state.propsProxy!,
-      )
+        event(index, fn) {
+          state.events[index] = fn
+        },
+        ref(index, fn) {
+          state.refs[index] = { id: `glaze-r${index}`, fn }
+        },
+        context(context: GlazeContextProvider) {
+          const value = useContext(context as never)
+          return isContextReader(value) ? value : () => value
+        },
+        loadingOn(boundary: number, fn: () => unknown) {
+          state.boundaries.loadingOn.set(boundary, fn)
+        },
+        reset(boundary: number) {
+          resetBoundary(state, boundary)
+        },
+        loading: (boundary) => loadingOf(state.boundaries, boundary),
+        errored: (boundary) => erroredOf(state.boundaries, boundary),
+        error: (boundary) => errorValueOf(state.boundaries, boundary),
+        errorArray: (boundary) => errorArrayOf(state.boundaries, boundary),
+        pageVisible: () => state.pageVisible[0](),
+        pageSize: () => state.pageSize[0](),
+        onComponentError(handler) {
+          state.errorHandlers.push(handler)
+          return () => {
+            const index = state.errorHandlers.indexOf(handler)
+            if (index >= 0) state.errorHandlers.splice(index, 1)
+          }
+        },
+      }
+      const previousSetupContext = activeSetupContext
+      activeSetupContext = setupContext
+      try {
+        config.setup(setupContext, state.propsProxy!)
+      } finally {
+        activeSetupContext = previousSetupContext
+      }
       state.owner = getOwner()
 
       const initial: Record<string, unknown> = {}
@@ -720,6 +783,9 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           applyStatus: null,
           flushScheduled: false,
           effectsInstalled: false,
+          pageVisible: createSignal(true),
+          pageSize: createSignal(initialPageSize()),
+          errorHandlers: [],
           props: Object.create(null),
           propsProxy: null,
           owner: null,
@@ -845,6 +911,19 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         attach(this, state)
       },
 
+      error(this: any, error: unknown) {
+        const state: InstanceState | undefined = this.__glaze
+        if (!state) return
+        state.error = error
+        for (const handler of [...state.errorHandlers]) {
+          try {
+            handler(error)
+          } catch (handlerError) {
+            reportComponentError(handlerError)
+          }
+        }
+      },
+
       detached(this: any) {
         const state: InstanceState | undefined = this.__glaze
         if (!state) return
@@ -857,11 +936,24 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         // the root is rebuilt on re-attach.
         state.events.length = 0
         state.refs.length = 0
+        state.errorHandlers.length = 0
         state.applyStatus = null
         state.effectsInstalled = false
         state.dispose?.()
         state.dispose = null
         state.owner = null
+      },
+    },
+    pageLifetimes: {
+      show(this: any) {
+        this.__glaze?.pageVisible[1](true)
+      },
+      hide(this: any) {
+        this.__glaze?.pageVisible[1](false)
+      },
+      resize(this: any, event: unknown) {
+        const size = pageSizeFrom(event)
+        if (size) this.__glaze?.pageSize[1](size)
       },
     },
     methods,

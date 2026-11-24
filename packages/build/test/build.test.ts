@@ -52,6 +52,40 @@ const appShell = (project) => [
   ),
 ]
 
+test('bundles runtime lifecycle hooks imported by page source', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `import { createEffect } from 'solid-js'
+import { onComponentError, usePageVisible } from '@glaze/runtime'
+
+export default function App() {
+  const visible = usePageVisible()
+  createEffect(() => {
+    if (!visible()) console.log('hidden')
+  })
+  onComponentError((error) => console.log(error))
+  return <view>home</view>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+
+  await buildProject(project)
+
+  const runtime = await readFile(
+    path.join(project, 'miniprogram/glaze-runtime/index.js'),
+    'utf8',
+  )
+  assert.match(runtime, /usePageVisible/)
+  assert.match(runtime, /onComponentError/)
+})
+
 test('builds a page, its inlined child and a page wrapper', async () => {
   const project = await createProject({
     config: {

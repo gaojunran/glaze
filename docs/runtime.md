@@ -196,9 +196,56 @@ subscribes to. The mapping is:
 | `ready` | Deferred context: build the root and install effects once. Already rooted: no-op. After `detached`: ignored, so a late ready cannot revive a detached root. |
 | `moved` | No handler. The same root and signals survive a move (verified with two attached parents). |
 | `beforeDetach` | Not handled. Teardown happens at `detached`; glass-easel detaches children first, so a parent's `onCleanup` runs after its child components are already detached. |
-| `detached` | Dispose the Solid root, clear pending writes, events/refs and status projection, and move to the `detached` phase. |
-| `error` | Not wired. Binding failures go to `state.error` and the log; lifecycle-callback failures stay with glass-easel. |
-| `pageLifetimes` (`show`, `hide`, `resize`) | Not bridged. There is no Glaze-level page-visibility API; page-level behavior must live in the mini-program page or a native component. |
+| `detached` | Dispose the Solid root, clear pending writes, events/refs, error handlers and status projection, and move to the `detached` phase. |
+| `error` | Store the error in `state.error` and notify every `ctx.onComponentError` handler. Binding failures keep their own channel. |
+| `pageLifetimes` (`show`, `hide`, `resize`) | Drive `ctx.pageVisible()` and `ctx.pageSize()`; `pageSize` is seeded from `wx.getWindowInfo()` when available. |
+
+### Page visibility and component errors
+
+Page-level state is exposed through setup-only hooks, so normal TSX
+components do not need the generated `ctx` object:
+
+```tsx
+import { createEffect } from 'solid-js'
+import {
+  onComponentError,
+  usePageSize,
+  usePageVisible,
+} from '@glaze/runtime'
+
+export default function Page() {
+  const pageVisible = usePageVisible()
+  const pageSize = usePageSize()
+
+  createEffect(() => {
+    if (!pageVisible()) pauseTimers()
+  })
+  createEffect(() => {
+    const size = pageSize()
+    if (size) layout(size.windowWidth, size.windowHeight)
+  })
+  onComponentError((error) => reportToTelemetry(error))
+
+  return <view>...</view>
+}
+```
+
+Hand-written `defineGlazeComponent` components can use the same values as
+`ctx.pageVisible()`, `ctx.pageSize()` and `ctx.onComponentError(handler)`.
+
+- `usePageVisible()` / `ctx.pageVisible()` starts `true`, then follows
+  `pageLifetimes.hide` and `pageLifetimes.show`.
+- `usePageSize()` / `ctx.pageSize()` is the last `pageLifetimes.resize`
+  payload, seeded at creation from `wx.getWindowInfo()`; it is `null` when
+  neither is available.
+- `onComponentError(handler)` / `ctx.onComponentError(handler)` returns an unsubscribe
+  function. Handlers are called for errors delivered by the component `error`
+  lifetime (lifecycle callbacks, event handlers and other glass-easel dispatch
+  paths), not for binding failures that already flow through `Errored`.
+- Hooks must be called during `setup`; calling them from an event handler or a
+  later effect throws.
+- Handlers are cleared when the root is rebuilt or detached; register them in
+  setup beside the effects that use them.
 
 The real glass-easel tests cover the normal `attached` -> `ready` order,
 `ready` before `attached`, `detached` before `ready` (no late mount),
@@ -254,7 +301,7 @@ wrong signal set or skip a generated feature.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 174, pass 174, fail 0
+# tests 181, pass 181, fail 0
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json (no output)
 pnpm --filter @glaze/build test

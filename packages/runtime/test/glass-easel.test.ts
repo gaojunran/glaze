@@ -18,6 +18,18 @@ after(() => {
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 5))
 
+function captureConsoleError() {
+  const errors = []
+  const original = console.error
+  console.error = (...args) => errors.push(args)
+  return {
+    errors,
+    restore() {
+      console.error = original
+    },
+  }
+}
+
 function create(config, id = 'root') {
   const def = defineGlazeComponent(config)
   return glassEasel.Component.createWithContext(
@@ -262,6 +274,51 @@ test('a moved component keeps its root and state', async () => {
   setValue('moved')
   await tick()
   assert.equal(element.data.b0, 'moved')
+})
+
+test('real glass-easel page lifetimes reach the page signals', async () => {
+  let page
+  const element = mount({
+    data: {},
+    setup(ctx) {
+      page = ctx
+    },
+  })
+
+  element.triggerPageLifetime('hide', [])
+  await tick()
+  assert.equal(page.pageVisible(), false)
+  element.triggerPageLifetime('show', [])
+  await tick()
+  assert.equal(page.pageVisible(), true)
+  element.triggerPageLifetime('resize', [
+    { size: { windowWidth: 320, windowHeight: 640 } },
+  ])
+  await tick()
+  assert.deepEqual(page.pageSize(), { windowWidth: 320, windowHeight: 640 })
+})
+
+test('real glass-easel error lifetime reaches the error handler', () => {
+  const capture = captureConsoleError()
+  try {
+    let page
+    const seen = []
+    const element = mount({
+      data: {},
+      setup(ctx) {
+        page = ctx
+        ctx.onComponentError((error) => seen.push(error))
+      },
+    })
+    const error = new Error('boom')
+
+    element.triggerLifetime('error', [error])
+
+    assert.equal(element.__glaze.error, error)
+    assert.deepEqual(seen, [error])
+  } finally {
+    capture.restore()
+  }
 })
 
 test('real glass-easel keeps an error in one binding from freezing another', async () => {

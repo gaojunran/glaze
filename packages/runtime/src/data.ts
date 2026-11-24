@@ -28,3 +28,8 @@ export function reportTransportError(error: unknown): void {
   const errorConsole = (globalThis as { console?: Console }).console
   errorConsole?.error?.('[glaze] data transport failed; the batch was not replayed', error)
 }
+
+export function reportComponentError(error: unknown): void {
+  const errorConsole = (globalThis as { console?: Console }).console
+  errorConsole?.error?.('[glaze] component error', error)
+}

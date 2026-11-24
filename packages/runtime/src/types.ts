@@ -12,6 +12,11 @@ export type DataChange =
   | { path: DataPath; splice: { index: number; del: number; inserts: unknown[] }; value?: never }
 
 
+export type PageSize = {
+  windowWidth: number
+  windowHeight: number
+}
+
 export type GlazeNodeRect = {
   id?: string
   left?: number
@@ -57,6 +62,12 @@ export type GlazeContext = {
   errored(boundary: number): boolean
   error(boundary: number): unknown
   errorArray(boundary: number): unknown[]
+  /** True while the page is visible; starts true and follows pageLifetimes. */
+  pageVisible(): boolean
+  /** Latest page size from pageLifetimes.resize; seeded from wx.getWindowInfo when available. */
+  pageSize(): PageSize | null
+  /** Subscribe to errors reported by the component error lifetime. */
+  onComponentError(handler: (error: unknown) => void): () => void
 }
 
 export type GlazeComponentConfig = {
@@ -86,6 +97,9 @@ export type InstanceState = {
   flushScheduled: boolean
   /** True once a root's binding effects are installed; reset on mount/detach. */
   effectsInstalled: boolean
+  pageVisible: [() => boolean, (value: boolean) => void]
+  pageSize: [() => PageSize | null, (value: PageSize | null) => void]
+  errorHandlers: ((error: unknown) => void)[]
   props: Record<string, [() => unknown, (value: unknown) => void]>
   propsProxy: GlazeProps | null
   owner: ReturnType<typeof getOwner>

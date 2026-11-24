@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict'
 import test, { after } from 'node:test'
 import { createContext, createMemo, createSignal, createStore, NotReadyError } from 'solid-js'
-import { defineGlazeComponent, listOps, listPatch, projectList } from '../src/mini.ts'
+import {
+  defineGlazeComponent,
+  listOps,
+  listPatch,
+  onComponentError,
+  projectList,
+  usePageSize,
+  usePageVisible,
+} from '../src/mini.ts'
 import { withProvider } from '../src/provider.ts'
 
 const originalComponent = globalThis.Component
@@ -56,6 +64,114 @@ function captureConsoleError() {
     },
   }
 }
+
+test('seeds page size from wx.getWindowInfo when present', () => {
+  const original = (globalThis as { wx?: unknown }).wx
+  ;(globalThis as { wx?: unknown }).wx = {
+    getWindowInfo: () => ({ windowWidth: 390, windowHeight: 844 }),
+  }
+  try {
+    let page
+    const def = defineGlazeComponent({
+      data: {},
+      setup(ctx) {
+        page = ctx
+      },
+    })
+    createInstance(def)
+    assert.deepEqual(page.pageSize(), { windowWidth: 390, windowHeight: 844 })
+  } finally {
+    ;(globalThis as { wx?: unknown }).wx = original
+  }
+})
+
+test('page lifecycles update page visibility and size signals', async () => {
+  let page
+  const def = defineGlazeComponent({
+    data: {},
+    setup(ctx) {
+      page = ctx
+    },
+  })
+  const instance = createInstance(def)
+
+  assert.equal(page.pageVisible(), true)
+  def.pageLifetimes.hide.call(instance)
+  await tick()
+  assert.equal(page.pageVisible(), false)
+  def.pageLifetimes.show.call(instance)
+  await tick()
+  assert.equal(page.pageVisible(), true)
+
+  def.pageLifetimes.resize.call(instance, {
+    size: { windowWidth: 320, windowHeight: 640 },
+  })
+  await tick()
+  assert.deepEqual(page.pageSize(), { windowWidth: 320, windowHeight: 640 })
+})
+
+test('page and error hooks work from the component setup body', async () => {
+  const capture = captureConsoleError()
+  try {
+    let visible
+    let size
+    const seen = []
+    const def = defineGlazeComponent({
+      data: {},
+      setup() {
+        visible = usePageVisible()
+        size = usePageSize()
+        onComponentError((error) => seen.push(error))
+      },
+    })
+    const instance = createInstance(def)
+
+    def.pageLifetimes.hide.call(instance)
+    def.pageLifetimes.resize.call(instance, {
+      size: { windowWidth: 300, windowHeight: 600 },
+    })
+    def.lifetimes.error.call(instance, new Error('hooked'))
+    await tick()
+
+    assert.equal(visible(), false)
+    assert.deepEqual(size(), { windowWidth: 300, windowHeight: 600 })
+    assert.equal(seen.length, 1)
+  } finally {
+    capture.restore()
+  }
+})
+
+test('hooks throw outside a component setup body', () => {
+  assert.throws(() => usePageVisible(), /during component setup/)
+  assert.throws(() => usePageSize(), /during component setup/)
+  assert.throws(() => onComponentError(() => {}), /during component setup/)
+})
+
+test('error lifetime stores the error and notifies and unsubscribes handlers', () => {
+  const capture = captureConsoleError()
+  try {
+    let page
+    const seen = []
+    const def = defineGlazeComponent({
+      data: {},
+      setup(ctx) {
+        page = ctx
+        ctx.onComponentError((error) => seen.push(error))
+        const remove = ctx.onComponentError((error) => seen.push(error))
+        remove()
+      },
+    })
+    const instance = createInstance(def)
+    const error = new Error('boom')
+
+    def.lifetimes.error.call(instance, error)
+
+    assert.equal(instance.__glaze.error, error)
+    assert.deepEqual(seen, [error])
+  } finally {
+    capture.restore()
+  }
+})
 
 test('initializes properties before created so first paint has prop values', () => {
   const def = defineGlazeComponent({
