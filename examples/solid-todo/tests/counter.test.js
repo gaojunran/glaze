@@ -241,6 +241,12 @@ test('cross-file context reaches a component boundary', async (miniProgram) => {
   await expect(updated).toContain('class="context-boundary">dark-file')
 
   await expect(app).toMatchText('.app-visible', 'visible')
+  const launchPath = await (await app.$('.launch-path')).text()
+  // minidev returns an empty path but a real options object; a device returns
+  // the entry route. Either way the wrapper must deliver the object.
+  if (!launchPath || launchPath === 'none') {
+    throw new Error(`launch options did not reach the page root: ${launchPath}`)
+  }
   await expect(app).toMatchText('.page-scroll', '0')
   await miniProgram.pageScrollTo(120)
   await page.waitFor(300)

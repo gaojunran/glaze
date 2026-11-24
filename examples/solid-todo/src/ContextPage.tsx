@@ -1,5 +1,5 @@
 import { createSignal } from 'solid-js'
-import { useAppVisible, usePageEvent } from '@glaze/runtime'
+import { useAppVisible, useLaunchOptions, usePageEvent } from '@glaze/runtime'
 import { Palette, Theme } from './theme'
 import ContextBoundary from './ContextBoundary'
 
@@ -7,11 +7,13 @@ export default function ContextPage() {
   const [color, setColor] = createSignal('light')
   const [themeName, setThemeName] = createSignal('cross-file')
   const appVisible = useAppVisible()
+  const launchOptions = useLaunchOptions()
   const scroll = usePageEvent('scroll')
   return (
     <view class="page context-page">
       <text class="title">Context boundary</text>
       <text class="app-visible">{appVisible() ? 'visible' : 'hidden'}</text>
+      <text class="launch-path">{launchOptions() ? launchOptions()!.path || 'set' : 'none'}</text>
       <text class="page-scroll">{scroll() ? scroll()!.scrollTop : 0}</text>
       <button
         class="context-toggle"
