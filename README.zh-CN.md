@@ -66,11 +66,12 @@ glass-easel 组件，不替换平台渲染器。
 - 数据：keyed 列表只把 WXML 真正读取的字段投影进视图层，未使用的行数据
   不再穿过 `setData` 边界；Glaze 到 Glaze 的子组件 props 以单个内部对象
   属性穿过组件边界；
-- 验证：514 个单元测试（shared 2、runtime 117、compiler 275、build 120）、
+- 验证：580 个单元测试（shared 2、runtime 169、compiler 289、build 120）、
   glass-easel 渲染测试和 10 个 minidev e2e 用例。
 
 已知限制记录在 [编译器](docs/compiler.md)、[构建](docs/build.md) 和
-[优化](docs/optimizations.md) 中。
+[优化](docs/optimizations.md) 中。编译器与运行时的结构重构记录在
+[代码质量](docs/code-quality-refactor.md)。
 
 ## 基准测试
 

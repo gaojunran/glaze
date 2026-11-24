@@ -1183,5 +1183,5 @@ The 2026-11-24 structural refactor kept generated output identical. A golden
 corpus of every `examples/solid-todo` component plus every literal source in
 the compiler tests (871 compilation variants) produced
 byte-identical WXML/JS/config before and after; `pnpm --filter @glaze/compiler
-test` (284 tests), `pnpm --filter @glaze/compiler typecheck` and `pnpm
+test` (289 tests), `pnpm --filter @glaze/compiler typecheck` and `pnpm
 --filter @glaze/build test` (120 tests) pass.
