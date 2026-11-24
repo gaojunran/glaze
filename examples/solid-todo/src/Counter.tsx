@@ -57,6 +57,7 @@ export default function Counter() {
   return (
     <view class="page">
       <Header title="Glaze + Solid" />
+      <navigator class="ui-entry" url="/pages/ui/index">Open UI components</navigator>
       <image class="asset-logo" src={logo} />
       <image class="static-logo" src="./assets/static-logo.png" />
       <Nested title="Nested inline" />
