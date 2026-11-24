@@ -155,6 +155,35 @@ key to align on. `key === '*this'` continues to return `null` from both helpers.
 The tests cover `[1, 2] -> [1, 3]` and `[1, 2] -> [2, 1]` at the helper and
 runtime levels.
 
+### Runtime state models
+
+The per-instance state is split across three modules used by `mini.ts`:
+
+- `state.ts` owns `core.bindings`, a sparse `BindingList`. Each `BindingState`
+  keeps `raw` (the direct read), `read` (the effect source, memo-unwrapped),
+  `memo`, `initial` (raw mount value), `previous` (projected baseline),
+  `settled`, both boundary ids, `source` and `fallbackSource`. Mount resets
+  entries in place with `resetBindingStates` and never compacts the list;
+  iterations skip entries whose `raw`/`read` is null.
+- `boundary.ts` owns the boundary-keyed pending/consumer/error maps and the
+  lazily created loading/errored/error-value/reset signals plus `loadingOn`.
+  `markPending`, `markSettled`, `markError`, `clearError` and `resetBoundary`
+  replace the former inline map/signal code. `clearBoundaryContent` is the
+  remount reset and keeps signal and reset-counter identity.
+- `lifecycle.ts` replaces `mounted`/`active`/`everMounted` with
+  `unmounted | waiting-context | mounted | attached | detached`.
+  `waiting-context` carries `attachedBeforeMount`, because the platform's
+  `attached` can run before a deferred root exists. The phase tracks platform
+  attachment, not installed effects: `ready` always mounts and attaches, so a
+  `mounted` phase can already have effects.
+
+`schedule` still flushes only when the platform is attached (phase `attached`,
+or `waiting-context` with `attachedBeforeMount`), matching the old `active`
+flag. `applyBinding` ignores a projection for an index with no binding yet;
+this only matters for a deferred `attached` event followed by `ready` later in
+the same tick, where the projection is rerun after mount and component data is
+unchanged.
+
 ## Trade-offs
 
 - Logging no longer reads a component-wide flag. `config.errorBoundary` is
@@ -170,10 +199,11 @@ runtime levels.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 114, pass 114, fail 0
+# tests 154, pass 154, fail 0
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json (no output)
+pnpm --filter @glaze/build test
+# tests 120, pass 120, fail 0
+cd examples/solid-todo && pnpm build
+# glaze build: 17 pages, 31 components
 ```
-
-The full repository suite and minidev e2e were run after this change (468 unit
-tests plus 9 e2e cases, all passing).

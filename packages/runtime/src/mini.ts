@@ -435,10 +435,10 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         try {
           transport.apply(pending)
         } catch (error) {
-          // `state.previous` was advanced when this batch was scheduled, so the
-          // batch is intentionally not replayed; replay would re-apply changes
-          // that may already be committed. Surface it on the instance error and
-          // log channels instead of an async boundary.
+          // `binding.previous` was advanced when this batch was scheduled, so
+          // the batch is intentionally not replayed; replay would re-apply
+          // changes that may already be committed. Surface it on the instance
+          // error and log channels instead of an async boundary.
           state.error = error
           reportTransportError(error)
         }
