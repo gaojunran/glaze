@@ -72,9 +72,44 @@ test('native UI components render and update', async (miniProgram) => {
     throw new Error('uncontrolled switch did not change')
   }
 
+  await miniProgram.pageScrollTo(600)
+  await page.waitFor(200)
+  const checkboxHost = await app.$('#ui-checkbox')
+  const checkbox = await checkboxHost.$('.glaze-checkbox')
+  if ((await checkbox.attribute('data-state')) !== 'checked') {
+    throw new Error('checkbox did not start checked')
+  }
+  await checkbox.tap()
+  await expect(app).toMatchText('.ui-checkbox-state', 'unchecked')
+
+  const radioHost = await app.$('#ui-radio-pro')
+  await (await radioHost.$('.glaze-radio')).tap()
+  await expect(app).toMatchText('.ui-plan-state', 'pro')
+
+  await miniProgram.pageScrollTo(900)
+  await page.waitFor(200)
+  const tabsHost = await app.$('#ui-tabs')
+  const triggers = await tabsHost.$$('.glaze-tabs__trigger')
+  if (triggers.length !== 3) throw new Error(`expected three tabs, got ${triggers.length}`)
+  await triggers[1].tap()
+  await expect(app).toMatchText('.ui-tab-state', 'billing')
+
+  await miniProgram.pageScrollTo(1200)
+  await page.waitFor(200)
+  const collapsibleHost = await app.$('#ui-collapsible')
+  if (!(await collapsibleHost.$('.glaze-collapsible__content'))) {
+    throw new Error('collapsible did not start open')
+  }
+  await (await collapsibleHost.$('.glaze-collapsible__trigger')).tap()
+  await page.waitFor(200)
+  const closedCollapsible = await app.$('#ui-collapsible')
+  if (await closedCollapsible.$('.glaze-collapsible__content')) {
+    throw new Error('collapsible did not close')
+  }
+
   const dialogHost = await app.$('#ui-dialog')
   const openDialogHost = await app.$('#ui-dialog-open')
-  await miniProgram.pageScrollTo(1200)
+  await miniProgram.pageScrollTo(2400)
   await page.waitFor(200)
   await (await openDialogHost.$('.glaze-button')).tap()
   await page.waitFor(200)

@@ -1,9 +1,13 @@
 import { createSignal } from 'solid-js'
 import UiButton from '@glaze/ui/button'
+import UiCheckbox from '@glaze/ui/checkbox'
+import UiCollapsible from '@glaze/ui/collapsible'
 import UiDialog from '@glaze/ui/dialog'
 import UiField from '@glaze/ui/field'
 import UiInput from '@glaze/ui/input'
+import UiRadio from '@glaze/ui/radio'
 import UiSwitch from '@glaze/ui/switch'
+import UiTabs from '@glaze/ui/tabs'
 import UiToggle from '@glaze/ui/toggle'
 
 export default function UiPage() {
@@ -13,6 +17,15 @@ export default function UiPage() {
   const [name, setName] = createSignal('Ada')
   const [loading, setLoading] = createSignal(false)
   const [dialogOpen, setDialogOpen] = createSignal(false)
+  const [subscribed, setSubscribed] = createSignal(true)
+  const [plan, setPlan] = createSignal('basic')
+  const [tab, setTab] = createSignal('account')
+  const [faqOpen, setFaqOpen] = createSignal(true)
+  const tabs = [
+    { value: 'account', label: 'Account' },
+    { value: 'billing', label: 'Billing' },
+    { value: 'security', label: 'Security', disabled: true },
+  ]
 
   return (
     <view class="ui-page">
@@ -74,6 +87,58 @@ export default function UiPage() {
           </UiToggle>
           <UiSwitch id="ui-switch-uncontrolled" defaultChecked />
         </view>
+      </view>
+
+      <view class="ui-section">
+        <text class="ui-section-title">Selection</text>
+        <view class="ui-row">
+          <UiCheckbox id="ui-checkbox" checked={subscribed()} onCheckedChange={setSubscribed}>
+            Subscribe to updates
+          </UiCheckbox>
+          <text class="ui-value ui-checkbox-state">{subscribed() ? 'checked' : 'unchecked'}</text>
+        </view>
+        <view class="ui-row">
+          <UiCheckbox disabled>Disabled choice</UiCheckbox>
+          <UiCheckbox defaultChecked>Uncontrolled choice</UiCheckbox>
+        </view>
+        <view class="ui-row">
+          <UiRadio
+            id="ui-radio-basic"
+            checked={plan() === 'basic'}
+            onCheckedChange={() => setPlan('basic')}
+          >
+            Basic
+          </UiRadio>
+          <UiRadio
+            id="ui-radio-pro"
+            checked={plan() === 'pro'}
+            onCheckedChange={() => setPlan('pro')}
+          >
+            Pro
+          </UiRadio>
+          <text class="ui-value ui-plan-state">{plan()}</text>
+        </view>
+      </view>
+
+      <view class="ui-section">
+        <text class="ui-section-title">Tabs</text>
+        <UiTabs id="ui-tabs" items={tabs} value={tab()} onValueChange={setTab} />
+        <text class="ui-value ui-tab-state">{tab()}</text>
+      </view>
+
+      <view class="ui-section">
+        <text class="ui-section-title">Collapsible</text>
+        <UiCollapsible
+          id="ui-collapsible"
+          title="Account settings"
+          open={faqOpen()}
+          onOpenChange={setFaqOpen}
+        >
+          <text class="ui-collapsible-body">Profile, email and password settings.</text>
+        </UiCollapsible>
+        <UiCollapsible title="Billing settings" defaultOpen>
+          <text class="ui-collapsible-body">Invoices and payment methods.</text>
+        </UiCollapsible>
       </view>
 
       <view class="ui-section">

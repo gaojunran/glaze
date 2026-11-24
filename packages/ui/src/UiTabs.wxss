@@ -1,0 +1,37 @@
+.glaze-tabs {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  border-bottom: 1rpx solid #e5e7eb;
+  white-space: nowrap;
+}
+
+.glaze-tabs__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 72rpx;
+  margin: 0;
+  padding: 0 24rpx;
+  border: 0;
+  border-bottom: 4rpx solid transparent;
+  background: transparent;
+  color: #6b7280;
+  font-size: 28rpx;
+  line-height: 1.2;
+}
+
+.glaze-tabs__trigger::after {
+  border: 0;
+}
+
+.glaze-tabs__trigger--active {
+  border-bottom-color: #111827;
+  color: #111827;
+  font-weight: 600;
+}
+
+.glaze-tabs__trigger--disabled {
+  opacity: 0.4;
+}

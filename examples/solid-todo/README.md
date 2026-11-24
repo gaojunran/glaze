@@ -48,7 +48,7 @@ Pages:
 - `pages/context/index` — imported context across a component boundary;
 - `pages/async/index` — async `Loading` / `Errored` boundaries;
 - `pages/ui/index` — `vercel-labs/ui` port from `@glaze/ui`: button, toggle,
-  switch, field, input and dialog;
+  switch, field, input, dialog, checkbox, radio, tabs and collapsible;
 - `pkg/pages/sub/index` — independent subpackage page with its own `glaze-runtime`;
 - `src/Card.scss` — component SCSS compiled into the parent component's `index.wxss`;
 - `pages/native/index` — the same 1000 rows in hand-written WXML.

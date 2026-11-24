@@ -1,0 +1,45 @@
+.glaze-collapsible {
+  border-bottom: 1rpx solid #e5e7eb;
+}
+
+.glaze-collapsible__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 80rpx;
+  margin: 0;
+  padding: 0 8rpx;
+  border: 0;
+  background: transparent;
+  color: #111827;
+  font-size: 28rpx;
+  text-align: left;
+}
+
+.glaze-collapsible__trigger::after {
+  border: 0;
+}
+
+.glaze-collapsible__trigger--disabled {
+  opacity: 0.4;
+}
+
+.glaze-collapsible__title {
+  flex: 1;
+  font-weight: 500;
+}
+
+.glaze-collapsible__icon {
+  color: #6b7280;
+  font-size: 32rpx;
+  line-height: 1;
+}
+
+.glaze-collapsible__content {
+  padding: 8rpx 8rpx 24rpx;
+  color: #4b5563;
+  font-size: 26rpx;
+  line-height: 1.6;
+}

@@ -68,8 +68,9 @@ glass-easel 组件，不替换平台渲染器。
   属性穿过组件边界；
 - Store：`@glaze/store` 在 `solid-js/store` 上提供懒加载、应用级的 setup
   store，每个 id 在所有组件 bundle 之间共享同一个实例；
-- UI：`@glaze/ui` 把首批 UI SDK 组件（button、toggle、switch、field、
-  input、dialog）移植为原生 WXML 组件，包含非受控变体与仅触屏的 dialog；
+- UI：`@glaze/ui` 把 UI SDK 组件（button、toggle、switch、field、input、
+  dialog、checkbox、radio、tabs、collapsible）移植为原生 WXML 组件，
+  包含非受控变体与仅触屏的 dialog；
 - 验证：639 个单元测试（shared 2、store 8、runtime 202、compiler 303、
   build 124）、glass-easel 渲染测试和 12 个 minidev e2e 用例。
 

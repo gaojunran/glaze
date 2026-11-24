@@ -59,6 +59,10 @@ attributes.
 | `UiField.tsx` | `view` | `label`, `description`, `error`, `required`; default slot |
 | `UiInput.tsx` | `input` | controlled `value`, `placeholder`, `type`, `disabled`; `onValueChange` |
 | `UiDialog.tsx` | `view` | controlled `open` or uncontrolled `defaultOpen`; mask close, scroll lock, title/description, default slot |
+| `UiCheckbox.tsx` | `view` | controlled/uncontrolled checked state; `aria-checked`; default slot label |
+| `UiRadio.tsx` | `view` | controlled/uncontrolled checked state; groups are composed by the page |
+| `UiTabs.tsx` | `scroll-view` | `items`, controlled/uncontrolled `value`, `onValueChange`; header only, no panel |
+| `UiCollapsible.tsx` | `view` | controlled/uncontrolled open state, title, default slot; accordions are composed from multiple instances |
 
 Package components are always component boundaries in this iteration. The
 compiler only inlines a relative import; `@glaze/ui/*` imports are resolved by
@@ -144,7 +148,7 @@ Commands and results from the package migration:
 
 ```bash
 cd examples/solid-todo && pnpm build
-# glaze build: 19 pages, 41 components
+# glaze build: 19 pages, 45 components
 
 mise exec -- pnpm -r test
 # shared 2, store 8, runtime 202, compiler 303, build 124 = 639, 0 failed
@@ -165,6 +169,7 @@ target/debug/minidev test \
 - button press crossing the component event boundary and updating page state;
 - controlled toggle and switch state plus `aria-pressed` / `aria-checked`;
 - uncontrolled toggle and switch initial defaults and taps;
+- checkbox and radio controlled state, tabs selection, and collapsible open/close;
 - controlled input updates, empty-value validation through `UiField`, and the
   conditional error element;
 - loading state switching through a second button;
@@ -201,10 +206,11 @@ paths. It is a single-device smoke, not a device matrix.
 
 ## Next steps
 
-1. Add `UiCheckbox`, `UiRadio`, `UiTabs` and `UiAccordion`; they are
-   controlled/pure and cheaper than the dialog.
-2. Re-check the UI SDK API before publishing; `0.1.0-beta.16` is still beta.
-3. Consider making a package component inlinable again when it is a pure
+1. Re-check the UI SDK API before publishing; `0.1.0-beta.16` is still beta.
+2. Consider making a package component inlinable again when it is a pure
    projection, so `UiSwitch` and `UiInput` stop paying a boundary cost.
-4. Replace the dialog's touch-only model only if the platform gains a usable
+3. Replace the dialog's touch-only model only if the platform gains a usable
    focus/keyboard surface; do not emulate a web focus trap with timers.
+4. Decide whether a richer `UiAccordion` (multiple items with per-item slots)
+   is worth a generated child-component design; the current `UiCollapsible` is
+   the honest primitive.

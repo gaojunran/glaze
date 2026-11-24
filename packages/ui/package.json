@@ -10,7 +10,11 @@
     "./switch": "./src/UiSwitch.tsx",
     "./field": "./src/UiField.tsx",
     "./input": "./src/UiInput.tsx",
-    "./dialog": "./src/UiDialog.tsx"
+    "./dialog": "./src/UiDialog.tsx",
+    "./checkbox": "./src/UiCheckbox.tsx",
+    "./radio": "./src/UiRadio.tsx",
+    "./tabs": "./src/UiTabs.tsx",
+    "./collapsible": "./src/UiCollapsible.tsx"
   },
   "dependencies": {
     "solid-js": "^2.0.3"

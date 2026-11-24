@@ -1,0 +1,40 @@
+.glaze-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 12rpx;
+  min-height: 56rpx;
+  color: #111827;
+  font-size: 28rpx;
+  line-height: 1.4;
+}
+
+.glaze-checkbox__indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 36rpx;
+  height: 36rpx;
+  border: 2rpx solid #9ca3af;
+  border-radius: 8rpx;
+  background: #ffffff;
+}
+
+.glaze-checkbox--on .glaze-checkbox__indicator {
+  border-color: #111827;
+  background: #111827;
+}
+
+.glaze-checkbox__mark {
+  color: #ffffff;
+  font-size: 24rpx;
+  line-height: 1;
+}
+
+.glaze-checkbox--disabled {
+  opacity: 0.5;
+}
+
+.glaze-checkbox--hover {
+  opacity: 0.8;
+}
