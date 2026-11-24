@@ -7,6 +7,7 @@ type ButtonProps = {
   block?: boolean
   disabled?: boolean
   loading?: boolean
+  hoverClass?: string
   onPress?: (event: unknown) => void
 }
 
@@ -25,6 +26,7 @@ export default function UiButton(props: ButtonProps) {
       }
       disabled={props.disabled || props.loading}
       loading={props.loading}
+      hover-class={props.hoverClass ?? 'glaze-button--hover'}
       data-slot="button"
       data-state={props.loading ? 'loading' : props.disabled ? 'disabled' : 'idle'}
       onClick={props.onPress}

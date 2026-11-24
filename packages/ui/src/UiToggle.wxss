@@ -27,3 +27,7 @@
 .glaze-toggle--disabled {
   opacity: 0.5;
 }
+
+.glaze-toggle--hover {
+  opacity: 0.86;
+}

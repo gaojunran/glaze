@@ -1,9 +1,10 @@
 import { createSignal } from 'solid-js'
-import UiButton from './ui/UiButton'
-import UiField from './ui/UiField'
-import UiInput from './ui/UiInput'
-import UiSwitch from './ui/UiSwitch'
-import UiToggle from './ui/UiToggle'
+import UiButton from '@glaze/ui/button'
+import UiDialog from '@glaze/ui/dialog'
+import UiField from '@glaze/ui/field'
+import UiInput from '@glaze/ui/input'
+import UiSwitch from '@glaze/ui/switch'
+import UiToggle from '@glaze/ui/toggle'
 
 export default function UiPage() {
   const [clicks, setClicks] = createSignal(0)
@@ -11,6 +12,7 @@ export default function UiPage() {
   const [checked, setChecked] = createSignal(true)
   const [name, setName] = createSignal('Ada')
   const [loading, setLoading] = createSignal(false)
+  const [dialogOpen, setDialogOpen] = createSignal(false)
 
   return (
     <view class="ui-page">
@@ -59,9 +61,35 @@ export default function UiPage() {
       <view class="ui-section">
         <text class="ui-section-title">Switch</text>
         <view class="ui-row">
-          <UiSwitch checked={checked()} onCheckedChange={setChecked} />
+          <UiSwitch id="ui-switch" checked={checked()} onCheckedChange={setChecked} />
           <text class="ui-value ui-switch-state">{checked() ? 'on' : 'off'}</text>
         </view>
+      </view>
+
+      <view class="ui-section">
+        <text class="ui-section-title">Uncontrolled</text>
+        <view class="ui-row">
+          <UiToggle id="ui-toggle-uncontrolled" defaultPressed>
+            Uncontrolled toggle
+          </UiToggle>
+          <UiSwitch id="ui-switch-uncontrolled" defaultChecked />
+        </view>
+      </view>
+
+      <view class="ui-section">
+        <text class="ui-section-title">Dialog</text>
+        <UiButton id="ui-dialog-open" onPress={() => setDialogOpen(true)}>
+          Open dialog
+        </UiButton>
+        <UiDialog
+          id="ui-dialog"
+          open={dialogOpen()}
+          onOpenChange={setDialogOpen}
+          title="Dialog title"
+          description="Rendered as a fixed overlay without a portal."
+        >
+          <text class="ui-dialog-body">Dialog body content</text>
+        </UiDialog>
       </view>
 
       <view class="ui-section">
@@ -73,7 +101,12 @@ export default function UiPage() {
           required
           error={name().trim() ? '' : 'Name is required'}
         >
-          <UiInput value={name()} placeholder="Your name" onValueChange={setName} />
+          <UiInput
+            id="ui-input"
+            value={name()}
+            placeholder="Your name"
+            onValueChange={setName}
+          />
         </UiField>
         <text class="ui-value ui-name">{name()}</text>
       </view>

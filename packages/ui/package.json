@@ -1,0 +1,21 @@
+{
+  "name": "@glaze/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Native Glaze primitives modelled on vercel-labs/ui",
+  "exports": {
+    "./button": "./src/UiButton.tsx",
+    "./toggle": "./src/UiToggle.tsx",
+    "./switch": "./src/UiSwitch.tsx",
+    "./field": "./src/UiField.tsx",
+    "./input": "./src/UiInput.tsx",
+    "./dialog": "./src/UiDialog.tsx"
+  },
+  "dependencies": {
+    "solid-js": "^2.0.3"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

@@ -47,8 +47,8 @@ Pages:
 - `pages/tailwind/index` — Tailwind 4 utilities compiled into `app.wxss` (see `src/tailwind.css`);
 - `pages/context/index` — imported context across a component boundary;
 - `pages/async/index` — async `Loading` / `Errored` boundaries;
-- `pages/ui/index` — `vercel-labs/ui` port: button, toggle, switch, field and
-  input in `src/ui/`;
+- `pages/ui/index` — `vercel-labs/ui` port from `@glaze/ui`: button, toggle,
+  switch, field, input and dialog;
 - `pkg/pages/sub/index` — independent subpackage page with its own `glaze-runtime`;
 - `src/Card.scss` — component SCSS compiled into the parent component's `index.wxss`;
 - `pages/native/index` — the same 1000 rows in hand-written WXML.

@@ -75,8 +75,11 @@ Working spike, not a production framework. It covers:
   component boundary as one internal object property;
 - stores: `@glaze/store` adds lazy, app-wide setup stores over
   `solid-js/store`, with one instance per id across every component bundle;
-- validation: 637 unit tests (shared 2, store 8, runtime 202, compiler 302,
-  build 123), glass-easel rendering tests and 12 minidev e2e cases.
+- UI: `@glaze/ui` ports the first UI SDK primitives (button, toggle, switch,
+  field, input, dialog) as native WXML components, including uncontrolled
+  variants and a touch-only dialog;
+- validation: 639 unit tests (shared 2, store 8, runtime 202, compiler 303,
+  build 124), glass-easel rendering tests and 12 minidev e2e cases.
 
 Known limits are documented in [Compiler](docs/compiler.md),
 [Store](docs/store.md), [UI SDK port](docs/ui.md), [Build](docs/build.md)
@@ -166,6 +169,7 @@ fallback rather than pretending the compiler can cover everything.
 | `@glaze/shared` | Small shared helpers (string/path naming) |
 | `@glaze/runtime` | per-instance Solid root and binding bridge |
 | `@glaze/store` | lazy app-wide stores over `solid-js/store` |
+| `@glaze/ui` | native WXML primitives modelled on vercel-labs/ui |
 | `@glaze/vite-plugin` | Vite build bridge |
 | `examples/solid-todo` | counter, todo list, async/context/Tailwind probes and benchmarks |
 

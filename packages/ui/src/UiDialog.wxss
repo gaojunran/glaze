@@ -1,0 +1,66 @@
+.glaze-dialog {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1000;
+}
+
+.glaze-dialog__mask {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: rgba(17, 24, 39, 0.45);
+}
+
+.glaze-dialog__panel {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  max-height: 80%;
+  padding: 32rpx;
+  border-radius: 24rpx 24rpx 0 0;
+  background: #ffffff;
+  box-shadow: 0 -12rpx 40rpx rgba(17, 24, 39, 0.18);
+}
+
+.glaze-dialog__title {
+  color: #111827;
+  font-size: 34rpx;
+  font-weight: 600;
+}
+
+.glaze-dialog__description {
+  color: #6b7280;
+  font-size: 26rpx;
+  line-height: 1.4;
+}
+
+.glaze-dialog__body {
+  max-height: 50vh;
+  color: #111827;
+  font-size: 28rpx;
+}
+
+.glaze-dialog__close {
+  align-self: flex-end;
+  min-height: 64rpx;
+  margin: 0;
+  padding: 0 24rpx;
+  border: 0;
+  border-radius: 10rpx;
+  background: #111827;
+  color: #ffffff;
+  font-size: 26rpx;
+}
+
+.glaze-dialog__close::after {
+  border: 0;
+}

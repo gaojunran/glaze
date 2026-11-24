@@ -28,13 +28,15 @@ test('native UI components render and update', async (miniProgram) => {
   await expect(app).toMatchText('.ui-toggle-state', 'released')
 
   await expect(app).toMatchText('.ui-switch-state', 'on')
-  const control = await app.$('.glaze-switch')
+  const switchHost = await app.$('#ui-switch')
+  const control = await switchHost.$('.glaze-switch')
   await control.tap()
   await expect(app).toMatchText('.ui-switch-state', 'off')
   xml = await app.outerWxml()
   await expect(xml).toContain('aria-checked="false"')
 
-  const input = await app.$('.glaze-input')
+  const inputHost = await app.$('#ui-input')
+  const input = await inputHost.$('.glaze-input')
   await input.trigger('input', { value: 'Grace' })
   await expect(app).toMatchText('.ui-name', 'Grace')
   await input.trigger('input', { value: '' })
@@ -47,4 +49,44 @@ test('native UI components render and update', async (miniProgram) => {
   const toggleLoading = await toggleLoadingHost.$('.glaze-button')
   await toggleLoading.tap()
   await expect(app).toMatchText('.ui-loading-state', 'loading')
+
+  const uncontrolledToggleHost = await app.$('#ui-toggle-uncontrolled')
+  const uncontrolledToggle = await uncontrolledToggleHost.$('.glaze-toggle')
+  if ((await uncontrolledToggle.attribute('data-state')) !== 'on') {
+    throw new Error('uncontrolled toggle did not start pressed')
+  }
+  await uncontrolledToggle.tap()
+  await page.waitFor(200)
+  if ((await uncontrolledToggle.attribute('data-state')) !== 'off') {
+    throw new Error('uncontrolled toggle did not change')
+  }
+
+  const uncontrolledSwitchHost = await app.$('#ui-switch-uncontrolled')
+  const uncontrolledSwitch = await uncontrolledSwitchHost.$('.glaze-switch')
+  if ((await uncontrolledSwitch.attribute('data-state')) !== 'checked') {
+    throw new Error('uncontrolled switch did not start checked')
+  }
+  await uncontrolledSwitch.tap()
+  await page.waitFor(200)
+  if ((await uncontrolledSwitch.attribute('data-state')) !== 'unchecked') {
+    throw new Error('uncontrolled switch did not change')
+  }
+
+  const dialogHost = await app.$('#ui-dialog')
+  const openDialogHost = await app.$('#ui-dialog-open')
+  await miniProgram.pageScrollTo(1200)
+  await page.waitFor(200)
+  await (await openDialogHost.$('.glaze-button')).tap()
+  await page.waitFor(200)
+  const openedDialog = await app.$('#ui-dialog')
+  const panel = await openedDialog.$('.glaze-dialog__panel')
+  if (!panel) throw new Error(`dialog did not open: ${await openedDialog.outerWxml()}`)
+  await expect(await panel.text()).toContain('Dialog title')
+  await expect(await panel.text()).toContain('Dialog body content')
+  await (await openedDialog.$('.glaze-dialog__mask')).tap()
+  await page.waitFor(200)
+  const closedDialog = await app.$('#ui-dialog')
+  if (await closedDialog.$('.glaze-dialog__panel')) {
+    throw new Error('mask tap did not close the dialog')
+  }
 })

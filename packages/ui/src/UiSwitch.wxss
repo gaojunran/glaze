@@ -35,3 +35,7 @@
 .glaze-switch--disabled {
   opacity: 0.5;
 }
+
+.glaze-switch--hover {
+  opacity: 0.86;
+}

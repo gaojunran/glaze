@@ -68,8 +68,10 @@ glass-easel 组件，不替换平台渲染器。
   属性穿过组件边界；
 - Store：`@glaze/store` 在 `solid-js/store` 上提供懒加载、应用级的 setup
   store，每个 id 在所有组件 bundle 之间共享同一个实例；
-- 验证：637 个单元测试（shared 2、store 8、runtime 202、compiler 302、
-  build 123）、glass-easel 渲染测试和 12 个 minidev e2e 用例。
+- UI：`@glaze/ui` 把首批 UI SDK 组件（button、toggle、switch、field、
+  input、dialog）移植为原生 WXML 组件，包含非受控变体与仅触屏的 dialog；
+- 验证：639 个单元测试（shared 2、store 8、runtime 202、compiler 303、
+  build 124）、glass-easel 渲染测试和 12 个 minidev e2e 用例。
 
 已知限制记录在 [编译器](docs/compiler.md)、[Store](docs/store.md)、
 [UI SDK 移植](docs/ui.md)、[构建](docs/build.md) 和 [优化](docs/optimizations.md) 中。编译器与运行时的结构重构记录在
@@ -147,6 +149,7 @@ Chromium 1248）：
 | --- | --- |
 | `@glaze/compiler` | Solid JSX 到 WXML + binding runtime |
 | `@glaze/store` | 基于 `solid-js/store` 的懒加载应用级 store |
+| `@glaze/ui` | 参照 vercel-labs/ui 的原生 WXML 组件 |
 | `@glaze/build` | `glaze build`：项目、页面和分包输出 |
 | `@glaze/shared` | 少量共享辅助函数（字符串/路径命名） |
 | `@glaze/runtime` | 每个实例的 Solid root 与 binding 桥 |

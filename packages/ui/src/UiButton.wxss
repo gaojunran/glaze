@@ -56,3 +56,7 @@
 .glaze-button--disabled {
   opacity: 0.5;
 }
+
+.glaze-button--hover {
+  opacity: 0.86;
+}

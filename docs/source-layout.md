@@ -44,6 +44,7 @@ Large files were split by responsibility rather than by size alone:
 | | `ref.ts` | node handle: measurement, descendant queries and scrolling |
 | | `types.ts` | runtime/public types |
 | `@glaze/store` | `index.ts` | lazy app-wide setup stores over `solid-js/store`, shared registry |
+| `@glaze/ui` | `Ui*.tsx` | native Glaze primitives modelled on vercel-labs/ui, one subpath export per component |
 | `@glaze/shared` | `strings.ts` | `kebabCase`, shared by compiler and build naming |
 
 `glaze.config` discovery accepts `glaze.config.mts`, `.ts` and `.mjs`. The
