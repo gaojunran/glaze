@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -81,19 +82,16 @@ export async function collectTsx(dir) {
   return files.sort()
 }
 
-export function resolveSourceImport(fromFile, specifier, sources) {
-  if (!specifier.startsWith('.')) return null
-  const base = path.resolve(path.dirname(fromFile), specifier)
-  for (const candidate of [
-    base,
-    `${base}.tsx`,
-    `${base}.ts`,
-    path.join(base, 'index.tsx'),
-    path.join(base, 'index.ts'),
-  ]) {
-    if (sources.has(candidate)) return candidate
+export function resolvePackageImport(project, fromFile, specifier) {
+  const require = createRequire(path.join(project, 'package.json'))
+  try {
+    const resolved = require.resolve(specifier, {
+      paths: [path.dirname(fromFile), project],
+    })
+    return resolved.endsWith('.tsx') ? resolved : null
+  } catch {
+    return null
   }
-  return null
 }
 
 export function styleFor(sourceFile) {

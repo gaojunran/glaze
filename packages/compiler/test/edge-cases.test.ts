@@ -1070,7 +1070,7 @@ test('rejects an unimported PascalCase element', () => {
           return <Portal>x</Portal>
         }
       `),
-    /must be imported from a relative file/,
+    /must be imported from a module/,
   )
 })
 
@@ -1083,7 +1083,7 @@ test('rejects a Solid API component imported from solid-js', () => {
           return <Portal>x</Portal>
         }
       `),
-    /must come from a relative file/,
+    /could not be resolved from/,
   )
 })
 

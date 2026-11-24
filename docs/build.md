@@ -276,6 +276,16 @@ import type { Label } from './types'
 Both `.ts` helpers, JSON modules and type-only imports are bundled or erased by
 esbuild as usual.
 
+Component imports may also come from a workspace package with a TSX subpath
+export, e.g. `import UiButton from '@glaze/ui/button'`. The builder resolves the
+specifier with `createRequire(project/package.json).resolve`, loads the `.tsx`
+source into the same source map as project files, and emits it as a normal
+component. A package component outside the configured `source` directory gets
+an external output name such as `glaze-ext-packages-ui-src-ui-button`; only the
+trailing `..` segments are removed. Relative imports inside that package
+resolve lazily against the package file, so package-internal components do not
+have to be listed in `pages` or copied into the project.
+
 Output names are derived from the path relative to `source`:
 `pages/FooBar.tsx` becomes `glaze-pages-foo-bar`. Path separators are
 normalized to `/` before the name is generated, so Windows and POSIX produce the

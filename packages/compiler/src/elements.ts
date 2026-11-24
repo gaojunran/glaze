@@ -259,15 +259,18 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
   }
   const source = ctx.imports.get(name)
   if (!source) {
-    throw new Error(`Component <${name}> must be imported from a relative file`)
+    throw new Error(`Component <${name}> must be imported from a module`)
   }
-  if (!source.startsWith('.')) {
-    throw new Error(`Component <${name}> must come from a relative file, got "${source}"`)
+  const relative = source.startsWith('.')
+  if (relative) {
+    const inlined = inlineComponent(node, ctx, scope, name, source)
+    if (inlined != null) return wrapDirectives(inlined, extraAttrs)
   }
-  const inlined = inlineComponent(node, ctx, scope, name, source)
-  if (inlined != null) return wrapDirectives(inlined, extraAttrs)
 
   const child = resolveComponentInfo(name, source, ctx)
+  if (!relative && !child) {
+    throw new Error(`Component <${name}> could not be resolved from "${source}"`)
+  }
   ctx.addComponent(name, source, ctx.currentFile)
 
   const attrs = []

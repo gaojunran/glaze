@@ -1,7 +1,7 @@
 import { compileComponent, hasMultipleProps } from '@glaze/compiler'
 import { PAGE_PROP } from '@glaze/shared'
 import { build as esbuild } from 'esbuild'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import {
   copyFile,
   cp,
@@ -15,7 +15,7 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import path from 'node:path'
-import { loadConfig, collectTsx, resolveSourceImport } from './config.ts'
+import { loadConfig, collectTsx, resolvePackageImport } from './config.ts'
 import {
   hasRouteTraversal,
   isInside,
@@ -189,6 +189,33 @@ async function buildProjectInternal(
   const sourceFiles = await collectTsx(sourceDir)
   const sources = new Map()
   for (const file of sourceFiles) sources.set(file, await readFile(file, 'utf8'))
+  // Components may come from workspace packages. Resolve those lazily and
+  // keep their source in the same map the compiler and emitter use.
+  const loadSource = (file: string) => {
+    if (!sources.has(file)) sources.set(file, readFileSync(file, 'utf8'))
+    return file
+  }
+  const resolveComponentFile = (fromFile: string, specifier: string) => {
+    if (!specifier.startsWith('.')) {
+      const resolved = resolvePackageImport(project, fromFile, specifier)
+      return resolved ? loadSource(resolved) : null
+    }
+    const base = path.resolve(path.dirname(fromFile), specifier)
+    const candidates = [
+      ...(existsSync(base) && statSync(base).isFile() ? [base] : []),
+      `${base}.tsx`,
+      `${base}.ts`,
+      path.join(base, 'index.tsx'),
+      path.join(base, 'index.ts'),
+    ]
+    for (const candidate of candidates) {
+      if (sources.has(candidate)) return candidate
+    }
+    for (const candidate of candidates) {
+      if (existsSync(candidate) && statSync(candidate).isFile()) return loadSource(candidate)
+    }
+    return null
+  }
 
   const pageEntries = []
   const routes = new Set()
@@ -333,7 +360,7 @@ async function buildProjectInternal(
       bindingGroupSize,
       structuredProps: structuredFor(file),
       resolveComponent: (_name, specifier, fromFile = file) => {
-        const child = resolveSourceImport(fromFile, specifier, sources)
+        const child = resolveComponentFile(fromFile, specifier)
         if (child) dependencies.add(child)
         return child
           ? { source: sources.get(child), file: child, structuredProps: structuredFor(child) }
@@ -381,7 +408,7 @@ async function buildProjectInternal(
     const children = new Set<string>(entry.dependencies ?? [])
     for (const component of entry.result.components) {
       const fromFile = component.fromFile ?? file
-      const child = resolveSourceImport(fromFile, component.source, sources)
+      const child = resolveComponentFile(fromFile, component.source)
       if (!child) {
         throw new Error(`Cannot resolve component "${component.name}" from ${fromFile}`)
       }
@@ -428,7 +455,7 @@ async function buildProjectInternal(
       pageContext: true,
       pageRoot: pageFiles.has(file),
       resolveComponent: (_name, specifier, fromFile = file) => {
-        const child = resolveSourceImport(fromFile, specifier, sources)
+        const child = resolveComponentFile(fromFile, specifier)
         return child
           ? {
               source: sources.get(child),
@@ -741,11 +768,10 @@ async function buildProjectInternal(
         if (usingComponents[tag]) {
           throw new Error(`Duplicate component tag "${tag}" in ${file}`)
         }
-        const child = resolveSourceImport(
-          component.fromFile ?? file,
-          component.source,
-          sources,
-        )
+        const child = resolveComponentFile(component.fromFile ?? file, component.source)
+        if (!child) {
+          throw new Error(`Cannot resolve component "${component.name}" from ${file}`)
+        }
         usingComponents[tag] = outputFor(ownerOf(child), child, names.get(child))
       }
       const componentJson: Record<string, unknown> = {
@@ -763,7 +789,8 @@ async function buildProjectInternal(
 
       const inlineStyles = []
       for (const inline of result.inlineComponents) {
-        const child = inline.file ?? resolveSourceImport(file, inline.source, sources)
+        const child = inline.file ?? resolveComponentFile(file, inline.source)
+        if (!child) throw new Error(`Cannot resolve inline component "${inline.name}" from ${file}`)
         inlineStyles.push(await readStyle(child))
       }
       const ownStyle = await readStyle(file)

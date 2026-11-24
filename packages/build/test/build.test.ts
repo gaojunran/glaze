@@ -52,6 +52,47 @@ const appShell = (project) => [
   ),
 ]
 
+test('compiles a component imported from a workspace package', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'package.json': JSON.stringify({ name: 'fixture', private: true }),
+      'node_modules/@glaze/ui/package.json': JSON.stringify({
+        name: '@glaze/ui',
+        version: '0.0.0',
+        exports: { './button': './button.tsx' },
+      }),
+      'node_modules/@glaze/ui/button.tsx': `export default function UiButton(props) {
+  return <button class="ui-button">{props.label}</button>
+}
+`,
+      'src/App.tsx': `import UiButton from '@glaze/ui/button'
+
+export default function App() {
+  return <view class="page"><UiButton label="Package" /></view>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+
+  const result = await buildProject(project)
+  const name = result.components.find((component) => component.includes('ui-button'))
+  assert.ok(name, `expected a UI button component, got ${result.components.join(', ')}`)
+  const output = path.join(project, 'miniprogram/components', name)
+  const wxml = await readFile(path.join(output, 'index.wxml'), 'utf8')
+  assert.match(wxml, /class="ui-button"/)
+  assert.match(wxml, /\{\{label\}\}/)
+  const pageJson = JSON.parse(
+    await readFile(path.join(project, 'miniprogram/components/glaze-app/index.json'), 'utf8'),
+  )
+  assert.ok(pageJson.usingComponents['ui-button'])
+})
+
 test('bundles runtime lifecycle hooks imported by page source', async () => {
   const project = await createProject({
     config: {

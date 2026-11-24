@@ -14,7 +14,7 @@ export function emitModule(ast: AnyNode, ctx: CompilerContext, options: EmitOpti
       .filter((node) => {
         const locals = node.specifiers.map((specifier) => specifier.local.name)
         const onlyComponents = locals.length > 0 && locals.every((name) => componentNames.has(name))
-        return !(node.source.value.startsWith('.') && onlyComponents)
+        return !onlyComponents
       })
       .map((node) => codeOf(node)),
     ...ctx.extraImports,

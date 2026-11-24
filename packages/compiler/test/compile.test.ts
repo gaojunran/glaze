@@ -166,6 +166,27 @@ test('inlines a stateless imported component outside For', () => {
   assert.deepEqual(result.inlineComponents, [{ name: 'Header', source: './Header' }])
 })
 
+test('compiles a component imported from a package', () => {
+  const result = compileComponent(
+    `
+      import UiButton from '@glaze/ui/button'
+
+      export default function Page(props) {
+        return <UiButton label={props.label} />
+      }
+    `,
+    {
+      resolveComponent: (name, source) =>
+        name === 'UiButton' && source === '@glaze/ui/button'
+          ? { source: 'export default function UiButton() { return <button /> }' }
+          : null,
+    },
+  )
+
+  assert.match(result.wxml, /<ui-button/)
+  assert.doesNotMatch(result.js, /@glaze\/ui\/button/)
+})
+
 test('still treats an imported Context as a provider', () => {
   const result = compileComponent(`
     import { ThemeContext } from './theme'
@@ -1836,7 +1857,7 @@ test('does not treat a local Show declaration as a Solid control-flow tag', () =
           return <Show><text>x</text></Show>
         }
       `),
-    /Component <Show> must be imported from a relative file/,
+    /Component <Show> must be imported from a module/,
   )
 })
 

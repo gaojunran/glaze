@@ -35,7 +35,12 @@ export const outputNameForRelative = (relative) =>
   `glaze-${kebabCase(normalizeSourcePath(relative).replace(/\.tsx$/, ''))}`
 
 export function outputNameFor(sourceFile, sourceDir) {
-  return outputNameForRelative(path.relative(sourceDir, sourceFile))
+  const relative = path.relative(sourceDir, sourceFile)
+  if (!escapes(relative)) return outputNameForRelative(relative)
+  // Components can come from a workspace package outside the source root.
+  // Strip the leading `..` segments so the name stays stable and readable.
+  const external = normalizeSourcePath(relative).replace(/^(?:\.\.\/)+/, '')
+  return outputNameForRelative(`ext/${external}`)
 }
 
 export const escapes = (relative) =>
