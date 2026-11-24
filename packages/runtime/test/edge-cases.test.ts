@@ -922,6 +922,9 @@ test('a deferred async component attaches before its root exists', async () => {
   await settle()
   assert.equal(setups, 0, 'attaching before ready must not run setup')
   assert.equal(instance.__glaze.core.bindings.length, 0)
+  // No root means no binding data: a pre-root status projection must not write
+  // a transient `false` that the first mount then has to correct.
+  assert.deepEqual(instance.calls, [])
 
   def.lifetimes.ready.call(instance)
   assert.equal(instance.__glaze.lifecycle.phase, 'attached')
