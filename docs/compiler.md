@@ -1150,3 +1150,29 @@ error or a documented rewrite rather than a silent fallback:
 - **`<For key="...">`.** A string key must be a single field name. A dotted or
   indexed path such as `key="row.id"` is rejected; use
   `keyed={(item) => item.id}` for a stable key.
+
+## Compiler source modules
+
+- `ast.ts` owns the shared AST primitives: `walkAst` (whole tree),
+  `visitChildren` (direct children in `t.VISITOR_KEYS` order, optionally
+  replacing a child), `unwrapTs`, `isReferenceIdentifier` and
+  `memberChainOf`. A visitor that prunes or skips keys keeps its own loop;
+  `visitChildren` never hides a pruning rule.
+- `scope.ts` owns loop and callback scopes. `makeLoopScope` and
+  `makeCallbackScope` are the only place the `Scope` defaults live; the
+  control-flow directives themselves stay in `control.ts`.
+- `elements.ts` assembles tags through `emitTag`, `emitAttrValue` and
+  `emitEventAttr`. Native and component attribute policies stay explicit at
+  the call site: namespace attributes, `EVENT_MAP` vs custom event names,
+  numeric literals, `data-*` / `aria-*` passthrough and structured props.
+- `compile.ts` splits into `analyzeComponent` (shadowing declarations and
+  context identity), `finalizeProps` (the child property interface) and the
+  main phases that must stay ordered: context rewrite, propMap, compileNode,
+  final prop-read audit.
+
+The 2026-11-24 structural refactor kept generated output identical. A golden
+corpus of every `examples/solid-todo` component plus every literal source in
+the compiler tests (871 compilation variants) produced
+byte-identical WXML/JS/config before and after; `pnpm --filter @glaze/compiler
+test` (284 tests), `pnpm --filter @glaze/compiler typecheck` and `pnpm
+--filter @glaze/build test` (120 tests) pass.
