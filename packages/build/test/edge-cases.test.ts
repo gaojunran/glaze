@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { access, mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises'
+import { runInNewContext } from 'node:vm'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -621,14 +622,49 @@ test('writes the four page wrapper files', async () => {
       pages: { 'pages/home/index': 'App.tsx' },
     },
     files: {
-      'src/App.tsx': 'export default function App() { return <view>wrapper</view> }\n',
+      'src/App.tsx': `const usePageEvent = (name: string) => () => name
+const onPageEvent = (name: string, handler: () => unknown) => handler()
+
+export default function App() {
+  usePageEvent('scroll')()
+  onPageEvent('shareAppMessage', () => ({ title: 'shared' }))
+  return <view>wrapper</view>
+}
+`,
     },
   })
   await appShell(project)
   await buildProject(project)
 
   const pageDir = path.join(project, 'miniprogram/pages/home/index')
-  assert.match(await readFile(`${pageDir}.js`, 'utf8'), /^Page\(\{\n  data: \{\},\n\}\)\n$/)
+  const pageScript = await readFile(`${pageDir}.js`, 'utf8')
+  assert.match(pageScript, /^function dispatchGlazePageEvent/)
+  assert.match(pageScript, /onPageScroll\(event\)/)
+  assert.match(pageScript, /onShareAppMessage\(event\)/)
+  assert.match(pageScript, /__glazePageEvent/)
+
+  let pageOptions
+  runInNewContext(pageScript, {
+    Page: (options) => {
+      pageOptions = options
+    },
+  })
+  const calls = []
+  const root = {
+    __glazePageEvent(name, payload) {
+      calls.push([name, payload])
+      return name === 'shareAppMessage' ? { title: 'shared' } : undefined
+    },
+  }
+  const page = {
+    selectComponent: (selector) => (selector === '#app' ? root : null),
+  }
+  pageOptions.onPageScroll.call(page, { scrollTop: 7 })
+  assert.deepEqual(calls[0], ['scroll', { scrollTop: 7 }])
+  assert.deepEqual(
+    pageOptions.onShareAppMessage.call(page, { from: 'menu' }),
+    { title: 'shared' },
+  )
   assert.equal(await readFile(`${pageDir}.wxss`, 'utf8'), '')
   assert.equal(await readFile(`${pageDir}.wxml`, 'utf8'), '<glaze-page id="app" />\n')
   const pageJson = await readJson(`${pageDir}.json`)

@@ -23,6 +23,9 @@ importers:
       '@glaze/build':
         specifier: workspace:*
         version: link:../../packages/build
+      '@glaze/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
 
   packages/build:
     dependencies:

@@ -17,6 +17,29 @@ export type PageSize = {
   windowHeight: number
 }
 
+export type PageEventName =
+  | 'scroll'
+  | 'shareAppMessage'
+  | 'shareTimeline'
+  | 'addToFavorites'
+  | 'tabItemTap'
+  | 'saveExitState'
+  | 'pullDownRefresh'
+  | 'reachBottom'
+  | 'routeDone'
+
+export type PageEventPayloads = {
+  scroll: { scrollTop: number; scrollLeft?: number }
+  shareAppMessage: Record<string, unknown>
+  shareTimeline: Record<string, unknown>
+  addToFavorites: Record<string, unknown>
+  tabItemTap: { index: number; pagePath: string; text: string }
+  saveExitState: Record<string, unknown>
+  pullDownRefresh: undefined
+  reachBottom: undefined
+  routeDone: { path?: string }
+}
+
 export type GlazeNodeRect = {
   id?: string
   left?: number
@@ -66,8 +89,19 @@ export type GlazeContext = {
   pageVisible(): boolean
   /** Latest page size from pageLifetimes.resize; seeded from wx.getWindowInfo when available. */
   pageSize(): PageSize | null
-  /** Subscribe to errors reported by the component error lifetime. */
+  /** True while the app is in the foreground. */
+  appVisible(): boolean
+  /** Latest payload for a page-level event. */
+  pageEvent<K extends PageEventName>(name: K): PageEventPayloads[K] | undefined
+  /** Subscribe to a page-level event; the returned value is a synchronous result. */
+  onPageEvent<K extends PageEventName>(
+    name: K,
+    handler: (payload: PageEventPayloads[K]) => unknown,
+  ): () => void
+  /** Subscribe to component errors, including binding failures. */
   onComponentError(handler: (error: unknown) => void): () => void
+  onComponentMoved(handler: () => void): () => void
+  onBeforeDetach(handler: () => void): () => void
 }
 
 export type GlazeComponentConfig = {
@@ -99,7 +133,12 @@ export type InstanceState = {
   effectsInstalled: boolean
   pageVisible: [() => boolean, (value: boolean) => void]
   pageSize: [() => PageSize | null, (value: PageSize | null) => void]
+  pageEvents: Map<PageEventName, unknown>
+  pageEventVersion: [() => number, (value: number) => void]
+  pageHandlers: Map<PageEventName, Set<(payload: unknown) => unknown>>
   errorHandlers: ((error: unknown) => void)[]
+  movedHandlers: (() => void)[]
+  beforeDetachHandlers: (() => void)[]
   props: Record<string, [() => unknown, (value: unknown) => void]>
   propsProxy: GlazeProps | null
   owner: ReturnType<typeof getOwner>

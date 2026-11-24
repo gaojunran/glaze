@@ -6,6 +6,7 @@
     "build": "glaze build"
   },
   "dependencies": {
-    "@glaze/build": "workspace:*"
+    "@glaze/build": "workspace:*",
+    "@glaze/runtime": "workspace:*"
   }
 }

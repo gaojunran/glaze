@@ -59,6 +59,8 @@ import type {
   GlazeContext,
   GlazeContextProvider,
   InstanceState,
+  PageEventName,
+  PageEventPayloads,
   PageSize,
 } from './types.ts'
 
@@ -75,6 +77,56 @@ const platformAttached = (lifecycle: LifecycleState): boolean =>
 /** A Solid root exists (mounted or attached); waiting-context has none yet. */
 const hasRoot = (lifecycle: LifecycleState): boolean =>
   lifecycle.phase === 'mounted' || lifecycle.phase === 'attached'
+
+const [appVisible, setAppVisible] = createSignal(true)
+let appLifecycleInstalled = false
+
+const installAppLifecycle = (): void => {
+  if (appLifecycleInstalled) return
+  const wx = (globalThis as {
+    wx?: {
+      onAppShow?: (listener: (options?: unknown) => void) => void
+      onAppHide?: (listener: () => void) => void
+    }
+  }).wx
+  if (typeof wx?.onAppShow !== 'function' || typeof wx?.onAppHide !== 'function') return
+  appLifecycleInstalled = true
+  wx.onAppShow(() => setAppVisible(true))
+  wx.onAppHide(() => setAppVisible(false))
+}
+
+const notifyComponentError = (state: InstanceState, error: unknown): void => {
+  state.error = error
+  for (const handler of [...state.errorHandlers]) {
+    try {
+      handler(error)
+    } catch (handlerError) {
+      reportComponentError(handlerError)
+    }
+  }
+}
+
+const reportUnhandledComponentError = (state: InstanceState, error: unknown): void => {
+  if (state.errorHandlers.length === 0) reportComponentError(error)
+}
+
+const emitPageEvent = (state: InstanceState, name: PageEventName, payload: unknown): unknown => {
+  state.pageEvents.set(name, payload)
+  state.pageEventVersion[1](state.pageEventVersion[0]() + 1)
+  const handlers = state.pageHandlers.get(name)
+  if (!handlers) return undefined
+  let result: unknown
+  for (const handler of [...handlers]) {
+    try {
+      const value = handler(payload)
+      if (result === undefined) result = value
+    } catch (error) {
+      notifyComponentError(state, error)
+      reportUnhandledComponentError(state, error)
+    }
+  }
+  return result
+}
 
 /** The setup context while the user component body runs; hooks read it. */
 let activeSetupContext: GlazeContext | null = null
@@ -97,6 +149,35 @@ export const usePageSize = (): (() => PageSize | null) =>
 /** Subscribe to the component error lifetime from inside setup. */
 export const onComponentError = (handler: (error: unknown) => void): (() => void) =>
   requireSetupContext('onComponentError').onComponentError(handler)
+
+/** Reactive app foreground state for the component currently being set up. */
+export const useAppVisible = (): (() => boolean) => {
+  requireSetupContext('useAppVisible')
+  installAppLifecycle()
+  return appVisible
+}
+
+/** Latest payload of a page-level event. */
+export const usePageEvent = <K extends PageEventName>(
+  name: K,
+): (() => PageEventPayloads[K] | undefined) => {
+  const ctx = requireSetupContext('usePageEvent')
+  return () => ctx.pageEvent(name)
+}
+
+/** Subscribe to a page-level event; the return value is delivered to share hooks. */
+export const onPageEvent = <K extends PageEventName>(
+  name: K,
+  handler: (payload: PageEventPayloads[K]) => unknown,
+): (() => void) => requireSetupContext('onPageEvent').onPageEvent(name, handler)
+
+/** Run a callback when the component is moved in the node tree. */
+export const onComponentMoved = (handler: () => void): (() => void) =>
+  requireSetupContext('onComponentMoved').onComponentMoved(handler)
+
+/** Run a callback before the component root is disposed. */
+export const onBeforeDetach = (handler: () => void): (() => void) =>
+  requireSetupContext('onBeforeDetach').onBeforeDetach(handler)
 
 /** Accept either a resize event or its `size` payload. */
 const pageSizeFrom = (value: unknown): PageSize | null => {
@@ -155,6 +236,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   // Only a binding with an async boundary surfaces its failure through the
   // Errored state; anything else has no channel and must still reach the log.
   const reportError = (state: InstanceState, index: number, error: unknown) => {
+    if (!isNotReady(error)) notifyComponentError(state, error)
     if (state.core.bindings[index]?.errorBoundary == null) logBindingError(index, error)
   }
   const BINDING_ERROR = Symbol('glaze.bindingError')
@@ -261,6 +343,14 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   }
   const deferredContext = (config.boundaryContexts?.length ?? 0) > 0
   const methods: Record<string, unknown> = {}
+  methods.__glazePageEvent = function handlePageEvent(
+    this: { __glaze?: InstanceState | null },
+    name: PageEventName,
+    payload: unknown,
+  ) {
+    const state = this.__glaze
+    return state ? emitPageEvent(state, name, payload) : undefined
+  }
   const handlerCount = config.handlerCount ?? 0
   for (let i = 0; i < handlerCount; i += 1) {
     const name = eventHandlerName(i)
@@ -377,6 +467,9 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     state.events.length = 0
     state.refs.length = 0
     state.errorHandlers.length = 0
+    state.movedHandlers.length = 0
+    state.beforeDetachHandlers.length = 0
+    state.pageHandlers.clear()
     state.error = undefined
     state.owner = null
 
@@ -411,11 +504,45 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         errorArray: (boundary) => errorArrayOf(state.boundaries, boundary),
         pageVisible: () => state.pageVisible[0](),
         pageSize: () => state.pageSize[0](),
+        appVisible: () => {
+          installAppLifecycle()
+          return appVisible()
+        },
+        pageEvent: <K extends PageEventName>(name: K) => {
+          state.pageEventVersion[0]()
+          return state.pageEvents.get(name) as PageEventPayloads[K] | undefined
+        },
+        onPageEvent: <K extends PageEventName>(
+          name: K,
+          handler: (payload: PageEventPayloads[K]) => unknown,
+        ) => {
+          const handlers = state.pageHandlers.get(name) ?? new Set()
+          handlers.add(handler as (payload: unknown) => unknown)
+          state.pageHandlers.set(name, handlers)
+          return () => {
+            handlers.delete(handler as (payload: unknown) => unknown)
+            if (handlers.size === 0) state.pageHandlers.delete(name)
+          }
+        },
         onComponentError(handler) {
           state.errorHandlers.push(handler)
           return () => {
             const index = state.errorHandlers.indexOf(handler)
             if (index >= 0) state.errorHandlers.splice(index, 1)
+          }
+        },
+        onComponentMoved(handler) {
+          state.movedHandlers.push(handler)
+          return () => {
+            const index = state.movedHandlers.indexOf(handler)
+            if (index >= 0) state.movedHandlers.splice(index, 1)
+          }
+        },
+        onBeforeDetach(handler) {
+          state.beforeDetachHandlers.push(handler)
+          return () => {
+            const index = state.beforeDetachHandlers.indexOf(handler)
+            if (index >= 0) state.beforeDetachHandlers.splice(index, 1)
           }
         },
       }
@@ -541,7 +668,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
             const binding = state.core.bindings[index]
             if (binding) binding.previous = INVALID_BASELINE
           }
-          state.error = error
+          notifyComponentError(state, error)
           reportTransportError(error)
         }
       }
@@ -785,7 +912,12 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           effectsInstalled: false,
           pageVisible: createSignal(true),
           pageSize: createSignal(initialPageSize()),
+          pageEvents: new Map(),
+          pageEventVersion: createSignal(0),
+          pageHandlers: new Map(),
           errorHandlers: [],
+          movedHandlers: [],
+          beforeDetachHandlers: [],
           props: Object.create(null),
           propsProxy: null,
           owner: null,
@@ -914,12 +1046,31 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       error(this: any, error: unknown) {
         const state: InstanceState | undefined = this.__glaze
         if (!state) return
-        state.error = error
-        for (const handler of [...state.errorHandlers]) {
+        notifyComponentError(state, error)
+      },
+
+      moved(this: any) {
+        const state: InstanceState | undefined = this.__glaze
+        if (!state) return
+        for (const handler of [...state.movedHandlers]) {
           try {
-            handler(error)
-          } catch (handlerError) {
-            reportComponentError(handlerError)
+            handler()
+          } catch (error) {
+            notifyComponentError(state, error)
+            reportUnhandledComponentError(state, error)
+          }
+        }
+      },
+
+      beforeDetach(this: any) {
+        const state: InstanceState | undefined = this.__glaze
+        if (!state) return
+        for (const handler of [...state.beforeDetachHandlers]) {
+          try {
+            handler()
+          } catch (error) {
+            notifyComponentError(state, error)
+            reportUnhandledComponentError(state, error)
           }
         }
       },
@@ -937,6 +1088,9 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         state.events.length = 0
         state.refs.length = 0
         state.errorHandlers.length = 0
+        state.movedHandlers.length = 0
+        state.beforeDetachHandlers.length = 0
+        state.pageHandlers.clear()
         state.applyStatus = null
         state.effectsInstalled = false
         state.dispose?.()
@@ -954,6 +1108,10 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       resize(this: any, event: unknown) {
         const size = pageSizeFrom(event)
         if (size) this.__glaze?.pageSize[1](size)
+      },
+      routeDone(this: any, event: unknown) {
+        const state: InstanceState | undefined = this.__glaze
+        if (state) emitPageEvent(state, 'routeDone', event)
       },
     },
     methods,

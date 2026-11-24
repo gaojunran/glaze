@@ -239,6 +239,15 @@ test('cross-file context reaches a component boundary', async (miniProgram) => {
   await page.waitFor(300)
   const updated = await app.outerWxml()
   await expect(updated).toContain('class="context-boundary">dark-file')
+
+  await expect(app).toMatchText('.app-visible', 'visible')
+  await expect(app).toMatchText('.page-scroll', '0')
+  await miniProgram.pageScrollTo(120)
+  await page.waitFor(300)
+  const scrollTop = Number(await (await app.$('.page-scroll')).text())
+  if (!(scrollTop > 0)) {
+    throw new Error(`page scroll event did not reach the root: ${scrollTop}`)
+  }
   // The palette text lives in the child shadow root, which page selectors do
   // not cross; the object-context update path is covered by runtime tests.
 })

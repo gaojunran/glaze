@@ -43,37 +43,64 @@ onSettled(() => {
 - Keep timers/listeners paired with `onCleanup` so a detached component does
   not keep them alive.
 
-## Page visibility and component errors
+## Page, app and component lifecycle
 
 ```tsx
 import { createEffect } from 'solid-js'
 import {
+  onBeforeDetach,
   onComponentError,
+  onComponentMoved,
+  onPageEvent,
+  useAppVisible,
+  usePageEvent,
   usePageSize,
   usePageVisible,
 } from '@glaze/runtime'
 
 const pageVisible = usePageVisible()
 const pageSize = usePageSize()
+const appVisible = useAppVisible()
+const scroll = usePageEvent('scroll')
 
 createEffect(() => {
-  if (!pageVisible()) pauseTimers()
+  if (!pageVisible() || !appVisible()) pauseTimers()
 })
 createEffect(() => {
   const size = pageSize()
   if (size) layout(size.windowWidth, size.windowHeight)
 })
+createEffect(() => {
+  const event = scroll()
+  if (event) trackScroll(event.scrollTop)
+})
+onPageEvent('shareAppMessage', () => ({ title: 'Glaze page' }))
 onComponentError((error) => reportToTelemetry(error))
+onComponentMoved(() => relayout())
+onBeforeDetach(() => saveDraft())
 ```
 
+- Add `@glaze/runtime` to the project dependencies when importing these
+  hooks; it is the same runtime the build shares at run time.
 - Call these hooks during component setup, not later in an event handler or
   effect; later calls throw.
 - `usePageVisible()` starts `true` and follows page show/hide.
 - `usePageSize()` is the latest resize size, seeded from `wx.getWindowInfo()`;
   it can be `null` on an unsupported base library.
-- `onComponentError` receives errors from lifecycle and event callbacks; it
-  does not replace `Loading`/`Errored`, which still handle binding failures.
-  The returned function unsubscribes.
+- `useAppVisible()` follows `wx.onAppShow` / `wx.onAppHide`; it starts `true`.
+- `usePageEvent(name)` reads the latest page event. Names: `scroll`,
+  `shareAppMessage`, `shareTimeline`, `addToFavorites`, `tabItemTap`,
+  `saveExitState`, `pullDownRefresh`, `reachBottom`, `routeDone`. The generated
+  page wrapper forwards these; do not add `Page.onPageScroll` yourself.
+- `onPageEvent(name, handler)` returns an unsubscribe function. Return a value
+  for share/favorite/save hooks; it is forwarded to the platform. Page events
+  reach the page root; pass values to child components via props or context
+  (`routeDone` reaches every component through `pageLifetimes`).
+- `onComponentError` receives lifecycle, event and binding failures; binding
+  failures still also use `Loading`/`Errored`. The returned function
+  unsubscribes.
+- `onComponentMoved` runs on a node-tree move; `onBeforeDetach` runs before the
+  root is disposed (useful for synchronous draft saves).
 
 ## Stores
 

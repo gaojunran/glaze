@@ -40,6 +40,67 @@ import { assertPortableWxss, rewriteWxssUrls } from './styles.ts'
 import { applyTailwind, validateTailwindConfig } from './tailwind.ts'
 export { normalizeSourcePath, outputNameForRelative } from './paths.ts'
 
+const PAGE_EVENT_METHODS: Record<string, string> = {
+  scroll: `  onPageScroll(event) {
+    dispatchGlazePageEvent(this, 'scroll', event)
+  },\n`,
+  shareAppMessage: `  onShareAppMessage(event) {
+    return dispatchGlazePageEvent(this, 'shareAppMessage', event)
+  },\n`,
+  shareTimeline: `  onShareTimeline(event) {
+    return dispatchGlazePageEvent(this, 'shareTimeline', event)
+  },\n`,
+  addToFavorites: `  onAddToFavorites(event) {
+    return dispatchGlazePageEvent(this, 'addToFavorites', event)
+  },\n`,
+  tabItemTap: `  onTabItemTap(event) {
+    dispatchGlazePageEvent(this, 'tabItemTap', event)
+  },\n`,
+  saveExitState: `  onSaveExitState(event) {
+    return dispatchGlazePageEvent(this, 'saveExitState', event)
+  },\n`,
+  pullDownRefresh: `  onPullDownRefresh(event) {
+    dispatchGlazePageEvent(this, 'pullDownRefresh', event)
+  },\n`,
+  reachBottom: `  onReachBottom(event) {
+    dispatchGlazePageEvent(this, 'reachBottom', event)
+  },\n`,
+}
+
+const collectPageEventNames = (js: string) => {
+  const names = new Set<string>()
+  for (const match of js.matchAll(/\b(?:onPageEvent|usePageEvent)\(\s*['"]([A-Za-z]+)['"]/g)) {
+    if (Object.hasOwn(PAGE_EVENT_METHODS, match[1]!)) names.add(match[1]!)
+  }
+  // An alias or a dynamic event name is not statically readable. Enable the
+  // whole bridge when the hook is present without a literal event name.
+  if (names.size === 0 && /\b(?:onPageEvent|usePageEvent)\b/.test(js)) {
+    for (const name of Object.keys(PAGE_EVENT_METHODS)) names.add(name)
+  }
+  return names
+}
+
+const pageWrapperSource = (events: Set<string>): string => {
+  const methods = Object.keys(PAGE_EVENT_METHODS)
+    .filter((name) => events.has(name))
+    .map((name) => PAGE_EVENT_METHODS[name])
+    .join('')
+  if (methods === '') return `Page({\n  data: {},\n})\n`
+  return `function dispatchGlazePageEvent(page, name, payload) {
+  let root = page.__glazePageRoot
+  if (!root && typeof page.selectComponent === 'function') {
+    root = page.selectComponent('#app')
+    if (root) page.__glazePageRoot = root
+  }
+  if (!root || typeof root.__glazePageEvent !== 'function') return undefined
+  return root.__glazePageEvent(name, payload)
+}
+
+Page({
+  data: {},\n${methods}})
+`
+}
+
 async function replaceOutput(stagingDir: string, outputDir: string, clean: boolean) {
   if (clean) {
     await rm(outputDir, { recursive: true, force: true })
@@ -725,14 +786,12 @@ async function buildProjectInternal(
     for (const entry of pageEntries) {
       const { route, file, owner } = entry
       if (staticRoutes.has(route)) continue
+      const pageEvents = collectPageEventNames(compiled.get(file)?.result.js ?? '')
       const outName = names.get(file)
       const pageDir = path.join(stagingDir, path.dirname(route))
       const pageName = path.basename(route)
       await mkdir(pageDir, { recursive: true })
-      await writeFile(
-        path.join(pageDir, `${pageName}.js`),
-        `Page({\n  data: {},\n})\n`,
-      )
+      await writeFile(path.join(pageDir, `${pageName}.js`), pageWrapperSource(pageEvents))
       const pageConfig = pageConfigForRoute.get(route) ?? {}
       const usingComponents = {
         ...(pageConfig.usingComponents as Record<string, string> | undefined),

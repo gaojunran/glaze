@@ -237,6 +237,7 @@ test('a moved component keeps its root and state', async () => {
   let setValue
   let setups = 0
   let moves = 0
+  let hookMoves = 0
   const element = create({
     data: { b0: null },
     setup(ctx) {
@@ -244,6 +245,9 @@ test('a moved component keeps its root and state', async () => {
       const [value, set] = createSignal('first')
       setValue = set
       ctx.bind(0, () => value())
+      ctx.onComponentMoved(() => {
+        hookMoves += 1
+      })
     },
   })
   element.addLifetimeListener('moved', () => {
@@ -269,6 +273,7 @@ test('a moved component keeps its root and state', async () => {
   second.appendChild(element)
   await tick()
   assert.equal(moves, 1, 'the platform moved lifetime fired')
+  assert.equal(hookMoves, 1, 'the component moved hook fired')
   assert.equal(setups, 1, 'moving must not rebuild the root')
 
   setValue('moved')
@@ -296,6 +301,27 @@ test('real glass-easel page lifetimes reach the page signals', async () => {
   ])
   await tick()
   assert.deepEqual(page.pageSize(), { windowWidth: 320, windowHeight: 640 })
+
+  element.triggerPageLifetime('routeDone', [{ path: '/pages/home/index' }])
+  await tick()
+  assert.deepEqual(page.pageEvent('routeDone'), { path: '/pages/home/index' })
+})
+
+test('real glass-easel beforeDetach runs before the root is disposed', async () => {
+  let detaches = 0
+  const element = mount({
+    data: {},
+    setup(ctx) {
+      ctx.onBeforeDetach(() => {
+        detaches += 1
+      })
+    },
+  })
+
+  element.triggerLifetime('beforeDetach', [])
+  assert.equal(detaches, 1)
+  glassEasel.Component.pretendDetached(element)
+  await tick()
 })
 
 test('real glass-easel error lifetime reaches the error handler', () => {

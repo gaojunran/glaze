@@ -194,21 +194,31 @@ subscribes to. The mapping is:
 | `created` | Create `InstanceState`, prop signals and the props proxy. A non-deferred component mounts its Solid root here. |
 | `attached` | Deferred context: record `attachedBeforeMount` only. Normal: install effects. After `detached`: rebuild the root, then install effects. |
 | `ready` | Deferred context: build the root and install effects once. Already rooted: no-op. After `detached`: ignored, so a late ready cannot revive a detached root. |
-| `moved` | No handler. The same root and signals survive a move (verified with two attached parents). |
-| `beforeDetach` | Not handled. Teardown happens at `detached`; glass-easel detaches children first, so a parent's `onCleanup` runs after its child components are already detached. |
-| `detached` | Dispose the Solid root, clear pending writes, events/refs, error handlers and status projection, and move to the `detached` phase. |
-| `error` | Store the error in `state.error` and notify every `ctx.onComponentError` handler. Binding failures keep their own channel. |
-| `pageLifetimes` (`show`, `hide`, `resize`) | Drive `ctx.pageVisible()` and `ctx.pageSize()`; `pageSize` is seeded from `wx.getWindowInfo()` when available. |
+| `moved` | Keep the same root and signals, then notify `onComponentMoved` / `ctx.onComponentMoved` handlers. |
+| `beforeDetach` | Notify `onBeforeDetach` / `ctx.onBeforeDetach` handlers while the root is still alive. Teardown still happens at `detached`; glass-easel detaches children first, so a parent's `onCleanup` runs after its child components are already detached. |
+| `detached` | Dispose the Solid root, clear pending writes, events/refs, error handlers, page handlers and status projection, and move to the `detached` phase. |
+| `error` | Store the error in `state.error` and notify every `ctx.onComponentError` handler. Binding failures now use the same observer in addition to their `Errored` channel. |
+| `pageLifetimes` (`show`, `hide`, `resize`, `routeDone`) | Drive `ctx.pageVisible()`, `ctx.pageSize()` and the `routeDone` page event; `pageSize` is seeded from `wx.getWindowInfo()` when available. |
 
-### Page visibility and component errors
+Page-level events that are not component page lifetimes (`onPageScroll`, share
+callbacks, `onPullDownRefresh`, `onReachBottom`, `onTabItemTap`,
+`onSaveExitState`) are forwarded by the generated page wrapper to the root
+component's `__glazePageEvent` method when a compiled source references them.
+The wrapper caches the root component once `selectComponent('#app')` succeeds.
+
+### Page visibility, page events and component errors
 
 Page-level state is exposed through setup-only hooks, so normal TSX
-components do not need the generated `ctx` object:
+components do not need the generated `ctx` object. The project must declare
+`@glaze/runtime` as a dependency when it imports these hooks.
 
 ```tsx
 import { createEffect } from 'solid-js'
 import {
   onComponentError,
+  onPageEvent,
+  useAppVisible,
+  usePageEvent,
   usePageSize,
   usePageVisible,
 } from '@glaze/runtime'
@@ -216,32 +226,54 @@ import {
 export default function Page() {
   const pageVisible = usePageVisible()
   const pageSize = usePageSize()
+  const appVisible = useAppVisible()
+  const scroll = usePageEvent('scroll')
 
   createEffect(() => {
-    if (!pageVisible()) pauseTimers()
+    if (!pageVisible() || !appVisible()) pauseTimers()
   })
   createEffect(() => {
     const size = pageSize()
     if (size) layout(size.windowWidth, size.windowHeight)
   })
+  createEffect(() => {
+    const event = scroll()
+    if (event) trackScroll(event.scrollTop)
+  })
+  onPageEvent('shareAppMessage', () => ({ title: 'Glaze page' }))
   onComponentError((error) => reportToTelemetry(error))
 
   return <view>...</view>
 }
 ```
 
-Hand-written `defineGlazeComponent` components can use the same values as
-`ctx.pageVisible()`, `ctx.pageSize()` and `ctx.onComponentError(handler)`.
+Hand-written `defineGlazeComponent` components use the same values as
+`ctx.pageVisible()`, `ctx.pageSize()`, `ctx.appVisible()`,
+`ctx.pageEvent(name)`, `ctx.onPageEvent(name, handler)`,
+`ctx.onComponentError(handler)`, `ctx.onComponentMoved(handler)` and
+`ctx.onBeforeDetach(handler)`.
 
-- `usePageVisible()` / `ctx.pageVisible()` starts `true`, then follows
-  `pageLifetimes.hide` and `pageLifetimes.show`.
-- `usePageSize()` / `ctx.pageSize()` is the last `pageLifetimes.resize`
-  payload, seeded at creation from `wx.getWindowInfo()`; it is `null` when
-  neither is available.
-- `onComponentError(handler)` / `ctx.onComponentError(handler)` returns an unsubscribe
-  function. Handlers are called for errors delivered by the component `error`
-  lifetime (lifecycle callbacks, event handlers and other glass-easel dispatch
-  paths), not for binding failures that already flow through `Errored`.
+- `usePageVisible()` starts `true`, then follows `pageLifetimes.hide` and
+  `pageLifetimes.show`.
+- `usePageSize()` is the last `pageLifetimes.resize` payload, seeded at
+  creation from `wx.getWindowInfo()`; it is `null` when neither is available.
+- `useAppVisible()` follows `wx.onAppShow` / `wx.onAppHide`; the listeners are
+  installed once on first use, and the value starts `true`.
+- `usePageEvent(name)` reads the latest payload of a page event. The event
+  names are `scroll`, `shareAppMessage`, `shareTimeline`, `addToFavorites`,
+  `tabItemTap`, `saveExitState`, `pullDownRefresh`, `reachBottom` and
+  `routeDone`.
+- `onPageEvent(name, handler)` returns an unsubscribe function. Its return
+  value is forwarded for page methods that expect one (`onShareAppMessage`,
+  `onShareTimeline`, `onAddToFavorites`, `onSaveExitState`). Page events reach
+  the page root component; pass the values to child components through props or
+  context. `routeDone` is the exception because `pageLifetimes` reaches every
+  component.
+- `onComponentError(handler)` receives glass-easel errors and binding failures;
+  binding failures also keep their `Errored` channel.
+- `onComponentMoved(handler)` runs when the component is moved in the node tree;
+  the root and signals are not rebuilt.
+- `onBeforeDetach(handler)` runs before the root is disposed.
 - Hooks must be called during `setup`; calling them from an event handler or a
   later effect throws.
 - Handlers are cleared when the root is rebuilt or detached; register them in
@@ -249,9 +281,9 @@ Hand-written `defineGlazeComponent` components can use the same values as
 
 The real glass-easel tests cover the normal `attached` -> `ready` order,
 `ready` before `attached`, `detached` before `ready` (no late mount),
-`detached` -> `attached` -> `ready` (rebuild once), and a `moved` component
-keeping its root. The earlier pre-root test also asserts that a deferred async
-component writes no data before `ready`.
+`detached` -> `attached` -> `ready` (rebuild once), a `moved` component keeping
+its root and firing its hook, `beforeDetach`, `routeDone`, page resize, and the
+error lifetime.
 
 ### Replaced error sources release the old consumer
 
@@ -296,16 +328,22 @@ wrong signal set or skip a generated feature.
   so the guard is required.
 - The primitive guard scans each array once. That is negligible next to a list
   splice and prevents ambiguous ops for rows that cannot be keyed.
+- The generated page wrapper defines only the methods whose event names appear
+  in compiled sources; a dynamic or aliased hook enables the full set. Share
+  methods therefore enable the share menu only on pages that register them.
+- App visibility uses one module-level signal per runtime copy and `wx.onAppShow`
+  / `wx.onAppHide`; there is no per-page app listener.
 
 ## Validation
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 181, pass 181, fail 0
+# tests 186, pass 186, fail 0
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json (no output)
 pnpm --filter @glaze/build test
-# tests 120, pass 120, fail 0
+# tests 121, pass 121, fail 0
 cd examples/solid-todo && pnpm build
 # glaze build: 17 pages, 31 components
+# minidev e2e: 10 cases, 10 passed (the context case scrolls and asserts the root sees the page event)
 ```

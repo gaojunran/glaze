@@ -61,14 +61,28 @@ test('bundles runtime lifecycle hooks imported by page source', async () => {
     },
     files: {
       'src/App.tsx': `import { createEffect } from 'solid-js'
-import { onComponentError, usePageVisible } from '@glaze/runtime'
+import {
+  onBeforeDetach,
+  onComponentError,
+  onComponentMoved,
+  onPageEvent,
+  useAppVisible,
+  usePageEvent,
+  usePageVisible,
+} from '@glaze/runtime'
 
 export default function App() {
   const visible = usePageVisible()
+  const appVisible = useAppVisible()
+  const scroll = usePageEvent('scroll')
   createEffect(() => {
-    if (!visible()) console.log('hidden')
+    if (!visible() || !appVisible()) console.log('hidden')
+    scroll()
   })
+  onPageEvent('shareAppMessage', () => ({ title: 'home' }))
   onComponentError((error) => console.log(error))
+  onComponentMoved(() => console.log('moved'))
+  onBeforeDetach(() => console.log('detach'))
   return <view>home</view>
 }
 `,
@@ -84,6 +98,11 @@ export default function App() {
   )
   assert.match(runtime, /usePageVisible/)
   assert.match(runtime, /onComponentError/)
+  assert.match(runtime, /useAppVisible/)
+  assert.match(runtime, /usePageEvent/)
+  assert.match(runtime, /onPageEvent/)
+  assert.match(runtime, /onComponentMoved/)
+  assert.match(runtime, /onBeforeDetach/)
 })
 
 test('builds a page, its inlined child and a page wrapper', async () => {
@@ -118,6 +137,12 @@ export default function App() {
     'utf8',
   )
   assert.equal(page.trim(), '<glaze-page id="app" />')
+
+  const pageScript = await readFile(
+    path.join(project, 'miniprogram/pages/home/index.js'),
+    'utf8',
+  )
+  assert.equal(pageScript, 'Page({\n  data: {},\n})\n')
 
   const wxml = await readFile(
     path.join(project, 'miniprogram/components/glaze-app/index.wxml'),

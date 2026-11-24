@@ -85,6 +85,107 @@ test('seeds page size from wx.getWindowInfo when present', () => {
   }
 })
 
+test('page events store payloads and return handler results', async () => {
+  let page
+  const def = defineGlazeComponent({
+    data: {},
+    setup(ctx) {
+      page = ctx
+      ctx.onPageEvent('shareAppMessage', () => ({ title: 'shared' }))
+      ctx.onPageEvent('scroll', () => undefined)
+    },
+  })
+  const instance = createInstance(def)
+
+  assert.equal(def.methods.__glazePageEvent.call(instance, 'scroll', { scrollTop: 12 }), undefined)
+  await tick()
+  assert.deepEqual(page.pageEvent('scroll'), { scrollTop: 12 })
+  assert.deepEqual(
+    def.methods.__glazePageEvent.call(instance, 'shareAppMessage', { from: 'menu' }),
+    { title: 'shared' },
+  )
+})
+
+test('routeDone and component move/detach hooks are exposed', async () => {
+  let page
+  let moves = 0
+  let detaches = 0
+  const def = defineGlazeComponent({
+    data: {},
+    setup(ctx) {
+      page = ctx
+      ctx.onComponentMoved(() => {
+        moves += 1
+      })
+      ctx.onBeforeDetach(() => {
+        detaches += 1
+      })
+    },
+  })
+  const instance = createInstance(def)
+
+  def.lifetimes.moved.call(instance)
+  def.lifetimes.beforeDetach.call(instance)
+  def.pageLifetimes.routeDone.call(instance, { path: '/pages/home' })
+  await tick()
+
+  assert.equal(moves, 1)
+  assert.equal(detaches, 1)
+  assert.deepEqual(page.pageEvent('routeDone'), { path: '/pages/home' })
+})
+
+test('app visibility follows wx.onAppShow and wx.onAppHide', async () => {
+  const original = (globalThis as { wx?: unknown }).wx
+  const listeners = {}
+  ;(globalThis as { wx?: unknown }).wx = {
+    onAppShow: (listener) => {
+      listeners.show = listener
+    },
+    onAppHide: (listener) => {
+      listeners.hide = listener
+    },
+  }
+  try {
+    let page
+    const def = defineGlazeComponent({
+      data: {},
+      setup(ctx) {
+        page = ctx
+        ctx.appVisible()
+      },
+    })
+    createInstance(def)
+    assert.equal(page.appVisible(), true)
+
+    listeners.hide()
+    await tick()
+    assert.equal(page.appVisible(), false)
+    listeners.show({ scene: 1001 })
+    await tick()
+    assert.equal(page.appVisible(), true)
+  } finally {
+    ;(globalThis as { wx?: unknown }).wx = original
+  }
+})
+
+test('binding errors reach onComponentError', async () => {
+  const seen = []
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    setup(ctx) {
+      ctx.onComponentError((error) => seen.push(error))
+      ctx.bind(0, () => {
+        throw new Error('binding boom')
+      })
+    },
+  })
+  createInstance(def)
+  await tick()
+
+  assert.equal(seen.length, 1)
+  assert.match(String(seen[0]), /binding boom/)
+})
+
 test('page lifecycles update page visibility and size signals', async () => {
   let page
   const def = defineGlazeComponent({
