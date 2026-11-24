@@ -72,6 +72,20 @@ const platformAttached = (lifecycle: LifecycleState): boolean =>
 const hasRoot = (lifecycle: LifecycleState): boolean =>
   lifecycle.phase === 'mounted' || lifecycle.phase === 'attached'
 
+/**
+ * A binding baseline is only valid once its batch reached the platform. A
+ * failed flush substitutes this sentinel so the next update sends a whole
+ * value instead of diffing against a value that was never committed.
+ */
+const INVALID_BASELINE = Symbol('glaze.invalidBaseline')
+
+/** Bindings are sent as `b<index>`; map a change back to its binding slot. */
+const bindingIndexOf = (change: DataChange): number | null => {
+  const head = change.path[0]
+  if (typeof head !== 'string' || head[0] !== 'b') return null
+  const index = Number(head.slice(1))
+  return Number.isInteger(index) ? index : null
+}
 
 export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   const publicPropertyNames = config.properties ?? []
@@ -179,10 +193,18 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     }
     const boundary = binding.errorBoundary
     if (boundary == null) return
-    binding.source = sourceKey(state, index, error)
+    const source = sourceKey(state, index, error)
+    if (binding.source !== undefined && binding.source !== source) {
+      // A new error source replaced the old one. Drop the old consumer first,
+      // or it keeps the boundary errored after the new source recovers.
+      const hadConsumers = state.boundaries.consumers.has(boundary)
+      clearError(state.boundaries, boundary, binding.source, index)
+      if (hadConsumers) applyAsyncStatus(state, boundary, 'error')
+    }
+    binding.source = source
     // A repeated consumer does not re-project status, matching the old early
     // return after the error-value signal was possibly refreshed.
-    if (markError(state.boundaries, boundary, binding.source, index, error).added) {
+    if (markError(state.boundaries, boundary, source, index, error).added) {
       applyAsyncStatus(state, boundary, 'error')
     }
   }
@@ -299,6 +321,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
 
   const mount = (component: any, state: InstanceState) => {
     resetBindingStates(state.core.bindings)
+    state.effectsInstalled = false
     clearBoundaryContent(state.boundaries)
     state.events.length = 0
     state.refs.length = 0
@@ -419,10 +442,15 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   }
 
   const attach = (component: any, state: InstanceState) => {
-    // `canSplice` must mean "a splice can actually be committed". A component
-    // with `spliceArrayDataOnPath` but no group or data proxy falls to the
-    // setData fallback, which cannot carry a splice; list changes then take the
-    // whole-value path instead of being dropped by the final filter.
+    // A waiting deferred instance has no root or owner, and `ready` may have
+    // installed the effects before the platform's `attached`. Neither path may
+    // build a second set of binding effects.
+    if (!hasRoot(state.lifecycle) || state.owner == null || state.effectsInstalled) return
+    // `canSplice` must mean "a splice can actually and safely be committed". A
+    // component without a group or data proxy falls to the setData fallback,
+    // and a grouped transport without `replaceDataOnPath` can overwrite a
+    // splice with a replacement queued after the group; list changes then take
+    // the whole-value path instead of being dropped or lost.
     const transport = createDataTransport(component)
 
     const schedule = (changes: DataChange[]) => {
@@ -438,10 +466,16 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         try {
           transport.apply(pending)
         } catch (error) {
-          // `binding.previous` was advanced when this batch was scheduled, so
-          // the batch is intentionally not replayed; replay would re-apply
-          // changes that may already be committed. Surface it on the instance
-          // error and log channels instead of an async boundary.
+          // `binding.previous` was advanced when this batch was scheduled, but
+          // the platform never received it. Invalidate every baseline in the
+          // batch so the next change sends a whole value; the failed batch
+          // itself is intentionally not replayed.
+          for (const change of pending) {
+            const index = bindingIndexOf(change)
+            if (index == null) continue
+            const binding = state.core.bindings[index]
+            if (binding) binding.previous = INVALID_BASELINE
+          }
           state.error = error
           reportTransportError(error)
         }
@@ -659,6 +693,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         }
       })
     })
+    state.effectsInstalled = true
   }
 
   return Component({
@@ -682,6 +717,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           asyncStatus: config.asyncStatus,
           applyStatus: null,
           flushScheduled: false,
+          effectsInstalled: false,
           props: Object.create(null),
           propsProxy: null,
           owner: null,
@@ -820,6 +856,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         state.events.length = 0
         state.refs.length = 0
         state.applyStatus = null
+        state.effectsInstalled = false
         state.dispose?.()
         state.dispose = null
         state.owner = null

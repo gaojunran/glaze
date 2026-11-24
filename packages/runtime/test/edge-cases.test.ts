@@ -454,6 +454,51 @@ test('recovers from an errored binding and clears errored and error', async () =
   assert.equal(mergeCalls(instance).b2, null)
 })
 
+test('a replaced error source releases the old consumer', async () => {
+  const first = new Error('first')
+  first.source = 'A'
+  const second = new Error('second')
+  second.source = 'B'
+  let setPhase
+  const def = defineGlazeComponent({
+    asyncStatus: [{ index: 1, kind: 'error', boundary: 0 }],
+    data: { b0: null, b1: null, b2: null },
+    setup(ctx) {
+      const [phase, set] = createSignal(0)
+      setPhase = set
+      ctx.bind(
+        0,
+        () => {
+          if (phase() === 0) throw first
+          if (phase() === 1) throw second
+          return 'ok'
+        },
+        0,
+      )
+      ctx.bind(1, () => ctx.errored(0))
+      ctx.bind(2, () => (ctx.error(0) as Error | null)?.message ?? null)
+    },
+  })
+
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await settle()
+  assert.equal(mergeCalls(instance).b1, true)
+  assert.equal(mergeCalls(instance).b2, 'first')
+
+  // A -> B: B becomes the only consumer of the boundary.
+  setPhase(1)
+  await settle()
+  assert.equal(mergeCalls(instance).b2, 'second')
+
+  // B -> success must clear Errored; a leaked consumer for A would keep it on.
+  setPhase(2)
+  await settle()
+  assert.equal(mergeCalls(instance).b0, 'ok')
+  assert.equal(mergeCalls(instance).b1, false)
+  assert.equal(mergeCalls(instance).b2, null)
+})
+
 test('keeps a shared error source errored until every binding recovers', async () => {
   const shared = new Error('feed down')
   shared.source = 'feed'
@@ -658,7 +703,7 @@ test('a key change turns a list update into a splice', async () => {
     },
   })
 
-  const instance = createInstance(def)
+  const instance = createInstance(def, {}, { paths: true })
   def.lifetimes.attached.call(instance)
 
   setItems([{ id: 2 }])
@@ -887,6 +932,39 @@ test('defers a context component until ready and mounts it once', () => {
   assert.equal(instance.__glaze.lifecycle.phase, 'attached')
 })
 
+test('ready before attached installs the binding effects once', async () => {
+  let setCount
+  let reads = 0
+  let countReads = false
+  const def = defineGlazeComponent({
+    properties: ['glazecontext'],
+    boundaryContexts: [{ name: 'Ctx', key: 'ctx' }],
+    data: { b0: null },
+    setup(ctx) {
+      const [count, set] = createSignal(0)
+      setCount = set
+      ctx.bind(0, () => {
+        if (countReads) reads += 1
+        return count()
+      })
+    },
+  })
+
+  const instance = createInstance(def, {})
+  def.lifetimes.ready.call(instance)
+  assert.equal(instance.__glaze.lifecycle.phase, 'mounted')
+  assert.equal(instance.__glaze.effectsInstalled, true)
+
+  // The platform attach must not build a second set of effects.
+  def.lifetimes.attached.call(instance)
+  assert.equal(instance.__glaze.lifecycle.phase, 'attached')
+
+  countReads = true
+  setCount(1)
+  await tick()
+  assert.equal(reads, 1)
+})
+
 test('a deferred async component attaches before its root exists', async () => {
   let setups = 0
   const def = defineGlazeComponent({
@@ -921,6 +999,7 @@ test('a deferred async component attaches before its root exists', async () => {
   })
   await settle()
   assert.equal(setups, 0, 'attaching before ready must not run setup')
+  assert.equal(instance.__glaze.effectsInstalled, false)
   assert.equal(instance.__glaze.core.bindings.length, 0)
   // No root means no binding data: a pre-root status projection must not write
   // a transient `false` that the first mount then has to correct.
@@ -928,6 +1007,7 @@ test('a deferred async component attaches before its root exists', async () => {
 
   def.lifetimes.ready.call(instance)
   assert.equal(instance.__glaze.lifecycle.phase, 'attached')
+  assert.equal(instance.__glaze.effectsInstalled, true)
   assert.equal(setups, 1)
   await settle()
   assert.equal(mergeCalls(instance).b1, true)

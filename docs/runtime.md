@@ -184,6 +184,28 @@ this only matters for a deferred `attached` event followed by `ready` later in
 the same tick, where the projection is rerun after mount and component data is
 unchanged.
 
+### Replaced error sources release the old consumer
+
+`binding.source` remembers the last source this binding reported. When a later
+failure resolves to a different source, `markAsync` clears the binding's
+consumer for the old source before registering the new one. Without that, the
+old source kept its consumer after the new source recovered and `Errored`
+stayed true (A -> B -> success). Status is re-projected only when the boundary
+had consumers before the clear, and the new-source registration keeps its own
+projection; the test asserts `errored` and `error` are false/null after
+recovery.
+
+### Effects install once per root
+
+`InstanceState.effectsInstalled` guards `attach`. `ready` before the platform's
+`attached` mounts and installs effects while the phase is still `mounted`; the
+later `attached` still advances the phase to `attached` but skips a second set
+of binding effects. `attach` also returns early when there is no root or owner,
+so the `waiting-context` attach (before `ready`) cannot count as installed. The
+flag resets in `mount` and on `detached`, so a rebuilt root installs a fresh set
+once. The regression test updates one signal after `ready` + `attached` and
+asserts the binding read ran once.
+
 ## Trade-offs
 
 - Logging no longer reads a component-wide flag. `config.errorBoundary` is
@@ -199,7 +221,7 @@ unchanged.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 154, pass 154, fail 0
+# tests 162, pass 162, fail 0
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json (no output)
 pnpm --filter @glaze/build test

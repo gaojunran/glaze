@@ -25,8 +25,9 @@ export type DataTransportKind = 'data-group' | 'grouped' | 'set-data'
 
 export type DataTransport = {
   /**
-   * False when `apply` cannot commit a splice. Callers must then send a whole
-   * value instead of a splice; `apply` throws if a splice reaches it anyway.
+   * False when a splice is not safe to choose for a change. Callers must then
+   * send a whole value; `apply` throws when the transport has no splice API at
+   * all, but a grouped splice-only transport may still commit a lone splice.
    */
   readonly canSplice: boolean
   /** Debug label for the resolved capability path. */
@@ -43,8 +44,10 @@ const spliceUnsupported = () =>
 /**
  * Resolve the component's data-update capability once. The `DataGroup` queue is
  * preferred because replace and splice tuples share one template update. When
- * it is absent, `groupUpdates` plus the path APIs is the next best transport;
- * a splice there is only usable when `spliceArrayDataOnPath` itself exists.
+ * it is absent, `groupUpdates` plus the path APIs is the next best transport.
+ * A grouped transport without `replaceDataOnPath` queues replacements for
+ * `setData` after the group, so a mixed batch could replace a list right after
+ * splicing it; only expose `canSplice` when both path APIs exist.
  */
 export function createDataTransport(component: TransportComponent): DataTransport {
   const group = dataGroupOf(component)
@@ -61,7 +64,7 @@ export function createDataTransport(component: TransportComponent): DataTranspor
   if (replace || splice) {
     return {
       kind: 'grouped',
-      canSplice: splice,
+      canSplice: replace && splice,
       apply: (changes) => applyGrouped(component, replace, splice, changes),
     }
   }

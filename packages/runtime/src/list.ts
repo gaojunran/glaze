@@ -16,6 +16,14 @@ const equalValue = (left: unknown, right: unknown, seen: WeakMap<object, WeakSet
   if (left instanceof Date || right instanceof Date) {
     return left instanceof Date && right instanceof Date && left.getTime() === right.getTime()
   }
+  if (left instanceof RegExp || right instanceof RegExp) {
+    return (
+      left instanceof RegExp &&
+      right instanceof RegExp &&
+      left.source === right.source &&
+      left.flags === right.flags
+    )
+  }
   if (Array.isArray(left) || Array.isArray(right)) {
     if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false
     for (let index = 0; index < left.length; index += 1) {
@@ -205,6 +213,10 @@ export function listPatch(
  * single splice, then `null` so the caller sends the whole value. `canSplice`
  * is the transport capability, not the presence of `spliceArrayDataOnPath`;
  * without it a splice would be silently dropped by the setData fallback.
+ *
+ * A splice only carries the inserted rows. If a retained prefix/suffix row
+ * changed (keyed the same, so `listOps` keeps it), the splice would leave that
+ * row's stale fields in place, so fall back to the whole value instead.
  */
 export function diffList(
   previous: unknown,
@@ -217,5 +229,16 @@ export function diffList(
   if (patch) return patch
   if (!canSplice) return null
   const op = listOps(previous, next, key)
-  return op ? [{ path: [binding], splice: op }] : null
+  if (!op || !Array.isArray(previous) || !Array.isArray(next)) return null
+
+  const seen = new WeakMap<object, WeakSet<object>>()
+  for (let index = 0; index < op.index; index += 1) {
+    if (!equalValue(previous[index], next[index], seen)) return null
+  }
+  let tail = op.index + op.inserts.length
+  for (let index = op.index + op.del; index < previous.length; index += 1) {
+    if (!equalValue(previous[index], next[tail], seen)) return null
+    tail += 1
+  }
+  return [{ path: [binding], splice: op }]
 }

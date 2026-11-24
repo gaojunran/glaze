@@ -475,7 +475,7 @@ test('list bindings remember a shallow snapshot of the previous array', async ()
     },
   })
 
-  const instance = createInstance(def)
+  const instance = createInstance(def, {}, { paths: true })
   def.lifetimes.attached.call(instance)
 
   // Mutate the same array the signal was initialized with; the runtime must

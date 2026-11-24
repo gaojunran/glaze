@@ -84,6 +84,8 @@ export type InstanceState = {
   statusVersion: [() => number, (value: number) => void]
   applyStatus: ((index: number, value: unknown) => void) | null
   flushScheduled: boolean
+  /** True once a root's binding effects are installed; reset on mount/detach. */
+  effectsInstalled: boolean
   props: Record<string, [() => unknown, (value: unknown) => void]>
   propsProxy: GlazeProps | null
   owner: ReturnType<typeof getOwner>

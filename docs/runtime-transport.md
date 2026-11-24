@@ -41,17 +41,23 @@ Resolution order and splice capability:
 | Rank | Transport | Detected by | `canSplice` |
 | --- | --- | --- | --- |
 | 1 | `data-group` | `Component.getDataProxy(component)` or `component._$dataGroup` with `getChanges`/`setChanges`/`applyDataUpdates` | yes |
-| 2 | `grouped` | `groupUpdates` plus `replaceDataOnPath` and/or `spliceArrayDataOnPath` | yes only when `spliceArrayDataOnPath` exists |
+| 2 | `grouped` | `groupUpdates` plus `replaceDataOnPath` and/or `spliceArrayDataOnPath` | yes only when both path APIs exist |
 | 3 | `set-data` | plain `setData` | no |
 
-`canSplice` means "a splice can actually be committed by this transport", not
+`canSplice` means "a splice can safely be chosen for this change batch", not
 "the component happens to expose `spliceArrayDataOnPath`". `applyBinding`
 therefore asks `transport.canSplice` and falls back to the whole value when it
 is false. `apply` still validates defensively: a splice handed to a transport
-that cannot commit one throws
+with no splice API at all throws
 `[glaze] data transport cannot commit a splice; send the whole value instead`
 instead of being filtered out. The grouped path validates before calling
 `groupUpdates`, so a rejected change cannot leave a partially queued update.
+
+A grouped transport with `spliceArrayDataOnPath` but no `replaceDataOnPath`
+splices inside the group and defers replacements to `setData` afterwards. A
+mixed batch (whole-list replacement plus insert) would then lose the splice, so
+`canSplice` stays false there; `apply` can still commit a lone splice, but
+`diffList` chooses the whole-value path for structural changes.
 
 The data-group path keeps another writer's queued changes and appends the
 runtime's entries in glass-easel's own tuple format
@@ -99,16 +105,22 @@ the separation between payload and baseline.
 `applyBinding` advances `state.previous` when the change is scheduled. A
 transport failure is therefore intentionally **not replayed**: replaying would
 re-apply changes that may already have been committed. The catch sets
-`state.error` and logs through `reportTransportError`; it deliberately does not
-call `markAsync` or touch loading/error boundaries. The regression test makes
-`applyDataUpdates` throw, asserts one log and `state.error`, then checks that
-the next change flushes exactly once more.
+`state.error`, logs through `reportTransportError`, and replaces the baseline of
+every binding in the failed batch with an invalid-baseline sentinel. The next
+change for those bindings sends the whole value instead of diffing against a
+value the platform never received. It deliberately does not call `markAsync` or
+touch loading/error boundaries. The regression test makes `applyDataUpdates`
+throw once, then asserts the next list update is a whole-value tuple rather
+than a splice based on the uncommitted baseline.
 
 ## List helpers
 
 - `diffList(previous, next, key, binding, canSplice)` owns the
   patch → splice → `null` decision; `applyBinding` uses `null` to send the whole
-  value. `listPatch` and `listOps` remain separate algorithms.
+  value. `listPatch` and `listOps` remain separate algorithms. A splice only
+  carries inserted rows, so `diffList` also deep-compares every retained
+  prefix/suffix row with the existing `equalValue` helper; any changed retained
+  row falls back to the whole value.
 - `listOps` returns `ListOp | null` (it only ever produced one operation).
 - `listPatch` reuses one `WeakMap` comparison cache per call instead of
   allocating one per field; cycle protection is unchanged.
@@ -125,9 +137,11 @@ work had higher value.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 129, pass 129, fail 0
+# tests 162, pass 162, fail 0
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json, exit 0
+pnpm --filter @glaze/build test
+# tests 120, pass 120, fail 0
 ```
 
 Capability combinations covered by `test/transport.test.ts`:
@@ -136,8 +150,8 @@ Capability combinations covered by `test/transport.test.ts`:
 | --- | --- |
 | full data proxy | DataGroup queue/tuple/receiver test |
 | group + replace only | replace applied; splice rejected before grouping |
-| group + splice only | splice committed; replace falls back to `setData` |
-| group + replace + splice | both path APIs used |
+| group + splice only | lone splice committed; `canSplice` false, so whole-value diff |
+| group + replace + splice | both path APIs used; mixed batch keeps group order |
 | no path APIs | `setData` with `dataKey`; splice rejected |
 | splice API without group/proxy | runtime sends the whole list, no silent drop |
 

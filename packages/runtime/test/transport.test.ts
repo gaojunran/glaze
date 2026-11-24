@@ -141,7 +141,7 @@ test('groupUpdates + replaceDataOnPath cannot commit a splice', () => {
   assert.deepEqual(replacements, [])
 })
 
-test('groupUpdates + spliceArrayDataOnPath commits splices and setDatas replaces', () => {
+test('groupUpdates + spliceArrayDataOnPath commits a lone splice but reports no safe capability', () => {
   const ops = []
   const calls = []
   const component = {
@@ -158,7 +158,10 @@ test('groupUpdates + spliceArrayDataOnPath commits splices and setDatas replaces
 
   const transport = createDataTransport(component)
   assert.equal(transport.kind, 'grouped')
-  assert.equal(transport.canSplice, true)
+  // Replacements are deferred to setData after the group, so a batch that also
+  // splices could lose the splice. `canSplice` is false until
+  // `replaceDataOnPath` can keep both shapes inside one group.
+  assert.equal(transport.canSplice, false)
 
   transport.apply([{ path: ['b0'], splice: { index: 1, del: 1, inserts: [{ id: 9 }] } }])
   assert.deepEqual(ops, [{ path: ['b0'], index: 1, del: 1, inserts: [{ id: 9 }] }])
@@ -194,6 +197,61 @@ test('groupUpdates + replace + splice uses the path APIs for both shapes', () =>
 
   assert.deepEqual(replacements, [[['b0', 0, 'done'], true]])
   assert.deepEqual(ops, [{ path: ['b1'], index: 0, del: 0, inserts: [{ id: 1 }] }])
+})
+
+test('grouped replace + splice applies a mixed batch in order inside the group', () => {
+  const data = { b0: [{ id: 1 }] }
+  const component = {
+    setData() {
+      assert.fail('setData must not run when both path APIs exist')
+    },
+    groupUpdates(run) {
+      run()
+    },
+    replaceDataOnPath(path, value) {
+      data[path[0]] = value
+    },
+    spliceArrayDataOnPath(path, index, del, inserts) {
+      data[path[0]].splice(index, del, ...inserts)
+    },
+  }
+
+  const transport = createDataTransport(component)
+  assert.equal(transport.canSplice, true)
+  transport.apply([
+    { path: ['b0'], value: [{ id: 1 }, { id: 2 }] },
+    { path: ['b0'], splice: { index: 0, del: 0, inserts: [{ id: 0 }] } },
+  ])
+  assert.deepEqual(data.b0, [{ id: 0 }, { id: 1 }, { id: 2 }])
+})
+
+test('a splice-only grouped transport falls back to the whole list, keeping data', () => {
+  const data = { b0: [{ id: 1, title: 'old' }] }
+  const component = {
+    setData(update) {
+      Object.assign(data, update)
+    },
+    groupUpdates(run) {
+      run()
+    },
+    spliceArrayDataOnPath(path, index, del, inserts) {
+      data[path[0]].splice(index, del, ...inserts)
+    },
+  }
+
+  const transport = createDataTransport(component)
+  assert.equal(transport.canSplice, false)
+
+  // A structural change that also edits a retained row. Choosing a splice here
+  // would drop the title edit and a replacement after the group would drop the
+  // insert, so the safe capability keeps the whole-value path.
+  const next = [
+    { id: 1, title: 'new' },
+    { id: 2, title: 'two' },
+  ]
+  assert.equal(diffList(data.b0, next, 'id', 'b0', transport.canSplice), null)
+  transport.apply([{ path: ['b0'], value: next }])
+  assert.deepEqual(data.b0, next)
 })
 
 test('plain setData transport rejects a splice instead of dropping it', () => {
@@ -246,7 +304,7 @@ test('a splice without a group or data proxy replaces the whole list', async () 
   assert.deepEqual(instance.calls.at(-1), { b0: [{ id: 1 }, { id: 9 }, { id: 3 }] })
 })
 
-test('a grouped splice transport keeps structural list changes as splices', async () => {
+test('a grouped splice-only transport replaces structural list changes with the whole list', async () => {
   let setItems
   const def = defineGlazeComponent({
     data: { b0: null },
@@ -264,8 +322,10 @@ test('a grouped splice transport keeps structural list changes as splices', asyn
   setItems([{ id: 1 }, { id: 9 }, { id: 3 }])
   await tick()
 
-  assert.deepEqual(instance.ops, [{ path: ['b0'], index: 1, del: 1, inserts: [{ id: 9 }] }])
-  assert.equal(instance.calls.length, 1)
+  // Without `replaceDataOnPath`, a replacement queued after the group could
+  // overwrite the splice, so the transport reports no safe splice capability.
+  assert.deepEqual(instance.ops, [])
+  assert.deepEqual(instance.calls.at(-1), { b0: [{ id: 1 }, { id: 9 }, { id: 3 }] })
 })
 
 test('*this list updates send a detached, unprojected payload', async () => {
@@ -362,12 +422,72 @@ test('a throwing transport reports the failure and does not replay the batch', a
     assert.equal(instance.__glaze.error, failure)
     assert.ok(log.errors.some((args) => String(args[0]).includes('data transport failed')))
 
-    // `pending` was cleared and `previous` already advanced: the failed batch
-    // is gone, and the next change flushes once on its own.
+    // `pending` was cleared and the failed batch is not replayed; the next
+    // change flushes once on its own, from an invalidated baseline.
     setCount(2)
     await tick()
     assert.equal(applies, 2)
     assert.equal(instance.calls.length, 1)
+  } finally {
+    log.restore()
+  }
+})
+
+test('a failed flush invalidates the baselines of its bindings', async () => {
+  let setItems
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    setup(ctx) {
+      const [items, set] = createSignal([{ id: 1 }])
+      setItems = set
+      ctx.bind(0, () => items())
+    },
+  })
+
+  const instance = createInstance(def, {}, { groupUpdates: false, splice: false })
+  const failure = new Error('transport failed')
+  let applies = 0
+  const queue = []
+  const batches = []
+  instance._$dataGroup = {
+    getChanges: () => queue,
+    setChanges: (changes) => {
+      queue.splice(0, queue.length, ...changes)
+    },
+    applyDataUpdates: () => {
+      applies += 1
+      batches.push(queue.slice())
+      // Consume the batch before failing: a real group does not keep it for a
+      // replay either.
+      queue.length = 0
+      if (applies === 1) throw failure
+    },
+  }
+
+  const log = captureConsoleError()
+  try {
+    def.lifetimes.attached.call(instance)
+
+    // The structural change is a splice, but the flush fails before commit.
+    setItems([{ id: 1 }, { id: 2 }])
+    await tick()
+    assert.equal(applies, 1)
+    assert.equal(instance.__glaze.error, failure)
+
+    // The next diff must not use the uncommitted splice baseline (that would
+    // insert only id 3 and leave the platform without id 2).
+    setItems([{ id: 1 }, { id: 2 }, { id: 3 }])
+    await tick()
+    assert.equal(applies, 2)
+    assert.deepEqual(batches.at(-1), [
+      [
+        ['b0'],
+        [{ id: 1 }, { id: 2 }, { id: 3 }],
+        undefined,
+        undefined,
+      ],
+    ])
   } finally {
     log.restore()
   }
@@ -392,4 +512,99 @@ test('diffList picks patch, splice, or whole value in one place', () => {
   assert.equal(diffList(before, [...before, inserted], 'id', 'b0', false), null)
   assert.equal(diffList([1, 2], [1, 3], 'x', 'b0', true), null)
   assert.equal(diffList(before, before, '*this', 'b0', true), null)
+})
+
+test('diffList sends the whole list when a splice would keep a changed row', () => {
+  const before = [{ id: 1, title: 'old' }]
+  const next = [
+    { id: 1, title: 'new' },
+    { id: 2, title: 'two' },
+  ]
+  // Row 1 is retained by the splice, so its title edit needs the whole value.
+  assert.equal(diffList(before, next, 'id', 'b0', true), null)
+
+  // A changed suffix row has the same problem.
+  assert.equal(
+    diffList(
+      [{ id: 1 }, { id: 2, title: 'old' }],
+      [{ id: 0, title: 'new' }, { id: 2, title: 'two' }],
+      'id',
+      'b0',
+      true,
+    ),
+    null,
+  )
+
+  // A pure insert with unchanged retained rows still splices.
+  const inserted = { id: 2, title: 'two' }
+  assert.deepEqual(diffList(before, [...before, inserted], 'id', 'b0', true), [
+    { path: ['b0'], splice: { index: 1, del: 0, inserts: [inserted] } },
+  ])
+
+  // Retained rows compare with the full helper, not a shallow field check.
+  assert.equal(
+    diffList(
+      [{ id: 1, at: new Date(0), pattern: /a/g }],
+      [{ id: 1, at: new Date(1), pattern: /a/g }, { id: 2 }],
+      'id',
+      'b0',
+      true,
+    ),
+    null,
+  )
+  assert.equal(
+    diffList(
+      [{ id: 1, pattern: /a/g }],
+      [{ id: 1, pattern: /b/g }, { id: 2 }],
+      'id',
+      'b0',
+      true,
+    ),
+    null,
+  )
+})
+
+test('an integration flush keeps a retained row edit and the inserted row', async () => {
+  let setItems
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    setup(ctx) {
+      const [items, set] = createSignal([{ id: 1, title: 'old' }])
+      setItems = set
+      ctx.bind(0, () => items())
+    },
+  })
+
+  const instance = createInstance(def)
+  const data = { b0: instance.calls[0].b0 }
+  const queue = []
+  let applied = false
+  instance._$dataGroup = {
+    getChanges: () => queue,
+    setChanges: (changes) => {
+      queue.splice(0, queue.length, ...changes)
+    },
+    applyDataUpdates: () => {
+      applied = true
+      for (const [path, value, index, del] of queue) {
+        if (typeof index === 'number') data.b0.splice(index, del, ...value)
+        else data.b0 = value
+      }
+      queue.length = 0
+    },
+  }
+  def.lifetimes.attached.call(instance)
+
+  setItems([
+    { id: 1, title: 'new' },
+    { id: 2, title: 'two' },
+  ])
+  await tick()
+
+  assert.equal(applied, true)
+  assert.deepEqual(data.b0, [
+    { id: 1, title: 'new' },
+    { id: 2, title: 'two' },
+  ])
 })
