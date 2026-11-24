@@ -26,6 +26,9 @@ importers:
       '@glaze/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
+      '@glaze/store':
+        specifier: workspace:*
+        version: link:../../packages/store
 
   packages/build:
     dependencies:
@@ -41,6 +44,9 @@ importers:
       '@glaze/shared':
         specifier: workspace:*
         version: link:../shared
+      '@glaze/store':
+        specifier: workspace:*
+        version: link:../store
       esbuild:
         specifier: ^0.28.0
         version: 0.28.2
@@ -97,6 +103,12 @@ importers:
         version: 1.2.1
 
   packages/shared: {}
+
+  packages/store:
+    dependencies:
+      solid-js:
+        specifier: ^2.0.3
+        version: 2.0.3
 
   packages/vite-plugin:
     dependencies:

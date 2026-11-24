@@ -14,6 +14,7 @@
     "@glaze/compiler": "workspace:*",
     "@glaze/runtime": "workspace:*",
     "@glaze/shared": "workspace:*",
+    "@glaze/store": "workspace:*",
     "esbuild": "^0.28.0",
     "solid-js": "^2.0.3",
     "@babel/parser": "^7.28.0"

@@ -43,6 +43,7 @@ Large files were split by responsibility rather than by size alone:
 | | `provider.ts` | inline Solid context provider bridge and boundary re-entry |
 | | `ref.ts` | node handle: measurement, descendant queries and scrolling |
 | | `types.ts` | runtime/public types |
+| `@glaze/store` | `index.ts` | lazy app-wide setup stores over `solid-js/store`, shared registry |
 | `@glaze/shared` | `strings.ts` | `kebabCase`, shared by compiler and build naming |
 
 `glaze.config` discovery accepts `glaze.config.mts`, `.ts` and `.mjs`. The

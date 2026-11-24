@@ -27,7 +27,7 @@ import {
   reportTransportError,
   SCALAR_BINDING_GROUP,
 } from './data.ts'
-import { diffList, projectList, snapshotList } from './list.ts'
+import { diffList, projectList, snapshotList, trackListValue } from './list.ts'
 import { isContextReader } from './provider.ts'
 import { createNodeRef } from './ref.ts'
 import {
@@ -706,8 +706,15 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     state.dispose = createRoot((dispose) => {
       const setupContext: GlazeContext = {
         bind(index, fn, asyncBoundary = null, errorBoundary = asyncBoundary) {
+          // Deep-read arrays inside the binding effect. A signal replaces an
+          // array, but a store mutates it in place; without these reads a
+          // `For` over `store.items` would keep the first snapshot.
+          const read = () => {
+            const value = fn()
+            return Array.isArray(value) ? trackListValue(value, listFields[index]) : value
+          }
           state.core.bindings[index] = createBindingState({
-            raw: fn,
+            raw: read,
             loadingBoundary: asyncBoundary,
             errorBoundary,
           })

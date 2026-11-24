@@ -188,15 +188,15 @@ with one check, and because it runs before the staged write. Static-to-static
 duplicates are rejected for the same reason: a silent last-wins copy hides a
 config error.
 
-Generated modules bundle with `minify: true` and resolve `solid-js` and
-`@glaze/runtime` through one shared `glaze-runtime/index.js` module. Components
+Generated modules bundle with `minify: true` and resolve `solid-js` and the
+Glaze packages through one shared `glaze-runtime/index.js` module. Components
 are 0.6–3.4 KB each; the shared module is about 47 KB, so total runtime size is
 roughly `47 KB + n × 1 KB` instead of `n × 30 KB`.
 
 ## Shared runtime
 
-Every component bundle externalizes `solid-js`, `@glaze/runtime` and
-`@glaze/runtime/mini` to a relative `require()` of
+Every component bundle externalizes `solid-js`, `@glaze/runtime`,
+`@glaze/runtime/mini` and `@glaze/store` to a relative `require()` of
 `glaze-runtime/index.js`. The shim is generated per build by collecting the
 named imports from the generated modules and their bundled helper files, then
 bundling `solid-js` and the Glaze runtime once with the builder's own copies.
@@ -205,7 +205,8 @@ Solid 2 exposes `createStore` from the `solid-js` root entry; there is no
 
 Sharing is semantic as well as a size optimization: `createRoot`, `getOwner`
 and `runWithOwner` must come from the same Solid module instance or effects
-lose their owner and never clean up.
+lose their owner and never clean up, and `defineStore` must use the same
+registry or two component bundles would create two stores with the same id.
 
 The builder rejects a namespace/default import from a shared specifier because
 it cannot enumerate the names to re-export, and rejects a `static` file that

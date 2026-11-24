@@ -949,7 +949,7 @@ test('sizes the data object to the binding count', () => {
   assert.equal(Object.keys(data).length, 0)
 })
 
-test('emits listBindings only for keyed loops', () => {
+test('prop-only loops stay property-driven and need no list binding', () => {
   const keyed = compileComponent(`
     export default function Page(props) {
       return <For each={props.items} key="id">{(item) => <text>{item.name}</text>}</For>
@@ -964,6 +964,20 @@ test('emits listBindings only for keyed loops', () => {
   `)
   assert.ok(unkeyed.js.includes('listBindings: {}'))
   assert.doesNotMatch(unkeyed.wxml, /wx:key=/)
+})
+
+test('a non-prop unkeyed loop gets a whole-list binding without wx:key', () => {
+  const result = compileComponent(`
+    import { createSignal } from 'solid-js'
+    export default function Page() {
+      const [items] = createSignal([{ id: 1, title: 'one' }])
+      return (
+        <For each={items()}>{(item) => <text>{item.title}</text>}</For>
+      )
+    }
+  `)
+  assert.match(result.js, /listBindings: \{"\d+":"\*this"\}/)
+  assert.doesNotMatch(result.wxml, /wx:key=/)
 })
 
 test('omits eventProps when the component takes no event props', () => {

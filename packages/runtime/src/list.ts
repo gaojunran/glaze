@@ -9,6 +9,54 @@ const keyOf = (item: unknown, key: string) =>
 
 const isObjectItem = (item: unknown) => item !== null && typeof item === 'object'
 
+const isPlainObject = (value: object) => {
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+
+/**
+ * Read a list deeply inside a tracking scope.
+ *
+ * A plain signal only changes when the array is replaced, but a Solid store
+ * changes in place: `store.items.push(...)` or `store.items[0].done = true`
+ * updates the proxy without replacing the array. A list binding that only
+ * reads `store.items` would therefore keep rendering the old rows. Reading the
+ * length, each index and each plain-object field subscribes the binding to the
+ * store's fine-grained updates; for a non-reactive array these reads are
+ * ordinary property access and change nothing.
+ */
+export const trackListValue = <T>(value: T, fields?: readonly string[]): T => {
+  if (Array.isArray(value)) trackValue(value, new Set(), 0, fields)
+  return value
+}
+
+const trackValue = (
+  value: unknown,
+  seen: Set<object>,
+  depth: number,
+  fields?: readonly string[],
+) => {
+  if (value === null || typeof value !== 'object' || depth > 8) return
+  const object = value as object
+  if (seen.has(object)) return
+  seen.add(object)
+  if (Array.isArray(value)) {
+    const length = value.length
+    for (let index = 0; index < length; index += 1) {
+      trackValue(value[index], seen, depth + 1, fields)
+    }
+    return
+  }
+  if (!isPlainObject(object)) return
+  // A projected keyed list only needs the fields WXML reads. Reading other
+  // store fields would wake the binding for data the view never shows and
+  // force a full-list fallback. Nested objects are tracked in full.
+  const keys = depth === 1 && fields ? fields : Object.keys(object)
+  for (const key of keys) {
+    trackValue((value as Record<string, unknown>)[key], seen, depth + 1)
+  }
+}
+
 /** Structural equality, used to ignore unchanged nested values after cloning. */
 const equalValue = (left: unknown, right: unknown, seen: WeakMap<object, WeakSet<object>>): boolean => {
   if (Object.is(left, right)) return true

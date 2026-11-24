@@ -66,11 +66,13 @@ glass-easel 组件，不替换平台渲染器。
 - 数据：keyed 列表只把 WXML 真正读取的字段投影进视图层，未使用的行数据
   不再穿过 `setData` 边界；Glaze 到 Glaze 的子组件 props 以单个内部对象
   属性穿过组件边界；
-- 验证：624 个单元测试（shared 2、runtime 200、compiler 299、build 123）、
-  glass-easel 渲染测试和 10 个 minidev e2e 用例。
+- Store：`@glaze/store` 在 `solid-js/store` 上提供懒加载、应用级的 setup
+  store，每个 id 在所有组件 bundle 之间共享同一个实例；
+- 验证：635 个单元测试（shared 2、store 8、runtime 202、compiler 300、
+  build 123）、glass-easel 渲染测试和 11 个 minidev e2e 用例。
 
-已知限制记录在 [编译器](docs/compiler.md)、[构建](docs/build.md) 和
-[优化](docs/optimizations.md) 中。编译器与运行时的结构重构记录在
+已知限制记录在 [编译器](docs/compiler.md)、[Store](docs/store.md)、
+[构建](docs/build.md) 和 [优化](docs/optimizations.md) 中。编译器与运行时的结构重构记录在
 [代码质量](docs/code-quality-refactor.md)。
 
 ## 基准测试
@@ -144,6 +146,7 @@ Chromium 1248）：
 | 包 | 作用 |
 | --- | --- |
 | `@glaze/compiler` | Solid JSX 到 WXML + binding runtime |
+| `@glaze/store` | 基于 `solid-js/store` 的懒加载应用级 store |
 | `@glaze/build` | `glaze build`：项目、页面和分包输出 |
 | `@glaze/shared` | 少量共享辅助函数（字符串/路径命名） |
 | `@glaze/runtime` | 每个实例的 Solid root 与 binding 桥 |
@@ -156,6 +159,7 @@ Chromium 1248）：
 - [源码布局](docs/source-layout.md)
 - [编译器](docs/compiler.md)
 - [运行时边界行为](docs/runtime.md)
+- [Store](docs/store.md)
 - [实现计划](docs/plan.md)
 - [构建](docs/build.md)
 - [单文件 snippet](docs/snippet.md)

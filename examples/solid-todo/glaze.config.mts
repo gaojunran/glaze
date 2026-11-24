@@ -20,6 +20,7 @@ const config: GlazeConfig = {
     'pages/tailwind/index': 'TailwindCase.tsx',
     'pages/context/index': 'ContextPage.tsx',
     'pages/async/index': 'AsyncPage.tsx',
+    'pages/store/index': 'StorePage.tsx',
   },
   subpackages: [
     { root: 'pkg', pages: { 'pages/sub/index': 'pkg/PkgPage.tsx' }, independent: true },

@@ -26,8 +26,9 @@ export const SHARED_SPECIFIERS = new Set([
   'solid-js',
   '@glaze/runtime',
   '@glaze/runtime/mini',
+  '@glaze/store',
 ])
-const SHARED_SPECIFIER_RE = /^(@glaze\/runtime(?:\/mini)?|solid-js)$/
+const SHARED_SPECIFIER_RE = /^(@glaze\/(?:runtime(?:\/mini)?|store)|solid-js)$/
 export const SHARED_MODULE = 'glaze-runtime/index.js'
 
 /** Compute the literal require() path a component uses to reach the shared runtime. */

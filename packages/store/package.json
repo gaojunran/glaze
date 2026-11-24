@@ -1,0 +1,17 @@
+{
+  "name": "@glaze/store",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pinia-style lazy stores on Solid signals for Glaze mini-programs",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "solid-js": "^2.0.3"
+  },
+  "scripts": {
+    "test": "node --conditions=browser --test test/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

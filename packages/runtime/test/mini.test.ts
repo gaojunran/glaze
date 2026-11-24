@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict'
 import test, { after } from 'node:test'
-import { createContext, createMemo, createSignal, createStore, NotReadyError } from 'solid-js'
+import {
+  createContext,
+  createEffect,
+  createMemo,
+  createRoot,
+  createSignal,
+  createStore,
+  flush,
+  NotReadyError,
+} from 'solid-js'
 import {
   defineGlazeComponent,
   listOps,
@@ -15,6 +24,7 @@ import {
   usePageSize,
   usePageVisible,
 } from '../src/mini.ts'
+import { trackListValue } from '../src/list.ts'
 import { withProvider } from '../src/provider.ts'
 
 const originalComponent = globalThis.Component
@@ -1105,6 +1115,61 @@ test('store nested fields and store arrays share one runtime flush', async () =>
   assert.deepEqual(instance.ops, [
     { path: ['b1'], index: 1, del: 0, inserts: [{ id: 2, title: 'two' }] },
   ])
+})
+
+test('trackListValue reads only the projected fields', () => {
+  const [state, setState] = createStore({
+    rows: [{ id: 1, title: 'one', extra: 0 }],
+  })
+  let runs = 0
+  createRoot((dispose) => {
+    createEffect(
+      () => {
+        runs += 1
+        trackListValue(state.rows, ['id', 'title'])
+      },
+      { effect() {} },
+    )
+    return dispose
+  })
+  flush()
+  assert.equal(runs, 1)
+
+  setState((draft) => {
+    draft.rows[0].extra = 1
+  })
+  flush()
+  assert.equal(runs, 1)
+
+  setState((draft) => {
+    draft.rows[0].title = 'two'
+  })
+  flush()
+  assert.equal(runs, 2)
+})
+
+test('an unkeyed store array re-sends after an in-place mutation', async () => {
+  let setStore
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    setup(ctx) {
+      const [state, set] = createStore({ rows: [{ id: 1, title: 'one' }] })
+      setStore = set
+      ctx.bind(0, () => state.rows)
+    },
+  })
+
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+
+  setStore((draft) => {
+    draft.rows.push({ id: 2, title: 'two' })
+  })
+  await tick()
+
+  const last = instance.calls.at(-1)
+  assert.equal(last.b0.length, 2)
+  assert.equal(last.b0[1].title, 'two')
 })
 
 test('tracks async pending and errored bindings for Loading and Errored', async () => {

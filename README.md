@@ -73,11 +73,14 @@ Working spike, not a production framework. It covers:
 - data: keyed lists project only the fields WXML reads, so unused row payload
   never crosses the `setData` boundary; Glaze-to-Glaze child props cross the
   component boundary as one internal object property;
-- validation: 624 unit tests (shared 2, runtime 200, compiler 299, build 123),
-  glass-easel rendering tests and 10 minidev e2e cases.
+- stores: `@glaze/store` adds lazy, app-wide setup stores over
+  `solid-js/store`, with one instance per id across every component bundle;
+- validation: 635 unit tests (shared 2, store 8, runtime 202, compiler 300,
+  build 123), glass-easel rendering tests and 11 minidev e2e cases.
 
 Known limits are documented in [Compiler](docs/compiler.md),
-[Build](docs/build.md) and [Optimizations](docs/optimizations.md). The
+[Store](docs/store.md), [Build](docs/build.md) and
+[Optimizations](docs/optimizations.md). The
 compiler/runtime structural refactor is recorded in
 [Code quality](docs/code-quality-refactor.md).
 
@@ -162,6 +165,7 @@ fallback rather than pretending the compiler can cover everything.
 | `@glaze/build` | `glaze build`: project, page and subpackage output |
 | `@glaze/shared` | Small shared helpers (string/path naming) |
 | `@glaze/runtime` | per-instance Solid root and binding bridge |
+| `@glaze/store` | lazy app-wide stores over `solid-js/store` |
 | `@glaze/vite-plugin` | Vite build bridge |
 | `examples/solid-todo` | counter, todo list, async/context/Tailwind probes and benchmarks |
 
@@ -171,6 +175,7 @@ fallback rather than pretending the compiler can cover everything.
 - [Source layout](docs/source-layout.md)
 - [Compiler](docs/compiler.md)
 - [Runtime edge behavior](docs/runtime.md)
+- [Store](docs/store.md)
 - [Implementation plan](docs/plan.md)
 - [Build](docs/build.md)
 - [Single-file snippets](docs/snippet.md)

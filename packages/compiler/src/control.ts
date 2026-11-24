@@ -564,7 +564,11 @@ export function compileFor(node, ctx, scope) {
     if (scope) {
       eachExpr = eachCode
     } else {
-      listBinding = ctx.addBinding(each, key)
+      // An unkeyed list still gets its own list binding. The runtime cannot
+      // patch it by identity, but treating it as a list (rather than a scalar
+      // binding inside a group) lets a store mutation trigger a full-array
+      // update without re-sending unrelated scalar updates.
+      listBinding = ctx.addBinding(each, key ?? LIST_KEY_WHOLE)
       eachExpr = bindingKey(listBinding)
       if (key && key !== LIST_KEY_WHOLE) ctx.bindings[listBinding].listFields = [key]
       else if (key === LIST_KEY_WHOLE) ctx.listProjectionBlocked.add(listBinding)
