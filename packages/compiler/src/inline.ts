@@ -128,6 +128,206 @@ export function substituteInlineProps(node, propsParam, propMap, name) {
   return visit(node)
 }
 
+function resolveInlineTarget(ctx, name, source) {
+  const resolved = ctx.resolveComponent(name, source, ctx.currentFile)
+  const childSource = typeof resolved === 'string' ? resolved : resolved?.source
+  if (!childSource) return null
+  const childFile = typeof resolved === 'object' ? resolved.file ?? ctx.currentFile : ctx.currentFile
+  const identity = childFile ?? `${ctx.currentFile ?? ''}:${source}`
+  if (ctx.inlineStack.includes(identity)) return null
+  return { childSource, childFile, identity }
+}
+
+/**
+ * Snapshot the compiler state an inline attempt mutates before it can fail or
+ * fall back to a component boundary, so the parent never inherits the child's
+ * imports or WXS usage.
+ */
+function captureInlineImports(ctx) {
+  return {
+    imports: new Map(ctx.imports),
+    knownImports: new Set(ctx.knownImports),
+    extraImports: ctx.extraImports.length,
+    usesWxs: ctx.usesWxs,
+    usesWxsValue: ctx.usesWxsValue,
+  }
+}
+
+function restoreInlineImports(ctx, snapshot) {
+  ctx.imports = snapshot.imports
+  ctx.knownImports = snapshot.knownImports
+  ctx.extraImports.length = snapshot.extraImports
+  ctx.usesWxs = snapshot.usesWxs
+  ctx.usesWxsValue = snapshot.usesWxsValue
+}
+
+function parseInlineChild(childSource) {
+  try {
+    return parseComponent(childSource)
+  } catch {
+    return null
+  }
+}
+
+function collectJsxComponents(jsx) {
+  const used = new Set()
+  walkAst(jsx, (item) => {
+    if (t.isJSXElement(item) && t.isJSXIdentifier(item.openingElement.name)) {
+      used.add(item.openingElement.name.name)
+    }
+  })
+  return used
+}
+
+function adoptSolidImports(ctx, node) {
+  for (const specifier of node.specifiers) {
+    const local = specifier.local.name
+    const existing = ctx.imports.get(local)
+    if (existing !== undefined) {
+      if (existing !== 'solid-js') return false
+      continue
+    }
+    ctx.imports.set(local, 'solid-js')
+    ctx.knownImports.add(local)
+    if (t.isImportSpecifier(specifier)) {
+      const imported = importedName(specifier.imported)
+      const alias = imported === local ? '' : ` as ${local}`
+      ctx.extraImports.push(`import { ${imported}${alias} } from "solid-js";`)
+    } else if (t.isImportDefaultSpecifier(specifier)) {
+      ctx.extraImports.push(`import ${local} from "solid-js";`)
+    } else {
+      ctx.extraImports.push(`import * as ${local} from "solid-js";`)
+    }
+  }
+  return true
+}
+
+function adoptRelativeImports(ctx, node, usedAsComponent, childFile) {
+  if (!node.source.value.startsWith('.')) return false
+  const locals = node.specifiers.map((specifier) => specifier.local.name)
+  if (locals.some((local) => !/^[A-Z]/.test(local))) return false
+  for (const local of locals) {
+    const existing = ctx.imports.get(local)
+    if (existing !== undefined && existing !== node.source.value) return false
+    ctx.imports.set(local, node.source.value)
+    ctx.knownImports.add(local)
+  }
+  // A relative import that is only used in JSX is handled by the component
+  // resolver. Anything else (a config object, helper, etc.) still needs a
+  // real import in the generated parent module, rewritten from the child's
+  // directory to the parent's directory.
+  if (ctx.currentFile && locals.some((local) => !usedAsComponent.has(local))) {
+    const childDir = path.dirname(childFile)
+    const parentDir = path.dirname(ctx.currentFile)
+    const absolute = path.resolve(childDir, node.source.value)
+    let relative = path.relative(parentDir, absolute).split(path.sep).join('/')
+    if (!relative.startsWith('.')) relative = `./${relative}`
+    const cloned = t.cloneNode(node, true)
+    cloned.source = t.stringLiteral(relative)
+    ctx.extraImports.push(codeOf(cloned))
+  }
+  return true
+}
+
+/**
+ * Adopt the child's import declarations into the parent module. Only solid-js
+ * and relative imports are supported; anything else keeps the child at a
+ * component boundary.
+ */
+function adoptInlineImports(ctx, body, usedAsComponent, childFile) {
+  for (const node of body) {
+    if (!t.isImportDeclaration(node)) continue
+    const adopted =
+      node.source.value === 'solid-js'
+        ? adoptSolidImports(ctx, node)
+        : adoptRelativeImports(ctx, node, usedAsComponent, childFile)
+    if (!adopted) return false
+  }
+  return true
+}
+
+function declaresInlineBindings(body) {
+  return body.some(
+    (item) =>
+      t.isVariableDeclaration(item) ||
+      t.isFunctionDeclaration(item) ||
+      t.isExpressionStatement(item) ||
+      t.isExportNamedDeclaration(item) ||
+      t.isExportAllDeclaration(item),
+  )
+}
+
+/**
+ * Turn the parent JSX attributes into prop getters for the child block. A
+ * missing required prop expression (or one the child cannot receive) rejects
+ * the inline attempt instead of failing later.
+ */
+function collectInlineProps(node, ctx) {
+  const propGetters = []
+  for (const attr of node.openingElement.attributes) {
+    if (!t.isJSXAttribute(attr)) return null
+    const attrName = t.isJSXIdentifier(attr.name) ? attr.name.name : null
+    if (!attrName) return null
+    if (attrName === 'key') continue
+    if (attrName === 'ref') return null
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(attrName)) return null
+
+    const expression = getExpression(attr)
+    if (expression == null) continue
+    if (containsJsx(expression)) {
+      throw new Error('JSX values are not supported in component props; use children instead')
+    }
+    ctx.notePropReads(expression)
+    propGetters.push({ name: attrName, code: codeOf(expression), expression })
+  }
+  return propGetters
+}
+
+/**
+ * Compile the inlined child with its children/props context installed and the
+ * parent's context restored even when compilation throws.
+ */
+function compileInlineBody(ctx, settings, compile) {
+  const previous = {
+    block: ctx.currentBlock,
+    file: ctx.currentFile,
+    children: ctx.inlineChildren,
+    propsParam: ctx.inlinePropsParam,
+    used: ctx.inlineChildrenUsed,
+    count: ctx.inlineChildrenCount,
+  }
+  if (settings.block !== undefined) ctx.currentBlock = settings.block
+  ctx.currentFile = settings.file
+  ctx.inlineChildren = settings.childrenWxml
+  ctx.inlinePropsParam = settings.propsParam
+  ctx.inlineChildrenUsed = false
+  ctx.inlineChildrenCount = 0
+  try {
+    const wxml = compile()
+    return { wxml, used: ctx.inlineChildrenUsed, count: ctx.inlineChildrenCount }
+  } finally {
+    ctx.currentBlock = previous.block
+    ctx.currentFile = previous.file
+    ctx.inlineChildren = previous.children
+    ctx.inlinePropsParam = previous.propsParam
+    ctx.inlineChildrenUsed = previous.used
+    ctx.inlineChildrenCount = previous.count
+  }
+}
+
+function assertInlineChildren(name, hasChildren, used, count) {
+  if (hasChildren && !used) {
+    throw new Error(`<${name}> does not render props.children`)
+  }
+  if (count > 1) {
+    throw new Error(`<${name}> renders props.children more than once`)
+  }
+}
+
+function registerInlineComponent(ctx, name, source, childFile) {
+  ctx.inlineComponents.push({ name, source, ...(childFile ? { file: childFile } : {}) })
+}
+
 export function inlineComponentInLoop(
   ctx,
   scope,
@@ -147,240 +347,100 @@ export function inlineComponentInLoop(
     name,
   )
 
-  const previousChildren = ctx.inlineChildren
-  const previousPropsParam = ctx.inlinePropsParam
-  const previousUsed = ctx.inlineChildrenUsed
-  const previousCount = ctx.inlineChildrenCount
-  const previousFile = ctx.currentFile
-  ctx.inlineChildren = childrenWxml
-  ctx.inlinePropsParam = child.propsParam?.name ?? null
-  ctx.inlineChildrenUsed = false
-  ctx.inlineChildrenCount = 0
-  ctx.currentFile = childFile
+  const { wxml, used, count } = compileInlineBody(
+    ctx,
+    {
+      file: childFile,
+      childrenWxml,
+      propsParam: child.propsParam?.name ?? null,
+    },
+    () => compileNode(jsx, ctx, scope),
+  )
 
-  let wxml
-  let childrenUsed = false
-  let childrenCount = 0
-  try {
-    wxml = compileNode(jsx, ctx, scope)
-    childrenUsed = ctx.inlineChildrenUsed
-    childrenCount = ctx.inlineChildrenCount
-  } finally {
-    ctx.currentFile = previousFile
-    ctx.inlineChildren = previousChildren
-    ctx.inlinePropsParam = previousPropsParam
-    ctx.inlineChildrenUsed = previousUsed
-    ctx.inlineChildrenCount = previousCount
-  }
-
-  if (hasChildren && !childrenUsed) {
-    throw new Error(`<${name}> does not render props.children`)
-  }
-  if (childrenCount > 1) {
-    throw new Error(`<${name}> renders props.children more than once`)
-  }
-
-  ctx.inlineComponents.push({ name, source, ...(childFile ? { file: childFile } : {}) })
+  assertInlineChildren(name, hasChildren, used, count)
+  registerInlineComponent(ctx, name, source, childFile)
   return wxml
 }
 
 export function inlineComponent(node, ctx, scope, name, source) {
   if (!ctx.inline || !ctx.resolveComponent) return null
 
-  const resolved = ctx.resolveComponent(name, source, ctx.currentFile)
-  const childSource = typeof resolved === 'string' ? resolved : resolved?.source
-  if (!childSource) return null
-  const childFile = typeof resolved === 'object' ? resolved.file ?? ctx.currentFile : ctx.currentFile
-  const identity = childFile ?? `${ctx.currentFile ?? ''}:${source}`
-  if (ctx.inlineStack.includes(identity)) return null
+  const target = resolveInlineTarget(ctx, name, source)
+  if (!target) return null
+  const { childSource, childFile, identity } = target
+
   // An inline attempt mutates module-level compiler state before it can fail
   // (or decide to fall back to a component boundary). Keep a snapshot so a
   // failed attempt never leaks imports or WXS usage into the parent.
-  const previousImports = new Map(ctx.imports)
-  const previousKnownImports = new Set(ctx.knownImports)
-  const previousExtraImports = ctx.extraImports.length
-  const previousWxs = ctx.usesWxs
-  const previousWxsValue = ctx.usesWxsValue
+  const previousImports = captureInlineImports(ctx)
   let committed = false
   ctx.inlineStack.push(identity)
   try {
-  let child
-  try {
-    child = parseComponent(childSource)
-  } catch {
-    return null
-  }
-  rewriteContextAccess(...child.statements)
-  if (usesSlotElement(child.jsx)) return null
-  const inLoop = Boolean(scope)
-  if (inLoop && !isLoopInlineEligible(child)) return null
-  const usedAsComponent = new Set<string>()
-  walkAst(child.jsx, (item) => {
-    if (t.isJSXElement(item) && t.isJSXIdentifier(item.openingElement.name)) {
-      usedAsComponent.add(item.openingElement.name.name)
-    }
-  })
-  const body = child.ast.program.body
-  for (const node of body) {
-    if (!t.isImportDeclaration(node)) continue
-    if (node.source.value === 'solid-js') {
-      for (const specifier of node.specifiers) {
-        const local = specifier.local.name
-        const existing = ctx.imports.get(local)
-        if (existing !== undefined) {
-          if (existing !== 'solid-js') return null
-          continue
-        }
-        ctx.imports.set(local, 'solid-js')
-        ctx.knownImports.add(local)
-        if (t.isImportSpecifier(specifier)) {
-          const imported = importedName(specifier.imported)
-          const alias = imported === local ? '' : ` as ${local}`
-          ctx.extraImports.push(`import { ${imported}${alias} } from "solid-js";`)
-        } else if (t.isImportDefaultSpecifier(specifier)) {
-          ctx.extraImports.push(`import ${local} from "solid-js";`)
-        } else {
-          ctx.extraImports.push(`import * as ${local} from "solid-js";`)
-        }
-      }
-      continue
-    }
-    if (!node.source.value.startsWith('.')) return null
-    const locals = node.specifiers.map((specifier) => specifier.local.name)
-    if (locals.some((local) => !/^[A-Z]/.test(local))) return null
-    for (const local of locals) {
-      const existing = ctx.imports.get(local)
-      if (existing !== undefined && existing !== node.source.value) return null
-      ctx.imports.set(local, node.source.value)
-      ctx.knownImports.add(local)
-    }
-    // A relative import that is only used in JSX is handled by the component
-    // resolver. Anything else (a config object, helper, etc.) still needs a
-    // real import in the generated parent module, rewritten from the child's
-    // directory to the parent's directory.
-    if (ctx.currentFile && locals.some((local) => !usedAsComponent.has(local))) {
-      const childDir = path.dirname(childFile)
-      const parentDir = path.dirname(ctx.currentFile)
-      const absolute = path.resolve(childDir, node.source.value)
-      let relative = path.relative(parentDir, absolute).split(path.sep).join('/')
-      if (!relative.startsWith('.')) relative = `./${relative}`
-      const cloned = t.cloneNode(node, true)
-      cloned.source = t.stringLiteral(relative)
-      ctx.extraImports.push(codeOf(cloned))
-    }
-  }
-  if (
-    body.some(
-      (item) =>
-        t.isVariableDeclaration(item) ||
-        t.isFunctionDeclaration(item) ||
-        t.isExpressionStatement(item) ||
-        t.isExportNamedDeclaration(item) ||
-        t.isExportAllDeclaration(item),
-    )
-  ) {
-    return null
-  }
+    const child = parseInlineChild(childSource)
+    if (!child) return null
+    rewriteContextAccess(...child.statements)
+    if (usesSlotElement(child.jsx)) return null
+    const inLoop = Boolean(scope)
+    if (inLoop && !isLoopInlineEligible(child)) return null
 
-  const propGetters = []
-  for (const attr of node.openingElement.attributes) {
-    if (!t.isJSXAttribute(attr)) return null
-    const attrName = t.isJSXIdentifier(attr.name) ? attr.name.name : null
-    if (!attrName) return null
-    if (attrName === 'key') continue
-    if (attrName === 'ref') return null
-    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(attrName)) return null
+    const usedAsComponent = collectJsxComponents(child.jsx)
+    const body = child.ast.program.body
+    if (!adoptInlineImports(ctx, body, usedAsComponent, childFile)) return null
+    if (declaresInlineBindings(body)) return null
 
-    const expression = getExpression(attr)
-    if (expression == null) continue
-    if (containsJsx(expression)) {
-      throw new Error('JSX values are not supported in component props; use children instead')
+    const propGetters = collectInlineProps(node, ctx)
+    if (!propGetters) return null
+    if (propGetters.length > 0 && !child.propsParam) return null
+
+    const hasChildren = node.children.some((child) => !isWhitespaceText(child))
+    if (hasChildren && !child.propsParam) return null
+    const childrenWxml = hasChildren ? compileChildren(node.children, ctx, scope) : ''
+
+    if (inLoop) {
+      const wxml = inlineComponentInLoop(
+        ctx,
+        scope,
+        name,
+        source,
+        child,
+        childFile,
+        propGetters,
+        childrenWxml,
+        hasChildren,
+      )
+      committed = true
+      return wxml
     }
-    ctx.notePropReads(expression)
-    propGetters.push({ name: attrName, code: codeOf(expression), expression })
-  }
 
-  if (propGetters.length > 0 && !child.propsParam) return null
-
-  const hasChildren = node.children.some((child) => !isWhitespaceText(child))
-  if (hasChildren && !child.propsParam) return null
-  const childrenWxml = hasChildren ? compileChildren(node.children, ctx, scope) : ''
-
-  if (inLoop) {
-    const wxml = inlineComponentInLoop(
-      ctx,
-      scope,
-      name,
-      source,
-      child,
-      childFile,
+    const blockId = ctx.blocks.length
+    for (const statement of child.statements.slice(0, child.returnIndex)) {
+      ctx.notePropReads(statement)
+    }
+    ctx.blocks.push({
+      setup: child.statements.slice(0, child.returnIndex),
+      effects: [],
+      propsParam: child.propsParam?.name ?? null,
       propGetters,
-      childrenWxml,
-      hasChildren,
+      provider: ctx.currentProvider,
+    })
+
+    const { wxml, used, count } = compileInlineBody(
+      ctx,
+      {
+        block: blockId,
+        file: childFile,
+        childrenWxml,
+        propsParam: child.propsParam?.name ?? null,
+      },
+      () => compileNode(child.jsx, ctx, null),
     )
+
+    assertInlineChildren(name, hasChildren, used, count)
+    registerInlineComponent(ctx, name, source, childFile)
     committed = true
     return wxml
-  }
-
-  const blockId = ctx.blocks.length
-  for (const statement of child.statements.slice(0, child.returnIndex)) {
-    ctx.notePropReads(statement)
-  }
-  ctx.blocks.push({
-    setup: child.statements.slice(0, child.returnIndex),
-    effects: [],
-    propsParam: child.propsParam?.name ?? null,
-    propGetters,
-    provider: ctx.currentProvider,
-  })
-
-  const previousBlock = ctx.currentBlock
-  const previousChildren = ctx.inlineChildren
-  const previousPropsParam = ctx.inlinePropsParam
-  const previousUsed = ctx.inlineChildrenUsed
-  const previousCount = ctx.inlineChildrenCount
-  ctx.currentBlock = blockId
-  ctx.inlineChildren = childrenWxml
-  ctx.inlinePropsParam = child.propsParam?.name ?? null
-  ctx.inlineChildrenUsed = false
-  ctx.inlineChildrenCount = 0
-
-  const previousFile = ctx.currentFile
-  ctx.currentFile = childFile
-  let wxml
-  let childrenUsed = false
-  let childrenCount = 0
-  try {
-    wxml = compileNode(child.jsx, ctx, null)
-    childrenUsed = ctx.inlineChildrenUsed
-    childrenCount = ctx.inlineChildrenCount
-  } finally {
-    ctx.currentBlock = previousBlock
-    ctx.currentFile = previousFile
-    ctx.inlineChildren = previousChildren
-    ctx.inlinePropsParam = previousPropsParam
-    ctx.inlineChildrenUsed = previousUsed
-    ctx.inlineChildrenCount = previousCount
-  }
-
-  if (hasChildren && !childrenUsed) {
-    throw new Error(`<${name}> does not render props.children`)
-  }
-  if (childrenCount > 1) {
-    throw new Error(`<${name}> renders props.children more than once`)
-  }
-
-  ctx.inlineComponents.push({ name, source, ...(childFile ? { file: childFile } : {}) })
-  committed = true
-  return wxml
   } finally {
     ctx.inlineStack.pop()
-    if (!committed) {
-      ctx.imports = previousImports
-      ctx.knownImports = previousKnownImports
-      ctx.extraImports.length = previousExtraImports
-      ctx.usesWxs = previousWxs
-      ctx.usesWxsValue = previousWxsValue
-    }
+    if (!committed) restoreInlineImports(ctx, previousImports)
   }
 }
