@@ -224,6 +224,7 @@ test('ready after detached does not revive a deferred root', async () => {
 test('a moved component keeps its root and state', async () => {
   let setValue
   let setups = 0
+  let moves = 0
   const element = create({
     data: { b0: null },
     setup(ctx) {
@@ -232,6 +233,9 @@ test('a moved component keeps its root and state', async () => {
       setValue = set
       ctx.bind(0, () => value())
     },
+  })
+  element.addLifetimeListener('moved', () => {
+    moves += 1
   })
   const parent = (name) => {
     const parentElement = glassEasel.Component.createWithContext(
@@ -252,6 +256,7 @@ test('a moved component keeps its root and state', async () => {
 
   second.appendChild(element)
   await tick()
+  assert.equal(moves, 1, 'the platform moved lifetime fired')
   assert.equal(setups, 1, 'moving must not rebuild the root')
 
   setValue('moved')
