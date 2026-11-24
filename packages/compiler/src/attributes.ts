@@ -1,4 +1,5 @@
 import * as t from '@babel/types'
+import { bindingKey } from '@glaze/shared'
 import { codeOf, escapeAttr } from './ast.ts'
 import { projectExpression } from './projection.ts'
 import { inlineExpression } from './scope.ts'
@@ -8,14 +9,14 @@ export function conditionExpression(expression, ctx, scope) {
   const projected = projectExpression(expression, ctx, scope)
   if (projected != null) return projected
   if (scope) return inlineExpression(expression, scope, ctx)
-  return `b${ctx.addBinding(expression)}`
+  return bindingKey(ctx.addBinding(expression))
 }
 
 export function classAttr(expression, ctx, scope) {
   if (!scope) {
     ctx.addHelper('className')
     const index = ctx.addBindingCode(`className(${codeOf(expression)})`, null, expression)
-    return `class="{{b${index}}}"`
+    return `class="{{${bindingKey(index)}}}"`
   }
   return `class="${classInline(expression, scope, ctx)}"`
 }
@@ -27,7 +28,7 @@ export function styleAttr(expression, ctx, scope) {
     }
     ctx.addHelper('styleName')
     const index = ctx.addBindingCode(`styleName(${codeOf(expression)})`, null, expression)
-    return `style="{{b${index}}}"`
+    return `style="{{${bindingKey(index)}}}"`
   }
   return `style="${styleInline(expression, scope, ctx)}"`
 }

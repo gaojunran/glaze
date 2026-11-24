@@ -1,4 +1,5 @@
 import * as t from '@babel/types'
+import { LIST_KEY_WHOLE, bindingKey } from '@glaze/shared'
 import {
   codeOf,
   containsJsx,
@@ -66,7 +67,7 @@ export function compileCallbackBranch(fn, label, when, keyed, ctx, scope, direct
 
   const whenCode = scope ? inlineExpression(when, scope, ctx) : codeOf(when)
   const jsWhenCode = scope ? codeOf(rewriteAccessorCalls(when, scope, true)) : codeOf(when)
-  const condition = scope ? whenCode : `b${ctx.addBinding(when)}`
+  const condition = scope ? whenCode : bindingKey(ctx.addBinding(when))
   const indexName = scope ? `__glazeIndex${scope.level + 1}` : '__glazeIndex'
 
   if (!keyed) {
@@ -114,7 +115,7 @@ export function compileCallbackBranch(fn, label, when, keyed, ctx, scope, direct
     valuesExpr = `glazeRange.single(${whenCode})`
   } else {
     const values = ctx.addBindingCode(`[(${whenCode})]`, null, when)
-    valuesExpr = `b${values}`
+    valuesExpr = bindingKey(values)
   }
   const loop = `<block wx:for="{{${valuesExpr}}}" wx:for-item="${itemName}" wx:for-index="${indexName}" wx:key="*this">${content}</block>`
   return `<block ${directive}="{{${condition}}}">${loop}</block>`
@@ -211,7 +212,7 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
     const errorScope = makeCallbackScope({
       item: param.name,
       index: '__glazeErrorIndex',
-      source: `b${values}`,
+      source: bindingKey(values),
       jsSource: `ctx.errorArray(${boundary})`,
       parent: null,
       itemAccessor: true,
@@ -219,7 +220,7 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
       aliases: callback.aliases,
       listBinding: null,
     })
-    fallbackContent = `<block wx:for="{{b${values}}}" wx:for-item="${param.name}" wx:for-index="__glazeErrorIndex" wx:key="*this">${compileNode(callback.jsx, ctx, errorScope)}</block>`
+    fallbackContent = `<block wx:for="{{${bindingKey(values)}}}" wx:for-item="${param.name}" wx:for-index="__glazeErrorIndex" wx:key="${LIST_KEY_WHOLE}">${compileNode(callback.jsx, ctx, errorScope)}</block>`
   } else if (fallback) {
     // The fallback and the boundary's own condition belong to the enclosing
     // boundary; only the children are governed by this one. That lets nested
@@ -244,7 +245,7 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
   ctx.currentLoadingBoundary = outerLoading
   ctx.currentErrorBoundary = outerError
 
-  const condition = kind === 'Loading' && !fallback ? `!b${index}` : `b${index}`
+  const condition = kind === 'Loading' && !fallback ? `!${bindingKey(index)}` : bindingKey(index)
   if (!fallback) return `<block wx:if="{{${condition}}}">${children}</block>`
   return `<block wx:if="{{${condition}}}">${fallbackContent}</block><block wx:else>${children}</block>`
 }
@@ -495,7 +496,7 @@ export function compileFor(node, ctx, scope) {
   if (keyAttr) {
     if (keyAttr.value && t.isStringLiteral(keyAttr.value)) key = keyAttr.value.value
     else throw new Error('<For> key must be a string literal in the first compiler wave')
-    if (key !== '*this' && (key.includes('.') || key.includes('[') || key.includes(']'))) {
+    if (key !== LIST_KEY_WHOLE && (key.includes('.') || key.includes('[') || key.includes(']'))) {
       throw new Error(
         `"${key}" is not a single field key; use keyed={(item) => item.id} instead`,
       )
@@ -515,9 +516,9 @@ export function compileFor(node, ctx, scope) {
       eachExpr = eachCode
     } else {
       listBinding = ctx.addBinding(each, key)
-      eachExpr = `b${listBinding}`
-      if (key && key !== '*this') ctx.bindings[listBinding].listFields = [key]
-      else if (key === '*this') ctx.listProjectionBlocked.add(listBinding)
+      eachExpr = bindingKey(listBinding)
+      if (key && key !== LIST_KEY_WHOLE) ctx.bindings[listBinding].listFields = [key]
+      else if (key === LIST_KEY_WHOLE) ctx.listProjectionBlocked.add(listBinding)
     }
   }
   const jsEachCode = scope ? codeOf(rewriteAccessorCalls(each, scope, true)) : codeOf(each)
@@ -586,7 +587,7 @@ export function compileFor(node, ctx, scope) {
     const entry = ctx.bindings[listBinding]
     if (
       !key ||
-      key === '*this' ||
+      key === LIST_KEY_WHOLE ||
       ctx.listProjectionBlocked.has(listBinding) ||
       !entry.listFields ||
       entry.listFields.length === 0
@@ -611,7 +612,7 @@ export function compileFor(node, ctx, scope) {
   }
   const condition = scope || projectedEach
     ? `(${eachCode} || []).length > 0`
-    : `b${ctx.addBindingCode(`(${eachCode} || []).length > 0`)}`
+    : bindingKey(ctx.addBindingCode(`(${eachCode} || []).length > 0`))
   const fallbackGuard = scope ? null : `(${codeOf(each)} || []).length === 0`
   return `<block wx:if="{{${condition}}}">${loop}</block>${ctx.withGuard(
     fallbackGuard,
@@ -662,7 +663,7 @@ export function compileRepeatInScope(node, ctx, scope) {
     listBinding: null,
   })
   const children = compileNode(body, ctx, itemScope)
-  const loopAttributes = `wx:for="{{glazeRange.range(${countCode}, ${fromCode})}}" wx:for-item="${itemName}" wx:for-index="${indexName}" wx:key="*this"`
+  const loopAttributes = `wx:for="{{glazeRange.range(${countCode}, ${fromCode})}}" wx:for-item="${itemName}" wx:for-index="${indexName}" wx:key="${LIST_KEY_WHOLE}"`
   const loop = addLoopAttributes(children, loopAttributes) ?? `<block ${loopAttributes}>${children}</block>`
   const fallback = getAttribute(node, 'fallback')
   if (!fallback) return loop
@@ -715,13 +716,13 @@ export function compileRepeat(node, ctx, scope) {
   const itemScope = makeLoopScope({
     item: itemName,
     index: '__glazeIndex',
-    source: `b${binding}`,
+    source: bindingKey(binding),
     jsSource: `Array.from({ length: (${codeOf(count)}) }, (_, index) => index + (${fromCode}))`,
     parent: null,
     listBinding: null,
   })
   const children = compileNode(body, ctx, itemScope)
-  const loopAttributes = `wx:for="{{b${binding}}}" wx:for-item="${itemName}" wx:for-index="__glazeIndex" wx:key="*this"`
+  const loopAttributes = `wx:for="{{${bindingKey(binding)}}}" wx:for-item="${itemName}" wx:for-index="__glazeIndex" wx:key="${LIST_KEY_WHOLE}"`
   const loop = addLoopAttributes(children, loopAttributes) ?? `<block ${loopAttributes}>${children}</block>`
 
   const fallback = getAttribute(node, 'fallback')
@@ -733,7 +734,7 @@ export function compileRepeat(node, ctx, scope) {
   ) {
     throw new Error('<Repeat> fallback must be JSX')
   }
-  return `<block wx:if="{{b${binding}.length > 0}}">${loop}</block>${ctx.withGuard(
+  return `<block wx:if="{{${bindingKey(binding)}.length > 0}}">${loop}</block>${ctx.withGuard(
     `!(${codeOf(count)} > 0)`,
     () => compileNode(fallbackExpression, ctx, scope, ['wx:else']),
   )}`

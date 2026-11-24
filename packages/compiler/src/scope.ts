@@ -1,4 +1,5 @@
 import * as t from '@babel/types'
+import { bindingKey } from '@glaze/shared'
 import {
   isReferenceIdentifier,
   isStaticPropertyKey,
@@ -305,7 +306,7 @@ export function inlineExpression(expression, scope: Scope | null, ctx) {
   const rewritten = rewriteAccessorCalls(expression, scope)
   noteListFields(rewritten, scope, ctx)
   if (!dependsOnLoop(rewritten, scope)) {
-    return `b${ctx.addBinding(rewritten)}`
+    return bindingKey(ctx.addBinding(rewritten))
   }
   const hoisted = hoistLoopExpression(rewritten, scope, ctx)
   validateInline(hoisted, scope)
@@ -358,7 +359,7 @@ export function hoistLoopExpression(expression, scope: Scope | null, ctx) {
       )
     }
     if (!isRoot && isHoistable(node) && !dependsOnLoop(node, scope)) {
-      return t.identifier(`b${ctx.addBinding(node)}`)
+      return t.identifier(bindingKey(ctx.addBinding(node)))
     }
     if ((t.isCallExpression(node) || t.isOptionalCallExpression(node)) && dependsOnLoop(node, scope)) {
       throw new Error(
