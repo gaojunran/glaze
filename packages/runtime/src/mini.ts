@@ -19,7 +19,7 @@ import {
   SCALAR_BINDING_GROUP,
 } from './data.ts'
 import { diffList, projectList, snapshotList } from './list.ts'
-import { isContextReader, withBoundaryContexts, withProvider } from './provider.ts'
+import { isContextReader } from './provider.ts'
 import { createNodeRef } from './ref.ts'
 import {
   clearBoundaryContent,
@@ -54,9 +54,7 @@ declare const Component: (options: Record<string, unknown>) => unknown
 import type {
   DataChange,
   GlazeComponentConfig,
-  GlazeContext,
   GlazeContextProvider,
-  GlazeProps,
   InstanceState,
 } from './types.ts'
 
