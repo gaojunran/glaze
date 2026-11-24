@@ -5,6 +5,19 @@ export const STRUCTURED_PROP = 'glazeprops'
 export const CONTEXT_PROP = 'glazecontext'
 export const LIST_KEY_WHOLE = '*this'
 
+/**
+ * Mini-program property names are lowercased. A prop whose lowercased name is
+ * an `Object.prototype` member would read the prototype in WXML while the
+ * runtime uses an own-property check, so these names never enter the compact
+ * `glazeprops` object and always use the scalar property path.
+ */
+const PROTOTYPE_PROP_NAMES = new Set(
+  Object.getOwnPropertyNames(Object.prototype).map((name) => name.toLowerCase()),
+)
+
+export const isPrototypePropName = (name: string) =>
+  PROTOTYPE_PROP_NAMES.has(name.toLowerCase())
+
 export const bindingKey = (index: number) => `b${index}`
 export const eventHandlerName = (index: number) => `e${index}`
 export const refId = (index: number) => `glaze-r${index}`

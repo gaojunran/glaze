@@ -6,14 +6,21 @@ import {
   createRoot,
   createSignal,
   getOwner,
+  onCleanup,
   runWithOwner,
   useContext,
 } from 'solid-js'
-import { CONTEXT_PROP, STRUCTURED_PROP, eventHandlerName } from '@glaze/shared'
+import {
+  CONTEXT_PROP,
+  STRUCTURED_PROP,
+  eventHandlerName,
+  isPrototypePropName,
+} from '@glaze/shared'
 import {
   normalizeDataValue,
   normalizePropValue,
   GLAZE_EVENT_OPTIONS,
+  reportAppLifecycleError,
   reportBindingError as logBindingError,
   reportComponentError,
   reportTransportError,
@@ -54,6 +61,8 @@ import {
 declare const Component: (options: Record<string, unknown>) => unknown
 
 import type {
+  AppLaunchOptions,
+  AppShowHandler,
   DataChange,
   GlazeComponentConfig,
   GlazeContext,
@@ -79,20 +88,94 @@ const hasRoot = (lifecycle: LifecycleState): boolean =>
   lifecycle.phase === 'mounted' || lifecycle.phase === 'attached'
 
 const [appVisible, setAppVisible] = createSignal(true)
-let appLifecycleInstalled = false
+// Launch options are immutable for the app instance. Keep them outside a signal
+// so a component can read them during setup, before the first Solid flush.
+let appLaunchOptionsValue: AppLaunchOptions | undefined
+const appShowHandlers = new Set<AppShowHandler>()
+const appHideHandlers = new Set<() => void>()
+const appErrorHandlers = new Set<(error: unknown) => void>()
+const unhandledRejectionHandlers = new Set<(reason: unknown) => void>()
+let appLifecycleWx: unknown = null
+
+type AppLifecycleWx = {
+  onAppShow?: (listener: (options?: AppLaunchOptions) => void) => void
+  onAppHide?: (listener: () => void) => void
+  onError?: (listener: (error: unknown) => void) => void
+  onUnhandledRejection?: (listener: (event: { reason?: unknown }) => void) => void
+  getLaunchOptionsSync?: () => AppLaunchOptions
+}
+
+const dispatchAppShow = (options: AppLaunchOptions | undefined): void => {
+  setAppVisible(true)
+  for (const handler of [...appShowHandlers]) {
+    try {
+      handler(options)
+    } catch (error) {
+      reportAppLifecycleError(error)
+    }
+  }
+}
+
+const dispatchAppHide = (): void => {
+  setAppVisible(false)
+  for (const handler of [...appHideHandlers]) {
+    try {
+      handler()
+    } catch (error) {
+      reportAppLifecycleError(error)
+    }
+  }
+}
+
+const dispatchAppError = (error: unknown): void => {
+  for (const handler of [...appErrorHandlers]) {
+    try {
+      handler(error)
+    } catch (handlerError) {
+      reportAppLifecycleError(handlerError)
+    }
+  }
+}
+
+const dispatchUnhandledRejection = (reason: unknown): void => {
+  for (const handler of [...unhandledRejectionHandlers]) {
+    try {
+      handler(reason)
+    } catch (error) {
+      reportAppLifecycleError(error)
+    }
+  }
+}
 
 const installAppLifecycle = (): void => {
-  if (appLifecycleInstalled) return
-  const wx = (globalThis as {
-    wx?: {
-      onAppShow?: (listener: (options?: unknown) => void) => void
-      onAppHide?: (listener: () => void) => void
-    }
-  }).wx
-  if (typeof wx?.onAppShow !== 'function' || typeof wx?.onAppHide !== 'function') return
-  appLifecycleInstalled = true
-  wx.onAppShow(() => setAppVisible(true))
-  wx.onAppHide(() => setAppVisible(false))
+  const wx = (globalThis as { wx?: AppLifecycleWx }).wx
+  if (!wx || appLifecycleWx === wx) return
+  if (
+    typeof wx.onAppShow !== 'function' &&
+    typeof wx.onAppHide !== 'function' &&
+    typeof wx.onError !== 'function' &&
+    typeof wx.onUnhandledRejection !== 'function' &&
+    typeof wx.getLaunchOptionsSync !== 'function'
+  ) {
+    return
+  }
+  appLifecycleWx = wx
+  if (typeof wx.getLaunchOptionsSync === 'function') {
+    appLaunchOptionsValue = wx.getLaunchOptionsSync()
+  }
+  wx.onAppShow?.(dispatchAppShow)
+  wx.onAppHide?.(dispatchAppHide)
+  wx.onError?.(dispatchAppError)
+  wx.onUnhandledRejection?.((event) => dispatchUnhandledRejection(event?.reason ?? event))
+}
+
+const subscribeApp = <T,>(handlers: Set<T>, handler: T): (() => void) => {
+  handlers.add(handler)
+  const remove = () => {
+    handlers.delete(handler)
+  }
+  onCleanup(remove)
+  return remove
 }
 
 const notifyComponentError = (state: InstanceState, error: unknown): void => {
@@ -156,6 +239,24 @@ export const useAppVisible = (): (() => boolean) => {
   installAppLifecycle()
   return appVisible
 }
+
+/** Launch options captured when the mini-program starts. */
+export const useLaunchOptions = (): (() => AppLaunchOptions | undefined) => {
+  const ctx = requireSetupContext('useLaunchOptions')
+  return () => ctx.appLaunchOptions()
+}
+
+export const onAppShow = (handler: AppShowHandler): (() => void) =>
+  requireSetupContext('onAppShow').onAppShow(handler)
+
+export const onAppHide = (handler: () => void): (() => void) =>
+  requireSetupContext('onAppHide').onAppHide(handler)
+
+export const onAppError = (handler: (error: unknown) => void): (() => void) =>
+  requireSetupContext('onAppError').onAppError(handler)
+
+export const onUnhandledRejection = (handler: (reason: unknown) => void): (() => void) =>
+  requireSetupContext('onUnhandledRejection').onUnhandledRejection(handler)
 
 /** Latest payload of a page-level event. */
 export const usePageEvent = <K extends PageEventName>(
@@ -508,6 +609,14 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           installAppLifecycle()
           return appVisible()
         },
+        appLaunchOptions: () => {
+          installAppLifecycle()
+          return appLaunchOptionsValue
+        },
+        onAppShow: (handler) => subscribeApp(appShowHandlers, handler),
+        onAppHide: (handler) => subscribeApp(appHideHandlers, handler),
+        onAppError: (handler) => subscribeApp(appErrorHandlers, handler),
+        onUnhandledRejection: (handler) => subscribeApp(unhandledRejectionHandlers, handler),
         pageEvent: <K extends PageEventName>(name: K) => {
           state.pageEventVersion[0]()
           return state.pageEvents.get(name) as PageEventPayloads[K] | undefined
@@ -943,7 +1052,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
                   this.triggerEvent(eventName, args.length <= 1 ? args[0] : args, GLAZE_EVENT_OPTIONS)
               }
               const mapped = Object.hasOwn(propMap, key) ? propMap[key]! : key
-              if (mapped !== CONTEXT_PROP) {
+              if (mapped !== CONTEXT_PROP && !isPrototypePropName(mapped)) {
                 const structured = state.props[STRUCTURED_PROP]?.[0]()
                 if (
                   structured != null &&

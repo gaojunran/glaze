@@ -1,6 +1,7 @@
 import * as t from '@babel/types'
 import { STRUCTURED_PROPS } from './constants.ts'
 import { memberChainOf, unwrapTs, wxmlCodeOf } from './ast.ts'
+import { isGroupableProp } from './props.ts'
 import type { AnyNode, CompilerContext, Scope } from './types.ts'
 
 const BINARY_OPERATORS = new Set([
@@ -71,7 +72,9 @@ export function projectExpression(
       if (!chain || chain.segments.length === 0) return null
       if (!t.isIdentifier(chain.root, { name: propsParam })) return null
       const segments = chain.segments
-      const mapped = ctx.propMap[segments[0]!]
+      const mapped = Object.hasOwn(ctx.propMap, segments[0]!)
+        ? ctx.propMap[segments[0]!]
+        : undefined
       if (!mapped || ctx.localNames.has(mapped)) return null
       const rest = segments.slice(1)
       const buildPath = (base: AnyNode, names: string[]): AnyNode =>
@@ -80,7 +83,7 @@ export function projectExpression(
           base,
         )
       const fallback = buildPath(t.identifier(mapped), rest)
-      if (!ctx.structuredProps) return fallback
+      if (!ctx.structuredProps || !isGroupableProp(segments[0]!)) return fallback
       const structuredRoot = t.memberExpression(
         t.identifier(STRUCTURED_PROPS),
         t.identifier(mapped),

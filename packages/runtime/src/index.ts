@@ -1,15 +1,22 @@
 export {
   defineGlazeComponent,
+  onAppError,
+  onAppHide,
+  onAppShow,
   onBeforeDetach,
   onComponentError,
   onComponentMoved,
   onPageEvent,
+  onUnhandledRejection,
   useAppVisible,
+  useLaunchOptions,
   usePageEvent,
   usePageSize,
   usePageVisible,
 } from './mini.ts'
 export type {
+  AppLaunchOptions,
+  AppShowHandler,
   GlazeComponentConfig,
   GlazeContext,
   GlazeNode,

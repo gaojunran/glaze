@@ -17,6 +17,16 @@ export type PageSize = {
   windowHeight: number
 }
 
+export type AppLaunchOptions = {
+  path?: string
+  query?: Record<string, string>
+  scene?: number
+  referrerInfo?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+export type AppShowHandler = (options: AppLaunchOptions | undefined) => void
+
 export type PageEventName =
   | 'scroll'
   | 'shareAppMessage'
@@ -91,6 +101,12 @@ export type GlazeContext = {
   pageSize(): PageSize | null
   /** True while the app is in the foreground. */
   appVisible(): boolean
+  /** Launch options captured from `wx.getLaunchOptionsSync` when available. */
+  appLaunchOptions(): AppLaunchOptions | undefined
+  onAppShow(handler: AppShowHandler): () => void
+  onAppHide(handler: () => void): () => void
+  onAppError(handler: (error: unknown) => void): () => void
+  onUnhandledRejection(handler: (reason: unknown) => void): () => void
   /** Latest payload for a page-level event. */
   pageEvent<K extends PageEventName>(name: K): PageEventPayloads[K] | undefined
   /** Subscribe to a page-level event; the returned value is a synchronous result. */

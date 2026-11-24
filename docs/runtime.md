@@ -215,9 +215,14 @@ components do not need the generated `ctx` object. The project must declare
 ```tsx
 import { createEffect } from 'solid-js'
 import {
+  onAppError,
+  onAppHide,
+  onAppShow,
   onComponentError,
   onPageEvent,
+  onUnhandledRejection,
   useAppVisible,
+  useLaunchOptions,
   usePageEvent,
   usePageSize,
   usePageVisible,
@@ -249,6 +254,8 @@ export default function Page() {
 
 Hand-written `defineGlazeComponent` components use the same values as
 `ctx.pageVisible()`, `ctx.pageSize()`, `ctx.appVisible()`,
+`ctx.appLaunchOptions()`, `ctx.onAppShow(handler)`, `ctx.onAppHide(handler)`,
+`ctx.onAppError(handler)`, `ctx.onUnhandledRejection(handler)`,
 `ctx.pageEvent(name)`, `ctx.onPageEvent(name, handler)`,
 `ctx.onComponentError(handler)`, `ctx.onComponentMoved(handler)` and
 `ctx.onBeforeDetach(handler)`.
@@ -258,7 +265,15 @@ Hand-written `defineGlazeComponent` components use the same values as
 - `usePageSize()` is the last `pageLifetimes.resize` payload, seeded at
   creation from `wx.getWindowInfo()`; it is `null` when neither is available.
 - `useAppVisible()` follows `wx.onAppShow` / `wx.onAppHide`; the listeners are
-  installed once on first use, and the value starts `true`.
+  installed once per `wx` object on first use, and the value starts `true`.
+- `useLaunchOptions()` returns the immutable options captured from
+  `wx.getLaunchOptionsSync()`; it is `undefined` when the base library does not
+  expose that API. `onAppShow` receives the show options separately.
+- `onAppShow(handler)` / `onAppHide(handler)` run on `wx.onAppShow` /
+  `wx.onAppHide`; `onAppError(handler)` and `onUnhandledRejection(handler)`
+  bridge `wx.onError` / `wx.onUnhandledRejection`. Their unsubscribe functions
+  are also run when the component root is disposed.
+  `onUnhandledRejection` receives `event.reason` when present.
 - `usePageEvent(name)` reads the latest payload of a page event. The event
   names are `scroll`, `shareAppMessage`, `shareTimeline`, `addToFavorites`,
   `tabItemTap`, `saveExitState`, `pullDownRefresh`, `reachBottom` and

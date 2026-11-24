@@ -48,11 +48,16 @@ onSettled(() => {
 ```tsx
 import { createEffect } from 'solid-js'
 import {
+  onAppError,
+  onAppHide,
+  onAppShow,
   onBeforeDetach,
   onComponentError,
   onComponentMoved,
   onPageEvent,
+  onUnhandledRejection,
   useAppVisible,
+  useLaunchOptions,
   usePageEvent,
   usePageSize,
   usePageVisible,
@@ -88,6 +93,9 @@ onBeforeDetach(() => saveDraft())
 - `usePageSize()` is the latest resize size, seeded from `wx.getWindowInfo()`;
   it can be `null` on an unsupported base library.
 - `useAppVisible()` follows `wx.onAppShow` / `wx.onAppHide`; it starts `true`.
+- `useLaunchOptions()` returns `wx.getLaunchOptionsSync()` values when available.
+  `onAppShow` / `onAppHide` / `onAppError` / `onUnhandledRejection` are
+  setup-only hooks whose unsubscribe functions also run on root disposal.
 - `usePageEvent(name)` reads the latest page event. Names: `scroll`,
   `shareAppMessage`, `shareTimeline`, `addToFavorites`, `tabItemTap`,
   `saveExitState`, `pullDownRefresh`, `reachBottom`, `routeDone`. The generated

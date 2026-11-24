@@ -352,12 +352,65 @@ test('zero groupable props never mark a component structured', () => {
 })
 
 test('the marker and parent grouping share one groupable predicate', () => {
-  for (const name of ['class', 'style', 'id', 'slot', 'key', 'children', 'onPick']) {
+  for (const name of [
+    'class',
+    'style',
+    'id',
+    'slot',
+    'key',
+    'children',
+    'onPick',
+    'constructor',
+    '__proto__',
+    'toString',
+  ]) {
     assert.equal(isGroupableProp(name), false, `${name} must not be groupable`)
   }
   for (const name of ['title', 'done', 'dataRole']) {
     assert.equal(isGroupableProp(name), true, `${name} must be groupable`)
   }
+})
+
+test('prototype-named props never read through the compact object', () => {
+  const source = `
+    export default function Child(props) {
+      return (
+        <view>
+          <text>{props.title}</text>
+          <text>{props.done}</text>
+          <text>{props.constructor}</text>
+        </view>
+      )
+    }
+  `
+  const result = compileComponent(source, { structuredProps: true })
+  assert.equal(result.structuredProps, true)
+  assert.match(
+    result.wxml,
+    /glazeprops && glazeprops\.title !== undefined \? glazeprops\.title : title/,
+  )
+  assert.doesNotMatch(result.wxml, /glazeprops\.constructor/)
+  assert.match(result.wxml, /constructor/)
+
+  const parent = compileComponent(
+    `
+      import Child from './Child'
+      export default function Page(props) {
+        return (
+          <Child title={props.title} done={props.done} constructor={props.constructor} />
+        )
+      }
+    `,
+    {
+      sourceFile: '/project/src/Page.tsx',
+      resolveComponent: () => ({ source, file: '/project/src/Child.tsx', structuredProps: true }),
+    },
+  )
+  assert.match(
+    parent.wxml,
+    /glazeprops="\{\{(?: )?\{title: title, done: done\}(?: )?\}\}"/,
+  )
+  assert.match(parent.wxml, /\bconstructor="\{\{(?: )?constructor(?: )?\}\}"/)
 })
 
 test('rejects glazecontext as a declared prop as well as an attribute', () => {

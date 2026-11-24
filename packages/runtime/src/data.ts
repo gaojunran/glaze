@@ -33,3 +33,8 @@ export function reportComponentError(error: unknown): void {
   const errorConsole = (globalThis as { console?: Console }).console
   errorConsole?.error?.('[glaze] component error', error)
 }
+
+export function reportAppLifecycleError(error: unknown): void {
+  const errorConsole = (globalThis as { console?: Console }).console
+  errorConsole?.error?.('[glaze] app lifecycle handler failed', error)
+}

@@ -5,8 +5,13 @@ import {
   defineGlazeComponent,
   listOps,
   listPatch,
+  onAppError,
+  onAppHide,
+  onAppShow,
   onComponentError,
+  onUnhandledRejection,
   projectList,
+  useLaunchOptions,
   usePageSize,
   usePageVisible,
 } from '../src/mini.ts'
@@ -168,6 +173,88 @@ test('app visibility follows wx.onAppShow and wx.onAppHide', async () => {
   }
 })
 
+test('prototype-named props read the scalar property, not the compact object', () => {
+  let page
+  const def = defineGlazeComponent({
+    data: {},
+    properties: ['title', 'done', 'constructor'],
+    structuredProps: true,
+    setup(ctx, props) {
+      page = { props, ctx }
+    },
+  })
+  createInstance(def, {
+    title: 'scalar-title',
+    done: true,
+    constructor: 'scalar-constructor',
+    glazeprops: { title: 'object-title', done: false },
+  })
+  assert.equal(page.props.constructor, 'scalar-constructor')
+  assert.equal(page.props.title, 'object-title')
+  assert.equal(page.props.done, false)
+})
+
+test('app lifecycle callbacks and launch options follow wx', async () => {
+  const original = (globalThis as { wx?: unknown }).wx
+  const listeners = {}
+  ;(globalThis as { wx?: unknown }).wx = {
+    getLaunchOptionsSync: () => ({ path: 'pages/home', query: { id: '1' } }),
+    onAppShow: (listener) => {
+      listeners.show = listener
+    },
+    onAppHide: (listener) => {
+      listeners.hide = listener
+    },
+    onError: (listener) => {
+      listeners.error = listener
+    },
+    onUnhandledRejection: (listener) => {
+      listeners.rejection = listener
+    },
+  }
+  try {
+    let page
+    const seen = { show: [], hide: 0, error: null, rejection: null }
+    const def = defineGlazeComponent({
+      data: {},
+      setup(ctx) {
+        page = ctx
+        onAppShow((options) => seen.show.push(options))
+        onAppHide(() => {
+          seen.hide += 1
+        })
+        onAppError((error) => {
+          seen.error = error
+        })
+        onUnhandledRejection((reason) => {
+          seen.rejection = reason
+        })
+        useLaunchOptions()
+      },
+    })
+    const instance = createInstance(def)
+
+    assert.deepEqual(page.appLaunchOptions(), { path: 'pages/home', query: { id: '1' } })
+    listeners.show({ scene: 1001 })
+    listeners.hide()
+    const failure = new Error('boom')
+    listeners.error(failure)
+    listeners.rejection({ reason: 'no' })
+    await tick()
+
+    assert.deepEqual(seen.show, [{ scene: 1001 }])
+    assert.equal(seen.hide, 1)
+    assert.equal(seen.error, failure)
+    assert.equal(seen.rejection, 'no')
+
+    def.lifetimes.detached.call(instance)
+    listeners.show({ scene: 1002 })
+    assert.equal(seen.show.length, 1)
+  } finally {
+    ;(globalThis as { wx?: unknown }).wx = original
+  }
+})
+
 test('binding errors reach onComponentError', async () => {
   const seen = []
   const def = defineGlazeComponent({
@@ -245,7 +332,12 @@ test('page and error hooks work from the component setup body', async () => {
 test('hooks throw outside a component setup body', () => {
   assert.throws(() => usePageVisible(), /during component setup/)
   assert.throws(() => usePageSize(), /during component setup/)
+  assert.throws(() => useLaunchOptions(), /during component setup/)
   assert.throws(() => onComponentError(() => {}), /during component setup/)
+  assert.throws(() => onAppShow(() => {}), /during component setup/)
+  assert.throws(() => onAppHide(() => {}), /during component setup/)
+  assert.throws(() => onAppError(() => {}), /during component setup/)
+  assert.throws(() => onUnhandledRejection(() => {}), /during component setup/)
 })
 
 test('error lifetime stores the error and notifies and unsubscribes handlers', () => {

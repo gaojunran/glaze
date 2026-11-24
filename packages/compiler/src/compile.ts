@@ -159,7 +159,7 @@ function finalizeProps(props: string[], boundaryContexts: BoundaryContext[], str
     )
   }
   const plainProps = [
-    ...props.filter((name) => !eventProps[name]),
+    ...props.filter((name) => !Object.hasOwn(eventProps, name)),
     ...(boundaryContexts.length > 0 ? [CONTEXT_PROP] : []),
   ]
   // A one-prop child has no property fan-out to remove, and its parent keeps

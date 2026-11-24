@@ -214,7 +214,11 @@ one `isGroupableProp` predicate (`packages/compiler/src/props.ts`), so a
 component is marked `structuredProps` exactly when it has at least two groupable
 props. `@glaze/build` asserts the marker and the compiler decision agree.
 `glazeprops` and `glazecontext` are reserved: passing them as an attribute or
-declaring them as a prop is a compile error.
+declaring them as a prop is a compile error. A prop whose lowercased name is an
+`Object.prototype` member (`constructor`, `__proto__`, `toString`, ...) is never
+put in the compact object: WXML would read the prototype value while the runtime
+uses an own-property check, so the two sides would disagree. Such props always
+use the scalar property path.
 
 The runtime adds the `glazeprops` property only when the marker is present. It
 creates a `glazeprops` signal only when the child has at least two public props
