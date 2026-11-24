@@ -1,6 +1,6 @@
 import * as t from '@babel/types'
 import { STRUCTURED_PROPS } from './constants.ts'
-import { wxmlCodeOf } from './ast.ts'
+import { memberChainOf, unwrapTs, wxmlCodeOf } from './ast.ts'
 import type { AnyNode, CompilerContext, Scope } from './types.ts'
 
 const BINARY_OPERATORS = new Set([
@@ -48,13 +48,8 @@ export function projectExpression(
   const rewrite = (node: AnyNode, parent: AnyNode | null): AnyNode | null => {
     if (!node || typeof node.type !== 'string') return null
 
-    if (
-      t.isTSAsExpression(node) ||
-      t.isTSSatisfiesExpression(node) ||
-      t.isTSNonNullExpression(node)
-    ) {
-      return rewrite(node.expression, parent)
-    }
+    const unwrapped = unwrapTs(node)
+    if (unwrapped !== node) return rewrite(unwrapped, parent)
 
     if (t.isStringLiteral(node) || t.isNumericLiteral(node) || t.isBooleanLiteral(node) || t.isNullLiteral(node)) {
       return node
@@ -72,14 +67,10 @@ export function projectExpression(
 
     if (t.isMemberExpression(node)) {
       if (node.computed) return null
-      const segments = []
-      let cursor: AnyNode = node
-      while (t.isMemberExpression(cursor) && !cursor.computed) {
-        if (!t.isIdentifier(cursor.property)) return null
-        segments.unshift(cursor.property.name)
-        cursor = cursor.object
-      }
-      if (segments.length === 0 || !t.isIdentifier(cursor, { name: propsParam })) return null
+      const chain = memberChainOf(node)
+      if (!chain || chain.segments.length === 0) return null
+      if (!t.isIdentifier(chain.root, { name: propsParam })) return null
+      const segments = chain.segments
       const mapped = ctx.propMap[segments[0]!]
       if (!mapped || ctx.localNames.has(mapped)) return null
       const rest = segments.slice(1)

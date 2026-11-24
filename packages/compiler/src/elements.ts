@@ -12,6 +12,7 @@ import {
   normalizeText,
   skipChildKey,
   tagName,
+  unwrapTs,
   wxmlCodeOf,
 } from './ast.ts'
 import { classAttr, styleAttr } from './attributes.ts'
@@ -479,15 +480,8 @@ export function compileProvider(node, ctx, scope) {
 }
 
 function isDefinitelyNonBoolean(node: AnyNode): boolean {
-  let current = node
-  while (
-    t.isParenthesizedExpression(current) ||
-    t.isTSAsExpression(current) ||
-    t.isTSSatisfiesExpression(current) ||
-    t.isTSNonNullExpression(current)
-  ) {
-    current = current.expression
-  }
+  let current = unwrapTs(node)
+  while (t.isParenthesizedExpression(current)) current = unwrapTs(current.expression)
   if (
     t.isStringLiteral(current) ||
     t.isNumericLiteral(current) ||

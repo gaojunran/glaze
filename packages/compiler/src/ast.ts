@@ -126,6 +126,64 @@ export const walkAst = (node, visit) => {
   }
 }
 
+/**
+ * Visit the direct children of `node` in `t.VISITOR_KEYS` order. A visitor may
+ * return a replacement node, which is written back in place; returning
+ * undefined leaves the child untouched. Callers that only read can ignore the
+ * return value.
+ */
+export const visitChildren = (node, visit) => {
+  for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+    const child = node[key]
+    if (Array.isArray(child)) {
+      for (let index = 0; index < child.length; index += 1) {
+        const next = visit(child[index], node)
+        if (next !== undefined) child[index] = next
+      }
+    } else if (child && typeof child === 'object') {
+      const next = visit(child, node)
+      if (next !== undefined) node[key] = next
+    }
+  }
+}
+
+/** Strip the TypeScript wrappers that carry no runtime value. */
+export function unwrapTs(node) {
+  let current = node
+  while (
+    current &&
+    (t.isTSAsExpression(current) ||
+      t.isTSSatisfiesExpression(current) ||
+      t.isTSNonNullExpression(current))
+  ) {
+    current = current.expression
+  }
+  return current
+}
+
+/** True when `node` is an identifier used as a value, not a static key. */
+export function isReferenceIdentifier(node, parent) {
+  if (!t.isIdentifier(node)) return false
+  if (!parent) return true
+  if (isStaticPropertyKey(node, parent)) return false
+  return t.isReferenced(node, parent)
+}
+
+/**
+ * Flatten `a.b.c` into its root and static field names. Computed access is not
+ * a static chain, so it returns null.
+ */
+export function memberChainOf(node) {
+  const segments: string[] = []
+  let cursor = node
+  while (t.isMemberExpression(cursor) && !cursor.computed) {
+    if (!t.isIdentifier(cursor.property)) return null
+    segments.unshift(cursor.property.name)
+    cursor = cursor.object
+  }
+  return { root: cursor, segments }
+}
+
 /** Rename free identifier references in a cloned AST (used for generated callback helpers). */
 export function renameIdentifiers(node, from, to) {
   const cloned = t.cloneNode(node, true)

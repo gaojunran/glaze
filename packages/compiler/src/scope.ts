@@ -1,5 +1,12 @@
 import * as t from '@babel/types'
-import { codeOf, isStaticPropertyKey, skipChildKey, wxmlCodeOf } from './ast.ts'
+import {
+  isReferenceIdentifier,
+  isStaticPropertyKey,
+  skipChildKey,
+  unwrapTs,
+  visitChildren,
+  wxmlCodeOf,
+} from './ast.ts'
 import type { AnyNode, CompilerContext, Scope } from './types.ts'
 
 export function patternAliases(pattern, base, aliases = {}) {
@@ -129,19 +136,6 @@ export function inferKeyedField(fn) {
   return t.isIdentifier(body.property) ? body.property.name : null
 }
 
-function unwrapTs(node) {
-  let current = node
-  while (
-    current &&
-    (t.isTSAsExpression(current) ||
-      t.isTSSatisfiesExpression(current) ||
-      t.isTSNonNullExpression(current))
-  ) {
-    current = current.expression
-  }
-  return current
-}
-
 function itemScope(scope, name) {
   for (let cursor = scope; cursor; cursor = cursor.parent) {
     if (cursor.item === name) return cursor
@@ -205,14 +199,7 @@ export function noteListFields(expression, scope, ctx) {
       return
     }
 
-    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
-      const value = node[key]
-      if (Array.isArray(value)) {
-        for (const child of value) visit(child, node)
-      } else {
-        visit(value, node)
-      }
-    }
+    visitChildren(node, visit)
   }
   for (const item of Array.isArray(expression) ? expression : [expression]) {
     visit(item, null)
@@ -254,15 +241,7 @@ export function dependsOnLoop(expression, scope) {
       if (isLoopName(node.name, scope)) found = true
       return
     }
-    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
-      const value = node[key]
-      if (Array.isArray(value)) {
-        for (const child of value) visit(child, node)
-      } else {
-        visit(value, node)
-      }
-      if (found) return
-    }
+    visitChildren(node, visit)
   }
   visit(expression, null)
   return found
@@ -332,11 +311,7 @@ export function rewriteAccessorCalls(expression, scope, js = false) {
   const cloned = t.cloneNode(expression, true)
   const visit = (node, parent = null) => {
     if (!node || typeof node !== 'object') return node
-    if (
-      t.isIdentifier(node) &&
-      (parent ? t.isReferenced(node, parent) : true) &&
-      !isStaticPropertyKey(node, parent)
-    ) {
+    if (isReferenceIdentifier(node, parent)) {
       const alias = aliasValue(node.name, scope)
       if (Array.isArray(alias)) return buildMember(alias)
       if (alias && t.isExpression(alias)) return visit(t.cloneNode(alias, true), null)
@@ -361,11 +336,7 @@ export function rewriteAccessorCalls(expression, scope, js = false) {
       if (owner.itemAst) return t.cloneNode(owner.itemAst, true)
       return t.identifier(node.callee.name)
     }
-    for (const key of t.VISITOR_KEYS[node.type] ?? []) {
-      const value = node[key]
-      if (Array.isArray(value)) node[key] = value.map((child) => visit(child, node))
-      else if (value && typeof value === 'object') node[key] = visit(value, node)
-    }
+    visitChildren(node, visit)
     return node
   }
   return visit(cloned)
