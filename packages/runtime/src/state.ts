@@ -2,7 +2,7 @@ import type { GlazeBinding } from './types.ts'
 
 /**
  * Per-binding runtime state. This is the behaviour-preserving model of the
- * fields `mini.ts` currently spreads across `bindingFns`, `bindings`,
+ * fields `mini.ts` used to spread across `bindingFns`, `bindings`,
  * `bindingMemos`, `initial`, `previous`, `settled`, `bindingBoundaries`,
  * `bindingErrorBoundaries`, `bindingSources` and `fallbackSources`.
  *
@@ -134,10 +134,8 @@ export function resetBindingStates(states: BindingList): void {
 }
 
 /**
- * The slice of instance state this module owns. Phase 2 replaces the matching
- * `InstanceState` fields with `core.bindings`; transport queues, props,
- * lifecycle flags and boundary maps stay where they are until the integration
- * edits `mini.ts` and `types.ts` together.
+ * The per-instance binding state, embedded as `InstanceState.core`. Transport
+ * queues, props, lifecycle and boundary state live beside it on the instance.
  */
 export type RuntimeStateCore = {
   bindings: BindingList

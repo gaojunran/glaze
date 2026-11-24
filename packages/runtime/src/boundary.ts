@@ -4,11 +4,11 @@ import { createSignal } from 'solid-js'
 export type BoundarySignal<T> = [get: () => T, set: (value: T) => void]
 
 /**
- * The eight boundary-keyed concepts `mini.ts` currently keeps on the instance:
+ * The eight boundary-keyed concepts the runtime keeps on the instance:
  *
- * - `pending` -> `asyncPending` (boundary -> binding indexes)
- * - `consumers` -> `errorBindings` (boundary -> source -> binding indexes)
- * - `errors` -> `errorValues` (boundary -> source -> last raw error)
+ * - `pending` -> the old `asyncPending` (boundary -> binding indexes)
+ * - `consumers` -> the old `errorBindings` (boundary -> source -> binding indexes)
+ * - `errors` -> the old `errorValues` (boundary -> source -> last raw error)
  * - `loadingSignals`, `erroredSignals`, `errorValueSignals`, `resetSignals`
  * - `loadingOn` -> the `on` dependency readers
  *

@@ -1,7 +1,7 @@
 /**
  * The five reachable lifecycle shapes of a Glaze component instance.
  *
- * This is a partition of the current `mounted` / `active` / `everMounted`
+ * This is a partition of the former `mounted` / `active` / `everMounted`
  * booleans, not a new set of guarantees:
  *
  * - `unmounted`: no root, the platform has not attached, never mounted.
