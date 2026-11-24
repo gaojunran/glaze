@@ -10,6 +10,7 @@ import { compileNode } from './elements.ts'
 import { rewriteContextAccess } from './context.ts'
 import type {
   AnyNode,
+  BoundaryContext,
   CompileOptions,
   CompileResult,
   CompilerContext,
@@ -74,10 +75,16 @@ export function hasMultipleProps(source: string): boolean {
   }
 }
 
-export function compileComponent(source: string, options: CompileOptions = {}): CompileResult {
-  const parsed = parseComponent(source)
-  const { ast, statements, returnIndex, jsx, propsParam, props } = parsed
-
+/**
+ * Read the declarations that shape the generated module: local names that
+ * shadow the Solid control-flow names, and context identity. Pure over the
+ * parsed AST.
+ */
+function analyzeComponent(
+  parsed: ReturnType<typeof parseComponent>,
+  options: CompileOptions,
+) {
+  const { ast, statements, returnIndex } = parsed
   // Top-level declarations shadow the Solid control-flow names. A local
   // `function Show` must compile as a component reference, not as <Show>.
   const localNames = new Set<string>()
@@ -139,6 +146,50 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
       }
     }
   }
+
+  return { localNames, contextNames, contextKeys }
+}
+
+/**
+ * Decide the child component property interface. Runs before template
+ * compilation so prop projections see the final property names.
+ */
+function finalizeProps(props: string[], boundaryContexts: BoundaryContext[], structured: boolean) {
+  const eventProps = Object.fromEntries(
+    props
+      .filter((name) => isEventProp(name))
+      .map((name) => {
+        const binding = splitEventBinding(name)
+        return [name, eventNameFor(binding?.base ?? name)]
+      }),
+  )
+  if (props.some((name) => name.toLowerCase() === STRUCTURED_PROPS)) {
+    throw new Error(
+      `Component props may not use the reserved compiler property "${STRUCTURED_PROPS}"`,
+    )
+  }
+  const plainProps = [
+    ...props.filter((name) => !eventProps[name]),
+    ...(boundaryContexts.length > 0 ? [CONTEXT_PROP] : []),
+  ]
+  // A one-prop child has no property fan-out to remove, and its parent keeps
+  // the normal attribute path; do not add the compact property or fallback.
+  const structuredProps = structured && groupableProps(plainProps).length >= 2
+  const propertyNames = plainProps.map((name) => name.toLowerCase())
+  if (new Set(propertyNames).size !== propertyNames.length) {
+    throw new Error('Component props collide after lowercasing to mini-program property names')
+  }
+  if (propertyNames.some((name) => /^b\d+$/.test(name))) {
+    throw new Error('Component props may not use compiler data keys such as b0')
+  }
+  const propMap = Object.fromEntries(plainProps.map((name, index) => [name, propertyNames[index]]))
+  return { eventProps, plainProps, propertyNames, propMap, structuredProps }
+}
+
+export function compileComponent(source: string, options: CompileOptions = {}): CompileResult {
+  const parsed = parseComponent(source)
+  const { ast, statements, returnIndex, jsx, propsParam, props } = parsed
+  const { localNames, contextNames, contextKeys } = analyzeComponent(parsed, options)
 
   const ctx: CompilerContext = {
     bindings: [],
@@ -363,36 +414,14 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
   // shape; only the generated AST is rewritten.
   rewriteContextAccess(...statements)
 
-  const eventProps = Object.fromEntries(
-    props
-      .filter((name) => isEventProp(name))
-      .map((name) => {
-        const binding = splitEventBinding(name)
-        return [name, eventNameFor(binding?.base ?? name)]
-      }),
-  )
-  if (props.some((name) => name.toLowerCase() === STRUCTURED_PROPS)) {
-    throw new Error(
-      `Component props may not use the reserved compiler property "${STRUCTURED_PROPS}"`,
-    )
-  }
-  const plainProps = [
-    ...props.filter((name) => !eventProps[name]),
-    ...(ctx.boundaryContexts.length > 0 ? [CONTEXT_PROP] : []),
-  ]
-  // A one-prop child has no property fan-out to remove, and its parent keeps
-  // the normal attribute path; do not add the compact property or fallback.
-  if (ctx.structuredProps && groupableProps(plainProps).length < 2) {
-    ctx.structuredProps = false
-  }
-  const propertyNames = plainProps.map((name) => name.toLowerCase())
-  if (new Set(propertyNames).size !== propertyNames.length) {
-    throw new Error('Component props collide after lowercasing to mini-program property names')
-  }
-  if (propertyNames.some((name) => /^b\d+$/.test(name))) {
-    throw new Error('Component props may not use compiler data keys such as b0')
-  }
-  const propMap = Object.fromEntries(plainProps.map((name, index) => [name, propertyNames[index]]))
+  const {
+    eventProps,
+    plainProps,
+    propertyNames,
+    propMap,
+    structuredProps,
+  } = finalizeProps(props, ctx.boundaryContexts, ctx.structuredProps)
+  ctx.structuredProps = structuredProps
   ctx.propMap = propMap
   const bodyWxml = compileNode(jsx, ctx, null)
   const wxs = [
