@@ -819,12 +819,12 @@ test('disposes the reactive root on detach and reports no owner', () => {
   def.lifetimes.attached.call(instance)
   assert.equal(typeof instance.__glaze.dispose, 'function')
   assert.notEqual(instance.__glaze.owner, null)
+  assert.equal(instance.__glaze.lifecycle.phase, 'attached')
 
   def.lifetimes.detached.call(instance)
   assert.equal(instance.__glaze.dispose, null)
   assert.equal(instance.__glaze.owner, null)
-  assert.equal(instance.__glaze.mounted, false)
-  assert.equal(instance.__glaze.active, false)
+  assert.equal(instance.__glaze.lifecycle.phase, 'detached')
   assert.deepEqual(instance.__glaze.pending, [])
 })
 
@@ -868,15 +868,66 @@ test('defers a context component until ready and mounts it once', () => {
   const instance = createInstance(def, {})
   assert.equal(setups, 0)
   assert.deepEqual(instance.calls, [])
+  assert.deepEqual(instance.__glaze.lifecycle, {
+    phase: 'waiting-context',
+    attachedBeforeMount: false,
+  })
 
   def.lifetimes.ready.call(instance)
   assert.equal(setups, 1)
+  // `ready` ran before the platform attached, so the phase tracks attachment:
+  // it is mounted, even though ready already installed the effects.
+  assert.equal(instance.__glaze.lifecycle.phase, 'mounted')
   def.lifetimes.ready.call(instance)
   assert.equal(setups, 1)
   assert.deepEqual(instance.calls, [{ b0: 'value' }])
 
   def.lifetimes.attached.call(instance)
   assert.equal(setups, 1)
+  assert.equal(instance.__glaze.lifecycle.phase, 'attached')
+})
+
+test('a deferred async component attaches before its root exists', async () => {
+  let setups = 0
+  const def = defineGlazeComponent({
+    properties: ['glazecontext'],
+    boundaryContexts: [{ name: 'Ctx', key: 'ctx' }],
+    asyncStatus: [{ index: 1, kind: 'loading', boundary: 0 }],
+    data: { b0: null, b1: null },
+    setup(ctx) {
+      setups += 1
+      ctx.bind(
+        0,
+        () => {
+          throw new NotReadyError()
+        },
+        0,
+      )
+      ctx.bind(1, () => ctx.loading(0))
+    },
+  })
+
+  const instance = createInstance(def, {})
+  assert.deepEqual(instance.__glaze.lifecycle, {
+    phase: 'waiting-context',
+    attachedBeforeMount: false,
+  })
+  assert.equal(setups, 0)
+
+  def.lifetimes.attached.call(instance)
+  assert.deepEqual(instance.__glaze.lifecycle, {
+    phase: 'waiting-context',
+    attachedBeforeMount: true,
+  })
+  await settle()
+  assert.equal(setups, 0, 'attaching before ready must not run setup')
+  assert.equal(instance.__glaze.core.bindings.length, 0)
+
+  def.lifetimes.ready.call(instance)
+  assert.equal(instance.__glaze.lifecycle.phase, 'attached')
+  assert.equal(setups, 1)
+  await settle()
+  assert.equal(mergeCalls(instance).b1, true)
 })
 
 // ---------------------------------------------------------------------------

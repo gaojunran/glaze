@@ -927,12 +927,23 @@ test('a context-consuming component rebuilds its root when re-attached', async (
     },
   })
   const instance = createInstance(def, { glazecontext: {} })
+  assert.deepEqual(instance.__glaze.lifecycle, {
+    phase: 'waiting-context',
+    attachedBeforeMount: false,
+  })
   def.lifetimes.attached.call(instance)
+  assert.deepEqual(instance.__glaze.lifecycle, {
+    phase: 'waiting-context',
+    attachedBeforeMount: true,
+  })
   def.lifetimes.ready.call(instance)
+  assert.equal(instance.__glaze.lifecycle.phase, 'attached')
   await tick()
 
   def.lifetimes.detached.call(instance)
+  assert.equal(instance.__glaze.lifecycle.phase, 'detached')
   def.lifetimes.attached.call(instance)
+  assert.equal(instance.__glaze.lifecycle.phase, 'attached')
   await tick()
 
   assert.equal(setups, 2)

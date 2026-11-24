@@ -65,6 +65,16 @@ export { withBoundaryContexts, withProvider } from './provider.ts'
 export { diffList, listOps, listPatch, projectList, snapshotList } from './list.ts'
 export type { GlazeComponentConfig, GlazeContext, GlazeNode } from './types.ts'
 
+/** Mirrors the old `state.active`: the platform has attached the instance. */
+const platformAttached = (lifecycle: LifecycleState): boolean =>
+  lifecycle.phase === 'attached' ||
+  (lifecycle.phase === 'waiting-context' && lifecycle.attachedBeforeMount)
+
+/** A Solid root exists (mounted or attached); waiting-context has none yet. */
+const hasRoot = (lifecycle: LifecycleState): boolean =>
+  lifecycle.phase === 'mounted' || lifecycle.phase === 'attached'
+
+
 export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   const publicPropertyNames = config.properties ?? []
   const structuredProps = config.structuredProps === true
@@ -232,11 +242,20 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           name === CONTEXT_PROP &&
           state &&
           deferredContext &&
-          !state.mounted &&
+          !hasRoot(state.lifecycle) &&
           state.props[CONTEXT_PROP]?.[0]() != null
         ) {
-          mount(this, state)
-          if (state.active) attach(this, state)
+          // The observer can mount a deferred component before `ready`, and
+          // even after `detached`. Keep the old behavior: mount, then attach
+          // only when the platform is (still) attached.
+          if (state.lifecycle.phase === 'detached') {
+            mount(this, state)
+            state.lifecycle = { phase: 'mounted' }
+          } else {
+            state.lifecycle = readyMount(state.lifecycle)
+            mount(this, state)
+            if (state.lifecycle.phase === 'attached') attach(this, state)
+          }
         }
       },
     ]),
@@ -396,8 +415,6 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       component.setData(initial)
       return dispose
     })
-    state.mounted = true
-    state.everMounted = true
   }
 
   const attach = (component: any, state: InstanceState) => {
@@ -416,7 +433,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         state.flushScheduled = false
         const pending = state.pending
         state.pending = []
-        if (!state.active || pending.length === 0) return
+        if (!platformAttached(state.lifecycle) || pending.length === 0) return
         try {
           transport.apply(pending)
         } catch (error) {
@@ -656,6 +673,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         const state: InstanceState = {
           core: { bindings: [] },
           boundaries: createBoundaryState(),
+          lifecycle: initialLifecycle(deferredContext),
           events: [],
           refs: [],
           pending: [],
@@ -667,9 +685,6 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           propsProxy: null,
           owner: null,
           dispose: null,
-          mounted: false,
-          everMounted: false,
-          active: false,
           error: undefined,
         }
         this.__glaze = state
@@ -739,27 +754,54 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           },
         )
 
-        if (!deferredContext) mount(this, state)
+        if (!deferredContext) {
+          state.lifecycle = mountImmediately(state.lifecycle)
+          mount(this, state)
+        }
       },
 
       attached(this: any) {
         const state: InstanceState | undefined = this.__glaze
-        if (!state || state.active) return
-        // Re-attaching after `detached`: the old root was disposed, so build a
-        // fresh one before restoring effects.
-        if (!state.mounted && (!deferredContext || state.everMounted)) mount(this, state)
-        state.active = true
+        if (!state) return
+        const phase = state.lifecycle
+        // A repeated `attached`, including one recorded while waiting for a
+        // deferred root, is a no-op (the old `state.active` guard).
+        if (
+          phase.phase === 'attached' ||
+          (phase.phase === 'waiting-context' && phase.attachedBeforeMount)
+        ) {
+          return
+        }
+        if (phase.phase === 'waiting-context') {
+          // No root yet: record the platform attach without building effects.
+          state.lifecycle = attachWhileWaiting(phase)
+        } else if (phase.phase === 'detached') {
+          // Re-attaching after `detached`: rebuild the disposed root first.
+          state.lifecycle = reattach(phase)
+          mount(this, state)
+        } else if (phase.phase === 'unmounted') {
+          state.lifecycle = attachLifecycle(mountImmediately(phase))
+          mount(this, state)
+        } else {
+          state.lifecycle = attachLifecycle(phase)
+        }
         attach(this, state)
       },
 
       ready(this: any) {
         const state: InstanceState | undefined = this.__glaze
-        if (!state || !deferredContext || state.mounted) return
+        if (!state || !deferredContext || hasRoot(state.lifecycle)) return
         // A context passed through the property bridge is not available while
         // `created` runs (the parent's first setData may land afterwards).
         // Wait for `ready`, when the property is materialized, then build the
         // provider chain and the component's normal setup. Without a value the
         // providers are skipped and `useContext` falls back to its default.
+        // `ready` always mounts and attaches (as before); the phase only
+        // records whether the platform had attached before the root existed.
+        state.lifecycle =
+          state.lifecycle.phase === 'detached'
+            ? { phase: 'mounted' }
+            : readyMount(state.lifecycle)
         mount(this, state)
         attach(this, state)
       },
@@ -769,7 +811,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         if (!state) return
         // Keep the state (including prop signals) so a later `attached` can
         // rebuild the disposed root instead of seeing a dead instance.
-        state.active = false
+        state.lifecycle = detachLifecycle(state.lifecycle)
         state.pending = []
         state.flushScheduled = false
         // Match the old detached behavior: event and ref callbacks stop until
@@ -780,7 +822,6 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         state.dispose?.()
         state.dispose = null
         state.owner = null
-        state.mounted = false
       },
     },
     methods,

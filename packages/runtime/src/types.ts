@@ -1,5 +1,6 @@
 import type { getOwner } from 'solid-js'
 import type { BoundaryState } from './boundary.ts'
+import type { LifecycleState } from './lifecycle.ts'
 import type { RuntimeStateCore } from './state.ts'
 
 export type GlazeBinding = () => unknown
@@ -87,9 +88,7 @@ export type InstanceState = {
   propsProxy: GlazeProps | null
   owner: ReturnType<typeof getOwner>
   dispose: (() => void) | null
-  mounted: boolean
-  everMounted: boolean
-  active: boolean
+  lifecycle: LifecycleState
   asyncStatus?: { index: number; kind: 'loading' | 'error'; boundary: number }[]
   error: unknown
 }
