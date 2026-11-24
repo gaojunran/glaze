@@ -33,7 +33,7 @@ export const dataIndexKey = (level: number) =>
 export const dataIndexAttr = (level: number) =>
   level === 0 ? 'data-glaze-index' : `data-glaze-index${level}`
 
-export type AsyncStatusKind = 'loading' | 'error'
+export type AsyncStatusKind = 'loading' | 'error' | 'settled'
 export type AsyncStatusEntry = {
   index: number
   kind: AsyncStatusKind

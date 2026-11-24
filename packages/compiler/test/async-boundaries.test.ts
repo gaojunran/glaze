@@ -63,6 +63,52 @@ test('keeps an async row component as a per-row boundary inside a loop', () => {
   assert.match(result.wxml, /item="\{\{item\}\}"/)
 })
 
+test('keeps previous Loading content and renders a pending indicator', () => {
+  const result = compileComponent(`
+    import { Loading } from 'solid-js'
+    export default function Page() {
+      return (
+        <Loading fallback={<text>wait</text>} pending={<text class="spinner">pending</text>}>
+          <text>ready</text>
+        </Loading>
+      )
+    }
+  `)
+  assert.match(result.wxml, /wx:if="\{\{b0 && !b1\}\}"><text>wait/)
+  assert.match(result.wxml, /wx:if="\{\{b0 && b1\}\}"><text class="spinner">pending/)
+  assert.match(result.wxml, /wx:if="\{\{!b0 \|\| b1\}\}"><text>ready/)
+  assert.match(result.js, /ctx\.bind\(1, \(\) => \(ctx\.hasValue\(0\)\)\)/)
+})
+
+test('keepPrevious false restores the blocking Loading fallback', () => {
+  const result = compileComponent(`
+    import { Loading } from 'solid-js'
+    export default function Page() {
+      return (
+        <Loading fallback={<text>wait</text>} keepPrevious={false}>
+          <text>ready</text>
+        </Loading>
+      )
+    }
+  `)
+  assert.match(result.wxml, /wx:if="\{\{b0\}\}"><text>wait/)
+  assert.doesNotMatch(result.wxml, /pending/)
+  assert.doesNotMatch(result.js, /hasValue/)
+})
+
+test('rejects pending when keepPrevious is false', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        import { Loading } from 'solid-js'
+        export default function Page() {
+          return <Loading fallback={<text>wait</text>} keepPrevious={false} pending={<text>p</text>}>x</Loading>
+        }
+      `),
+    /pending requires keepPrevious/,
+  )
+})
+
 test('rejects Errored on', () => {
   assert.throws(
     () =>

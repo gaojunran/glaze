@@ -1,4 +1,5 @@
 
+import type { CompileWarning } from './diagnostics.ts'
 import type {
   AsyncStatusEntry,
   BoundaryContextEntry,
@@ -89,6 +90,7 @@ export type CompileResult = {
   structuredProps: boolean
   pageContext: boolean
   pageRoot: boolean
+  warnings: CompileWarning[]
 }
 
 /**

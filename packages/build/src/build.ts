@@ -340,6 +340,11 @@ async function buildProjectInternal(
           : null
       },
     })
+    for (const warning of result.warnings) {
+      console.warn(
+        `glaze build: ${path.relative(project, file)}: [${warning.code}] ${warning.message}`,
+      )
+    }
     // The build marker and the compiler decision share one predicate; a
     // mismatch would mean the parent groups props the child never reads.
     if (!pageFiles.has(file) && result.structuredProps !== structuredFor(file)) {
@@ -434,6 +439,11 @@ async function buildProjectInternal(
           : null
       },
     })
+    for (const warning of result.warnings) {
+      console.warn(
+        `glaze build: ${path.relative(project, file)}: [${warning.code}] ${warning.message}`,
+      )
+    }
     entry.result = result
     compileCache.delete(file)
   }

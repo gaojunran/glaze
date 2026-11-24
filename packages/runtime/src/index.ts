@@ -15,6 +15,8 @@ export {
   usePageSize,
   usePageVisible,
 } from './mini.ts'
+export { createRequest } from './request.ts'
+export type { AsyncRequest, AsyncTask } from './request.ts'
 export type {
   AppLaunchOptions,
   AppShowHandler,

@@ -59,8 +59,8 @@ export function validateConfig(config: GlazeComponentConfig): void {
     if (!Number.isInteger(status.boundary) || status.boundary < 0) {
       invalid('asyncStatus.boundary must be a non-negative integer')
     }
-    if (status.kind !== 'loading' && status.kind !== 'error') {
-      invalid('asyncStatus.kind must be "loading" or "error"')
+    if (status.kind !== 'loading' && status.kind !== 'error' && status.kind !== 'settled') {
+      invalid('asyncStatus.kind must be "loading", "error" or "settled"')
     }
   }
 }

@@ -375,6 +375,14 @@ still succeeds, but warns clearly because a mini-program normally needs both.
 `app.json` is copied when present; otherwise a minimal glass-easel default is
 written.
 
+## Compiler warnings
+
+Non-fatal compiler diagnostics are printed as
+`glaze build: <file>: [<code>] <message>` and do not fail the build. The first
+one is `GLAZE_UNTRACKED_READ_AFTER_AWAIT`, raised when an async computation
+reads `props` after its first `await`; Solid cannot track that read, so the
+memo would never retrigger. Read the value before awaiting.
+
 ## Command
 
 ```bash

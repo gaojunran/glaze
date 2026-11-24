@@ -1129,11 +1129,88 @@ test('tracks async pending and errored bindings for Loading and Errored', async 
   const instance = createInstance(def)
   def.lifetimes.attached.call(instance)
   await tick()
-  assert.equal(instance.calls.at(-1).b1, true)
-  assert.equal(instance.calls.at(-1).b3, true)
+  assert.equal(instance.calls.some((call) => call.b1 === true), true)
+  assert.equal(instance.calls.some((call) => call.b3 === true), true)
   assert.equal(instance.calls.at(-1).b4, 'boom')
   assert.equal(instance.calls[0].b0, undefined)
   assert.equal(instance.calls[0].b2, undefined)
+})
+
+test('keeps the previous value while a settled Loading boundary refetches', async () => {
+  let setPhase
+  const def = defineGlazeComponent({
+    asyncStatus: [
+      { index: 1, kind: 'loading', boundary: 0 },
+      { index: 2, kind: 'settled', boundary: 0 },
+    ],
+    data: { b0: null, b1: null, b2: null },
+    setup(ctx) {
+      const [phase, set] = createSignal(0)
+      setPhase = set
+      ctx.bind(0, () => {
+        if (phase() !== 1) throw new NotReadyError()
+        return 'value'
+      }, 0)
+      ctx.bind(1, () => ctx.loading(0))
+      ctx.bind(2, () => ctx.hasValue(0))
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+
+  assert.equal(instance.calls.some((call) => call.b1 === true), true)
+  assert.equal(instance.calls.some((call) => call.b2 === false), true)
+
+  setPhase(1)
+  await tick()
+  assert.equal(instance.calls.some((call) => call.b0 === 'value'), true)
+  assert.equal(instance.calls.some((call) => call.b1 === false), true)
+  assert.equal(instance.calls.some((call) => call.b2 === true), true)
+  assert.deepEqual(
+    { b0: instance.calls.at(-1).b0, b1: instance.calls.at(-1).b1, b2: instance.calls.at(-1).b2 },
+    { b0: 'value', b1: false, b2: true },
+  )
+
+  setPhase(2)
+  await tick()
+  assert.equal(instance.calls.some((call) => call.b1 === true), true)
+  assert.equal(instance.calls.some((call) => call.b2 === true), true)
+  assert.equal(
+    instance.calls.every((call) => call.b0 === undefined || call.b0 === 'value'),
+    true,
+  )
+})
+
+test('marks a Loading boundary settled only after every binding has a value', async () => {
+  let setReady
+  const def = defineGlazeComponent({
+    asyncStatus: [
+      { index: 2, kind: 'loading', boundary: 0 },
+      { index: 3, kind: 'settled', boundary: 0 },
+    ],
+    data: { b0: null, b1: null, b2: null, b3: null },
+    setup(ctx) {
+      const [ready, set] = createSignal(false)
+      setReady = set
+      ctx.bind(0, () => 'first', 0)
+      ctx.bind(1, () => {
+        if (!ready()) throw new NotReadyError()
+        return 'second'
+      }, 0)
+      ctx.bind(2, () => ctx.loading(0))
+      ctx.bind(3, () => ctx.hasValue(0))
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  assert.equal(instance.calls.some((call) => call.b3 === false), true)
+
+  setReady(true)
+  await tick()
+  assert.equal(instance.calls.some((call) => call.b3 === true), true)
+  assert.equal(instance.calls.some((call) => call.b1 === 'second'), true)
 })
 
 test('two async row instances keep independent boundary state', async () => {

@@ -598,8 +598,9 @@ Solid 2 `Loading` and `Errored` compile inside a component, including nested bou
 ```
 
 Each boundary gets an id. Bindings inside it are emitted with the nearest
-Loading id and the nearest Errored id, and `<Loading>` becomes a `wx:if`
-binding on `ctx.loading(id)`; `<Errored>` becomes `ctx.errored(id)`. Tracking
+Loading id and the nearest Errored id. `<Loading>` becomes a `wx:if` binding on
+`ctx.loading(id)` plus, by default, `ctx.hasValue(id)`; `<Errored>` becomes
+`ctx.errored(id)`. Tracking
 the two kinds separately is what aggregates an outer boundary: a binding under
 an inner Loading but an outer Errored reports pending to the inner Loading and
 errors to the outer Errored. A binding is still governed by its **nearest
@@ -616,15 +617,38 @@ Initial values still call the raw binding before the memo is created, so a
 first-attempt failure can recover.
 
 First-pending state is captured by the runtime's binding error channel. After
-content has landed, `isPending` reports a refetch and restores the fallback.
-The compiler emits `asyncStatus: [{ index, kind, boundary }]`; those condition
-bindings are projected directly from the status signals rather than through an
-effect that a pending read in the same component could hold. Pending state is
-per boundary and per binding; errors are keyed by `NotReadyError.source` when
-present. Error objects are normalized to `{ name, message }` before crossing the
-WXML data bridge; `error()` in an `Errored` fallback reads that normalized
-value. The fallback is rendered through a single-element `wx:for`, so `error()`
-is rewritten to the WXML loop item and the dependency graph itself stays in JS.
+content has landed, `Loading` keeps the previous content by default and uses
+`ctx.hasValue(id)` to remember that a first value exists; only the initial load
+shows the fallback. The compiler emits `asyncStatus: [{ index, kind, boundary }]`
+with `kind` values `loading`, `error`, and `settled`; those condition bindings
+are projected through the same data queue as ordinary bindings, so a status and
+its data land in one transport batch. Pending state is per boundary and per
+binding; errors are keyed by `NotReadyError.source` when present. Error objects
+are normalized to `{ name, message }` before crossing the WXML data bridge;
+`error()` in an `Errored` fallback reads that normalized value. The fallback is
+rendered through a single-element `wx:for`, so `error()` is rewritten to the
+WXML loop item and the dependency graph itself stays in JS.
+
+### Keeping previous content on refetch
+
+`Loading` defaults to `keepPrevious`: the fallback is shown while the boundary
+has no first value, then content stays mounted during a refetch. An optional
+`pending` element renders alongside the retained content:
+
+```tsx
+<Loading
+  fallback={<text>loading</text>}
+  pending={<text class="spinner">refreshing</text>}
+>
+  <text>{profile()}</text>
+</Loading>
+```
+
+The generated conditions are `loading && !hasValue` for the fallback and
+`!loading || hasValue` for the content; the pending element uses
+`loading && hasValue`. This avoids `wx:if` tearing down the rendered subtree on
+every refetch. `keepPrevious={false}` restores the blocking fallback (and does
+not allow `pending`), which is useful when stale content must not be shown.
 
 Direct boundaries inside a loop are rejected because their condition would
 need a per-row async identity; a single component-level status cannot
@@ -643,9 +667,9 @@ inlined) because it contains a control-flow boundary. `Loading on` and an
 Async behavior that is implemented:
 
 - `Loading on` compiles to `ctx.loadingOn(boundary, ...)`. A change after mount
-  shows the fallback again only when a read under the boundary is actually
-  pending; there is no held frame, so a change with nothing pending does
-  nothing.
+  marks the boundary pending only when a read under it is actually pending; the
+  retained content stays visible, and a `pending` element can show progress.
+  There is no held frame, so a change with nothing pending does nothing.
 - `Errored` fallbacks may take `(error, reset)`. `reset` bumps a per-boundary
   signal read by every binding memo, clears the boundary's pending/error maps,
   and retries the failed expressions.
@@ -662,12 +686,13 @@ Remaining async work, deliberately left for a later pass:
   aggregation (inner Loading with outer Errored, and the reverse) is
   implemented; an outer boundary is not a single aggregate of every descendant
   boundary.
-- `asyncStatus` condition bindings are projected directly with a microtask.
-  This keeps them out of a held effect, but it has not been checked on a real
-  device for visible intermediate frames.
-- Async refetch behavior and `Loading on` are covered by runtime unit tests,
-  not by a real-device smoke test. minidev only proves the generated output
-  loads and settles.
+- Status and data commit through one transport batch; the separate
+  `queueMicrotask` projection is gone. minidev covers the visible refetch path,
+  but there is still no real-device smoke test for intermediate frames.
+- Async refetch behavior, `keepPrevious`, and `Loading on` are covered by runtime
+  tests and the minidev async page; real-device frame timing is not yet tested.
+- Async computations that read `props` after `await` get a
+  `GLAZE_UNTRACKED_READ_AFTER_AWAIT` build warning.
 
 ### Refs
 

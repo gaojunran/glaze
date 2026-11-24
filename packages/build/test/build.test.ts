@@ -570,6 +570,41 @@ test('warns about missing app.js and app.wxss', async () => {
   assert.deepEqual(second, [])
 })
 
+test('prints non-fatal compiler warnings without failing the build', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `import { createMemo } from 'solid-js'
+
+export default function App(props: { id: number }) {
+  const later = createMemo(async () => {
+    await Promise.resolve()
+    return props.id
+  })
+  return <text>{later()}</text>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+
+  const warnings = []
+  const originalWarn = console.warn
+  console.warn = (message) => warnings.push(String(message))
+  try {
+    await buildProject(project)
+  } finally {
+    console.warn = originalWarn
+  }
+  assert.ok(
+    warnings.some((message) => message.includes('GLAZE_UNTRACKED_READ_AFTER_AWAIT')),
+  )
+})
+
 test('reloads a changed config on the next build', async () => {
   const project = await createProject({
     config: {

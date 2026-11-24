@@ -1,13 +1,17 @@
 import { createMemo, Errored, Loading } from 'solid-js'
 
 export default function AsyncRow(props: { row: { id: number; title: string; delay: number; fail?: boolean } }) {
+  // Snapshot the reactive input before the first await inside the memo; reads
+  // after it are not tracked by Solid.
   const value = createMemo(async () => {
-    await new Promise((resolve) => setTimeout(resolve, props.row.delay))
-    return props.row.title
+    const row = props.row
+    await new Promise((resolve) => setTimeout(resolve, row.delay))
+    return row.title
   })
   const broken = createMemo(() => {
-    if (props.row.fail) throw new Error('row-fail')
-    return props.row.title
+    const row = props.row
+    if (row.fail) throw new Error('row-fail')
+    return row.title
   })
 
   return (

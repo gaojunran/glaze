@@ -20,6 +20,7 @@ export type BoundaryState = {
   consumers: Map<number, Map<unknown, Set<number>>>
   errors: Map<number, Map<unknown, unknown>>
   loadingSignals: Map<number, BoundarySignal<boolean>>
+  settledSignals: Map<number, BoundarySignal<boolean>>
   erroredSignals: Map<number, BoundarySignal<boolean>>
   errorValueSignals: Map<number, BoundarySignal<unknown>>
   resetSignals: Map<number, BoundarySignal<number>>
@@ -32,6 +33,7 @@ export function createBoundaryState(): BoundaryState {
     consumers: new Map(),
     errors: new Map(),
     loadingSignals: new Map(),
+    settledSignals: new Map(),
     erroredSignals: new Map(),
     errorValueSignals: new Map(),
     resetSignals: new Map(),
@@ -205,6 +207,7 @@ export function clearBoundaryContent(state: BoundaryState): void {
   state.errors.clear()
   state.loadingOn.clear()
   state.loadingSignals.forEach((signal) => signal[1](false))
+  state.settledSignals.forEach((signal) => signal[1](false))
   state.erroredSignals.forEach((signal) => signal[1](false))
   state.errorValueSignals.forEach((signal) => signal[1](null))
 }
@@ -214,6 +217,21 @@ export const hasPending = (state: BoundaryState, boundary: number): boolean =>
 
 export const loadingOf = (state: BoundaryState, boundary: number): boolean =>
   booleanSignal(state.loadingSignals, boundary)[0]()
+
+/** True after every binding under the boundary has delivered a first value. */
+export const settledOf = (state: BoundaryState, boundary: number): boolean =>
+  booleanSignal(state.settledSignals, boundary)[0]()
+
+export function markSettledBoundary(
+  state: BoundaryState,
+  boundary: number,
+  settled: boolean,
+): boolean {
+  const signal = booleanSignal(state.settledSignals, boundary)
+  if (signal[0]() === settled) return false
+  signal[1](settled)
+  return true
+}
 
 export const erroredOf = (state: BoundaryState, boundary: number): boolean =>
   booleanSignal(state.erroredSignals, boundary)[0]()

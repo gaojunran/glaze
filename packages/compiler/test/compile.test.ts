@@ -1367,13 +1367,17 @@ test('compiles Loading and Errored boundaries', () => {
       )
     }
   `)
-  assert.match(result.wxml, /wx:if="\{\{b0\}\}"><text>loading<\/text><\/block><block wx:else><text>ready/)
-  assert.match(result.wxml, /wx:if="\{\{b1\}\}"><text>failed<\/text><\/block><block wx:else><text>value/)
+  assert.match(
+    result.wxml,
+    /wx:if="\{\{b0 && !b1\}\}"><text>loading<\/text><\/block><block wx:if="\{\{!b0 \|\| b1\}\}"><text>ready/,
+  )
+  assert.match(result.wxml, /wx:if="\{\{b2\}\}"><text>failed<\/text><\/block><block wx:else><text>value/)
   assert.match(result.js, /ctx\.bind\(0, \(\) => \(ctx\.loading\(0\)\)\)/)
-  assert.match(result.js, /ctx\.bind\(1, \(\) => \(ctx\.errored\(1\)\)\)/)
+  assert.match(result.js, /ctx\.bind\(1, \(\) => \(ctx\.hasValue\(0\)\)\)/)
+  assert.match(result.js, /ctx\.bind\(2, \(\) => \(ctx\.errored\(1\)\)\)/)
   assert.match(
     result.js,
-    /asyncStatus: \[\{\"index\":0,\"kind\":\"loading\",\"boundary\":0\},\{\"index\":1,\"kind\":\"error\",\"boundary\":1\}\]/,
+    /asyncStatus: \[\{"index":1,"kind":"settled","boundary":0\},\{"index":0,"kind":"loading","boundary":0\},\{"index":2,"kind":"error","boundary":1\}\]/,
   )
 })
 
@@ -1390,10 +1394,13 @@ test('assigns separate ids to nested Loading boundaries', () => {
       )
     }
   `)
-  assert.match(result.wxml, /wx:if="\{\{b0\}\}"><text>outer<\/text><\/block><block wx:else><block wx:if="\{\{b1\}\}"><text>inner/)
+  assert.match(
+    result.wxml,
+    /wx:if="\{\{b0 && !b1\}\}"><text>outer<\/text><\/block><block wx:if="\{\{!b0 \|\| b1\}\}"><block wx:if="\{\{b2 && !b3\}\}"><text>inner/,
+  )
   assert.match(result.js, /ctx\.bind\(0, \(\) => \(ctx\.loading\(0\)\)\)/)
-  assert.match(result.js, /ctx\.bind\(1, \(\) => \(ctx\.loading\(1\)\), 0, null\)/)
-  assert.match(result.js, /ctx\.bind\(2, \(\) => \(later\(\)\), 1, null\)/)
+  assert.match(result.js, /ctx\.bind\(2, \(\) => \(ctx\.loading\(1\)\), 0, null\)/)
+  assert.match(result.js, /ctx\.bind\(4, \(\) => \(later\(\)\), 1, null\)/)
 })
 
 test('marks relative resource literals for build-time asset rewriting', () => {
@@ -1857,5 +1864,5 @@ test('a binding selects the nearest Loading and Errored boundary independently',
       )
     }
   `)
-  assert.match(result.js, /ctx\.bind\(3, \(\) => \(later\(\)\), 1, 0\)/)
+  assert.match(result.js, /ctx\.bind\(4, \(\) => \(later\(\)\), 1, 0\)/)
 })

@@ -117,10 +117,10 @@ keeps a second snapshot as the diff baseline. See
 ### Loading on and Errored reset
 
 `ctx.loadingOn(boundary, read)` creates a runtime effect for the `on`
-dependency. After the first run, a change calls `armLoading`, which shows the
-fallback only if a binding under that boundary is actually pending. This is the
-closest match to the miniature-program frame model: there is no held frame, so
-an `on` change with nothing pending does not fabricate a spinner.
+dependency. After the first run, a change calls `armLoading`, which marks the
+boundary pending only if a binding under that boundary is actually pending. The
+retained content stays visible; there is no held frame, so an `on` change with
+nothing pending does not fabricate a spinner.
 
 `ctx.reset(boundary)` clears the boundary's pending and error maps, writes the
 status signals, then bumps a per-boundary reset signal. Every binding memo reads
@@ -137,12 +137,62 @@ error id. That is what lets an outer `Errored` catch a failure inside an inner
 `Loading`, and an outer `Loading` show pending work inside an inner `Errored`,
 while same-kind nesting still follows the nearest boundary.
 
+A `Loading` boundary also keeps a `settled` signal. It becomes true only after
+every binding under that boundary has delivered a first value. The compiler
+projects `ctx.hasValue(id)` into its own status binding; the generated fallback
+condition is `loading && !hasValue`, so a refetch keeps the mounted content and
+only an initial load shows the fallback. `ctx.hasValue` stays true across a
+reset, because a reset is a refetch, not a remount. `clearBoundaryContent`
+resets it on remount.
+
+Status and data share one `applyBinding`/transport queue. The old
+`queueMicrotask` status projection is gone; `applyAsyncStatus` receives the new
+boolean explicitly, which is necessary because Solid stages signal writes until
+the current flush ends.
+
 For a list, each row needs its own instance-level boundary. Render a row
 component from `<For>` and put its async memo plus `Loading`/`Errored` inside
 that component; the component's root owns one binding set and status map, so
 pending, errors and reset are independent per row. A boundary placed directly
 inside `<For>` is still rejected because the loop template has no per-row JS
 execution or owner.
+
+### Async requests with flight and abort
+
+`createRequest` is the runtime helper for imperative requests such as
+`wx.request`. It owns `data`, `error`, and `pending` signals and guarantees that
+only the latest flight can write them:
+
+```tsx
+import { createRequest } from '@glaze/runtime'
+
+const user = createRequest(() => {
+  let task: WechatMiniprogram.RequestTask | undefined
+  const promise = new Promise<User>((resolve, reject) => {
+    task = wx.request({
+      url: `/api/users/${id()}`,
+      success: (response) => resolve(response.data as User),
+      fail: reject,
+    })
+  })
+  return { promise, abort: () => task?.abort() }
+})
+```
+
+`run()` aborts the previous task, clears the previous error, and marks pending.
+A late response from an older flight is ignored. `abort()` keeps the last data,
+clears pending, and does not invent an error. When created inside a reactive
+owner, the helper also aborts the current task on cleanup, which makes it safe
+for row components that disappear from a list. The helper does not create a
+Solid memo, so it does not drive a `Loading` boundary by itself; use a memo for
+boundary integration and `createRequest` for explicit `pending`/`error` UI.
+
+### Async diagnostics
+
+The compiler emits `GLAZE_UNTRACKED_READ_AFTER_AWAIT` when an async computation
+reads `props` after its first `await`. Solid records dependencies only before
+that point, so the read would never retrigger. Read the value into a local
+first, or move the async work into a memo that reads its inputs before awaiting.
 
 ### Context readers
 
@@ -173,7 +223,8 @@ The per-instance state is split across three modules used by `mini.ts`:
   entries in place with `resetBindingStates` and never compacts the list;
   iterations skip entries whose `raw`/`read` is null.
 - `boundary.ts` owns the boundary-keyed pending/consumer/error maps and the
-  lazily created loading/errored/error-value/reset signals plus `loadingOn`.
+  lazily created loading/settled/errored/error-value/reset signals plus
+  `loadingOn`.
   `markPending`, `markSettled`, `markError`, `clearError` and `resetBoundary`
   replace the former inline map/signal code. `clearBoundaryContent` is the
   remount reset and keeps signal and reset-counter identity.
@@ -393,7 +444,7 @@ wrong signal set or skip a generated feature.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 190, pass 190, fail 0
+# tests 200, pass 200, fail 0
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json (no output)
 pnpm --filter @glaze/build test

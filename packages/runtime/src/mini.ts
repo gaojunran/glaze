@@ -40,11 +40,13 @@ import {
   hasPending as hasBoundaryPending,
   loadingOf,
   markError,
+  markSettledBoundary,
   markPending,
   markSettled,
   resetBoundary as resetBoundaryState,
   resetVersionOf,
   setLoading,
+  settledOf,
 } from './boundary.ts'
 import { validateConfig } from './config.ts'
 import { createBindingState, resetBindingStates } from './state.ts'
@@ -447,13 +449,21 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     if (binding.fallbackSource === undefined) binding.fallbackSource = { binding: index }
     return binding.fallbackSource
   }
+  // A Loading boundary only starts keeping its previous content once every
+  // binding under it has delivered a value. Checking the bindings, rather than
+  // a counter, keeps remounts and sparse binding tables simple.
   const clearAsync = (state: InstanceState, index: number) => {
     const binding = state.core.bindings[index]
     if (!binding) return
     const loadingBoundary = binding.loadingBoundary
     if (loadingBoundary != null && markSettled(state.boundaries, loadingBoundary, index)) {
       state.statusVersion[1](state.statusVersion[0]() + 1)
-      applyAsyncStatus(state, loadingBoundary, 'loading')
+      applyAsyncStatus(
+        state,
+        loadingBoundary,
+        'loading',
+        hasBoundaryPending(state.boundaries, loadingBoundary),
+      )
     }
     const boundary = binding.errorBoundary
     if (boundary == null) return
@@ -461,35 +471,33 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     // map; `clearError` also updates the error-value signal independently.
     const hadConsumers = state.boundaries.consumers.has(boundary)
     clearError(state.boundaries, boundary, binding.source, index)
-    if (hadConsumers) applyAsyncStatus(state, boundary, 'error')
+    if (hadConsumers) {
+      applyAsyncStatus(state, boundary, 'error', state.boundaries.consumers.has(boundary))
+    }
   }
+  // Status and data go through the same pending queue, so one change commits
+  // one transport batch. The value is passed explicitly because Solid stages
+  // signal writes until the current flush ends; reading the signal here would
+  // yield the previous status.
   const applyAsyncStatus = (
     state: InstanceState,
     boundary: number,
-    kind: 'loading' | 'error',
+    kind: 'loading' | 'error' | 'settled',
+    value: boolean,
   ) => {
     for (const status of state.asyncStatus ?? []) {
       if (status.boundary !== boundary || status.kind !== kind) continue
-      // Signal writes made during the initial root pass are staged; read the
-      // value after the current flush instead of projecting a stale `false`.
-      const project = () =>
-        state.applyStatus?.(
-          status.index,
-          kind === 'loading'
-            ? loadingOf(state.boundaries, boundary)
-            : erroredOf(state.boundaries, boundary),
-        )
-      if (typeof queueMicrotask === 'function') queueMicrotask(project)
-      else Promise.resolve().then(project)
+      state.applyStatus?.(status.index, value)
     }
   }
   const resetBoundary = (state: InstanceState, boundary: number) => {
     // Clears pending/error content, rewrites the status signals and bumps the
-    // reset counter read by every memo in this boundary.
+    // reset counter read by every memo in this boundary. A reset keeps the
+    // last content: reset is a refetch, not a first load.
     resetBoundaryState(state.boundaries, boundary)
     state.statusVersion[1](state.statusVersion[0]() + 1)
-    applyAsyncStatus(state, boundary, 'loading')
-    applyAsyncStatus(state, boundary, 'error')
+    applyAsyncStatus(state, boundary, 'loading', false)
+    applyAsyncStatus(state, boundary, 'error', false)
   }
   const hasPending = (state: InstanceState, boundary: number) => {
     if (hasBoundaryPending(state.boundaries, boundary)) return true
@@ -505,7 +513,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   const armLoading = (state: InstanceState, boundary: number) => {
     if (!hasPending(state, boundary)) return
     setLoading(state.boundaries, boundary, true)
-    applyAsyncStatus(state, boundary, 'loading')
+    applyAsyncStatus(state, boundary, 'loading', true)
   }
   const markAsync = (state: InstanceState, index: number, error: unknown) => {
     const binding = state.core.bindings[index]
@@ -514,12 +522,17 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     if (isNotReady(error)) {
       if (loadingBoundary == null) return
       if (!markPending(state.boundaries, loadingBoundary, index)) return
-      applyAsyncStatus(state, loadingBoundary, 'loading')
+      applyAsyncStatus(state, loadingBoundary, 'loading', true)
       return
     }
     if (loadingBoundary != null && markSettled(state.boundaries, loadingBoundary, index)) {
       state.statusVersion[1](state.statusVersion[0]() + 1)
-      applyAsyncStatus(state, loadingBoundary, 'loading')
+      applyAsyncStatus(
+        state,
+        loadingBoundary,
+        'loading',
+        hasBoundaryPending(state.boundaries, loadingBoundary),
+      )
     }
     const boundary = binding.errorBoundary
     if (boundary == null) return
@@ -529,13 +542,15 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       // or it keeps the boundary errored after the new source recovers.
       const hadConsumers = state.boundaries.consumers.has(boundary)
       clearError(state.boundaries, boundary, binding.source, index)
-      if (hadConsumers) applyAsyncStatus(state, boundary, 'error')
+      if (hadConsumers) {
+        applyAsyncStatus(state, boundary, 'error', state.boundaries.consumers.has(boundary))
+      }
     }
     binding.source = source
     // A repeated consumer does not re-project status, matching the old early
     // return after the error-value signal was possibly refreshed.
     if (markError(state.boundaries, boundary, source, index, error).added) {
-      applyAsyncStatus(state, boundary, 'error')
+      applyAsyncStatus(state, boundary, 'error', true)
     }
   }
   const deferredContext = (config.boundaryContexts?.length ?? 0) > 0
@@ -665,6 +680,14 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     }
   }
 
+  const allBindingsSettled = (state: InstanceState, boundary: number) =>
+    state.core.bindings.every(
+      (binding) =>
+        binding == null ||
+        binding.loadingBoundary !== boundary ||
+        binding.settled === true,
+    )
+
   const mount = (component: any, state: InstanceState) => {
     resetBindingStates(state.core.bindings)
     state.effectsInstalled = false
@@ -706,6 +729,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           resetBoundary(state, boundary)
         },
         loading: (boundary) => loadingOf(state.boundaries, boundary),
+        hasValue: (boundary) => settledOf(state.boundaries, boundary),
         errored: (boundary) => erroredOf(state.boundaries, boundary),
         error: (boundary) => errorValueOf(state.boundaries, boundary),
         errorArray: (boundary) => errorArrayOf(state.boundaries, boundary),
@@ -793,9 +817,13 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       state.owner = getOwner()
 
       const initial: Record<string, unknown> = {}
-      for (let index = 0; index < state.core.bindings.length; index += 1) {
+      const statusByIndex = new Map(
+        (config.asyncStatus ?? []).map((status) => [status.index, status]),
+      )
+      const statusIndexes = new Set(statusByIndex.keys())
+      const evaluateInitial = (index: number) => {
         const binding = state.core.bindings[index]
-        if (!binding?.raw) continue
+        if (!binding?.raw) return
         try {
           const value = binding.raw()
           binding.initial = value
@@ -817,6 +845,37 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           markAsync(state, index, error)
           reportError(state, index, error)
         }
+      }
+      // Data bindings run first so a boundary's settled signal is already true
+      // when its status binding is evaluated; everything still lands in the
+      // one initial setData below.
+      for (let index = 0; index < state.core.bindings.length; index += 1) {
+        if (!statusIndexes.has(index)) evaluateInitial(index)
+      }
+      const loadingBoundaries = new Set<number>()
+      for (const binding of state.core.bindings) {
+        if (binding?.settled && binding.loadingBoundary != null) {
+          loadingBoundaries.add(binding.loadingBoundary)
+        }
+      }
+      for (const boundary of loadingBoundaries) {
+        if (allBindingsSettled(state, boundary)) {
+          markSettledBoundary(state.boundaries, boundary, true)
+        }
+      }
+      for (const [index, status] of statusByIndex) {
+        const binding = state.core.bindings[index]
+        if (!binding) continue
+        const value =
+          status.kind === 'loading'
+            ? hasBoundaryPending(state.boundaries, status.boundary)
+            : status.kind === 'error'
+              ? state.boundaries.consumers.has(status.boundary)
+              : allBindingsSettled(state, status.boundary)
+        binding.initial = value
+        const { payload, baseline } = materialize(index, value)
+        binding.previous = baseline
+        initial[`b${index}`] = payload
       }
       // Components with async boundaries get one memo per binding. The memo
       // is a real Solid graph node, so the data effects and status probes read
@@ -917,6 +976,14 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       const binding = state.core.bindings[index]
       if (!binding) return
       if (binding.loadingBoundary != null || binding.errorBoundary != null) binding.settled = true
+      const loadingBoundary = binding.loadingBoundary
+      if (
+        loadingBoundary != null &&
+        allBindingsSettled(state, loadingBoundary) &&
+        markSettledBoundary(state.boundaries, loadingBoundary, true)
+      ) {
+        applyAsyncStatus(state, loadingBoundary, 'settled', true)
+      }
       clearAsync(state, index)
       const key = listBindings[index]
       // Scalar bindings in one effect group are recomputed together. Skip the
@@ -932,21 +999,10 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       binding.previous = baseline
     }
 
-    // Status conditions are projected directly from the same signals the
-    // binding effects use. Their own effect can be held by an unrelated pending
-    // read in the component; the direct write keeps the fallback state visible.
+    // Status conditions are projected through the same `applyBinding` queue as
+    // data, so one change commits one transport batch. Initial status values
+    // are part of the mount setData above.
     state.applyStatus = (index, value) => applyBinding(index, value)
-    for (const status of config.asyncStatus ?? []) {
-      const project = () =>
-        applyBinding(
-          status.index,
-          status.kind === 'loading'
-            ? loadingOf(state.boundaries, status.boundary)
-            : erroredOf(state.boundaries, status.boundary),
-        )
-      if (typeof queueMicrotask === 'function') queueMicrotask(project)
-      else Promise.resolve().then(project)
-    }
 
     const boundaryIndexes = new Map<number, number[]>()
     state.core.bindings.forEach((binding, index) => {
@@ -973,7 +1029,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
               )
             })
             setLoading(state.boundaries, boundary, pending)
-            applyAsyncStatus(state, boundary, 'loading')
+            applyAsyncStatus(state, boundary, 'loading', pending)
           },
           {
             effect() {},

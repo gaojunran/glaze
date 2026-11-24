@@ -190,11 +190,20 @@ const profile = createMemo(async () => {
   nearest `Errored` fallback.
 - Nested boundaries are supported: an inner pending read shows the inner
   fallback without replacing the outer content.
+- `Loading` keeps previous content on refetch by default. Add
+  `pending={<text>refreshing</text>}` for a lightweight indicator; the fallback
+  is only for the initial load. Use `keepPrevious={false}` to restore the old
+  blocking fallback.
 - A boundary placed directly inside `<For>` is rejected: WXML rows have no
   per-row JS execution or owner. Put the async memo and the boundary in a row
   component and render it from `<For>` (`<For each={rows()}>{(row) =>
   <AsyncRow row={row} />}</For>`). Each row instance then owns independent
   pending/error/reset state.
+- Read reactive inputs before the first `await`; the compiler warns with
+  `GLAZE_UNTRACKED_READ_AFTER_AWAIT` when `props` is read after `await`.
+- For imperative requests, `createRequest` from `@glaze/runtime` provides
+  latest-flight-wins, `data`/`error`/`pending` signals, and abort on owner
+  cleanup. It does not drive a `Loading` boundary; use a memo for that.
 - A failed binding is skipped rather than written as `undefined`, so one failed
   read does not clear another binding's value.
 - Error objects crossing into WXML are normalized to `{ name, message }`.

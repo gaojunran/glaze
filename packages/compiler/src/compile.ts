@@ -3,6 +3,7 @@ import * as t from '@babel/types'
 import { CONTEXT_PROP, PAGE_PROP } from '@glaze/shared'
 import { codeOf, containsJsx, isStaticPropertyKey, walkAst } from './ast.ts'
 import { STRUCTURED_PROPS, WXS_SOURCE, WXS_VALUE_SOURCE } from './constants.ts'
+import { collectAsyncReadWarnings } from './diagnostics.ts'
 import { emitModule } from './emit.ts'
 import { eventNameFor, splitEventBinding } from './events.ts'
 import { parseComponent, collectImports } from './parse.ts'
@@ -426,6 +427,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
   } = finalizeProps(props, ctx.boundaryContexts, ctx.structuredProps, ctx.pageContext)
   ctx.structuredProps = structuredProps
   ctx.propMap = propMap
+  const warnings = collectAsyncReadWarnings(ast, propsParam?.name ?? null)
   const bodyWxml = compileNode(jsx, ctx, null)
   const wxs = [
     ctx.usesWxs ? `<wxs module="glazeRange">${WXS_SOURCE}</wxs>` : '',
@@ -509,5 +511,6 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     structuredProps: ctx.structuredProps,
     pageContext: ctx.pageContext,
     pageRoot: ctx.pageRoot,
+    warnings,
   }
 }

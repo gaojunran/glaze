@@ -86,6 +86,6 @@ test('rejects an invalid async status entry', () => {
         asyncStatus: [{ index: 1, kind: 'other', boundary: 0 }] as never,
         setup,
       }),
-    /asyncStatus\.kind must be "loading" or "error"/,
+    /asyncStatus\.kind must be "loading", "error" or "settled"/,
   )
 })

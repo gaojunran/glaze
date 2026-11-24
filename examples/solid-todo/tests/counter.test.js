@@ -286,6 +286,13 @@ test('async Loading and Errored boundaries render fallbacks and resolved values'
 
   const rows = await app.$$('.async-row-host')
   if (rows.length !== 3) throw new Error(`expected 3 async row instances, got ${rows.length}`)
+
+  await expect(app).toMatchText('.refetch-value', 'user-1')
+  await (await app.$('.refetch')).tap()
+  await expect(app).toMatchText('.refetch-pending', 'refreshing')
+  await expect(app).toMatchText('.refetch-value', 'user-1')
+  await expect(app).toMatchText('.refetch-value', 'user-2')
+  await expect(app).toMatchText('.request-state', 'request-done')
 })
 
 test('independent subpackage loads its own runtime and updates state', async (miniProgram) => {

@@ -93,6 +93,8 @@ export type GlazeContext = {
   loadingOn(boundary: number, fn: () => unknown): void
   reset(boundary: number): void
   loading(boundary: number): boolean
+  /** True once every binding under the boundary has delivered a first value. */
+  hasValue(boundary: number): boolean
   errored(boundary: number): boolean
   error(boundary: number): unknown
   errorArray(boundary: number): unknown[]
@@ -127,7 +129,7 @@ export type GlazeComponentConfig = {
   data?: Record<string, unknown>
   bindingGroupSize?: number
   boundaryContexts?: { name: string; key: string }[]
-  asyncStatus?: { index: number; kind: 'loading' | 'error'; boundary: number }[]
+  asyncStatus?: { index: number; kind: 'loading' | 'error' | 'settled'; boundary: number }[]
   properties?: string[]
   propMap?: Record<string, string>
   propSignals?: string[]
@@ -168,6 +170,6 @@ export type InstanceState = {
   owner: ReturnType<typeof getOwner>
   dispose: (() => void) | null
   lifecycle: LifecycleState
-  asyncStatus?: { index: number; kind: 'loading' | 'error'; boundary: number }[]
+  asyncStatus?: { index: number; kind: 'loading' | 'error' | 'settled'; boundary: number }[]
   error: unknown
 }

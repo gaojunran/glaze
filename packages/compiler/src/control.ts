@@ -148,7 +148,26 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
   }
   const fallbackAttr = getAttribute(node, 'fallback')
   const fallback = getExpression(fallbackAttr)
+  const pendingAttr = getAttribute(node, 'pending')
+  const pending = pendingAttr ? getExpression(pendingAttr) : null
   if (kind === 'Errored' && !fallback) throw new Error('<Errored> requires a fallback')
+  if (kind === 'Errored' && pending) throw new Error('<Errored> does not support the "pending" prop')
+  if (pending && (!t.isJSXElement(pending) && !t.isJSXFragment(pending))) {
+    throw new Error('<Loading> pending must be JSX')
+  }
+  const keepPreviousAttr = getAttribute(node, 'keepPrevious')
+  let keepPrevious = kind === 'Loading'
+  if (keepPreviousAttr) {
+    if (kind === 'Errored') throw new Error('<Errored> does not support the "keepPrevious" prop')
+    const keepExpression = getExpression(keepPreviousAttr)
+    if (!t.isBooleanLiteral(keepExpression)) {
+      throw new Error('<Loading> keepPrevious must be a boolean literal')
+    }
+    keepPrevious = keepExpression.value
+  }
+  if (pending && !keepPrevious) {
+    throw new Error('<Loading> pending requires keepPrevious')
+  }
 
   const outerLoading = ctx.currentLoadingBoundary
   const outerError = ctx.currentErrorBoundary
@@ -238,6 +257,11 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
   const index = ctx.addBindingCode(
     kind === 'Loading' ? `ctx.loading(${boundary})` : `ctx.errored(${boundary})`,
   )
+  let loadedIndex: number | null = null
+  if (kind === 'Loading' && keepPrevious) {
+    loadedIndex = ctx.addBindingCode(`ctx.hasValue(${boundary})`)
+    ctx.asyncStatus.push({ index: loadedIndex, kind: 'settled', boundary })
+  }
   ctx.asyncStatus.push({
     index,
     kind: kind === 'Loading' ? 'loading' : 'error',
@@ -249,12 +273,30 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
   if (kind === 'Loading') ctx.currentLoadingBoundary = boundary
   else ctx.currentErrorBoundary = boundary
   const children = compileChildren(node.children, ctx, scope)
+  const pendingContent = pending ? compileNode(pending, ctx, scope) : ''
   ctx.currentLoadingBoundary = outerLoading
   ctx.currentErrorBoundary = outerError
 
-  const condition = kind === 'Loading' && !fallback ? `!${bindingKey(index)}` : bindingKey(index)
-  if (!fallback) return `<block wx:if="{{${condition}}}">${children}</block>`
-  return `<block wx:if="{{${condition}}}">${fallbackContent}</block><block wx:else>${children}</block>`
+  if (kind === 'Errored') {
+    const condition = bindingKey(index)
+    if (!fallback) return `<block wx:if="{{${condition}}}">${children}</block>`
+    return `<block wx:if="{{${condition}}}">${fallbackContent}</block><block wx:else>${children}</block>`
+  }
+
+  const loading = bindingKey(index)
+  const loaded = loadedIndex != null ? bindingKey(loadedIndex) : null
+  const initial = loaded ? `${loading} && !${loaded}` : loading
+  const content = loaded ? `!${loading} || ${loaded}` : `!${loading}`
+  const pendingCondition = pending ? (loaded ? `${loading} && ${loaded}` : loading) : null
+  const pendingBlock =
+    pending && pendingCondition
+      ? `<block wx:if="{{${pendingCondition}}}">${pendingContent}</block>`
+      : ''
+
+  if (!fallback) {
+    return `${pendingBlock}<block wx:if="{{${content}}}">${children}</block>`
+  }
+  return `${pendingBlock}<block wx:if="{{${initial}}}">${fallbackContent}</block><block wx:if="{{${content}}}">${children}</block>`
 }
 
 export function compileShow(node, ctx, scope) {
