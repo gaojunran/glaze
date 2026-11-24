@@ -170,8 +170,10 @@ target/debug/minidev test \
 - loading state switching through a second button;
 - dialog open from a button, slot content, mask close, and scroll lock.
 
-This is minidev simulator validation (base library 3.17.3), not a real-device
-run.
+This is minidev simulator validation (base library 3.17.3). A manual real-device
+smoke was also run through `minidev preview` with a test appid after enabling
+`setting.es6`; it found no blocking issues in rendering or the tap/dialog/input
+paths. It is a single-device smoke, not a device matrix.
 
 ## Trade-offs and rejected alternatives
 
