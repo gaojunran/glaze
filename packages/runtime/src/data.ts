@@ -24,3 +24,7 @@ export function reportBindingError(index: number, error: unknown): void {
   errorConsole?.error?.(`[glaze] binding b${index} failed`, error)
 }
 
+export function reportTransportError(error: unknown): void {
+  const errorConsole = (globalThis as { console?: Console }).console
+  errorConsole?.error?.('[glaze] data transport failed; the batch was not replayed', error)
+}

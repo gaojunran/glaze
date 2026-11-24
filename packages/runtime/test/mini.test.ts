@@ -570,9 +570,11 @@ test('listOps and listPatch describe structural changes', () => {
   const first = { id: 1, done: false }
   const second = { id: 2, done: false }
 
-  assert.deepEqual(listOps([first], [first, second], 'id'), [
-    { index: 1, del: 0, inserts: [second] },
-  ])
+  assert.deepEqual(listOps([first], [first, second], 'id'), {
+    index: 1,
+    del: 0,
+    inserts: [second],
+  })
   assert.equal(listOps([first], [first], 'id'), null)
   assert.deepEqual(listPatch([{ id: 1, done: false }], [{ id: 1, done: true }], 'id', 'b0'), [
     { path: ['b0', 0, 'done'], value: true },

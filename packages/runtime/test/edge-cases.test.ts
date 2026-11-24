@@ -554,8 +554,8 @@ test('keeps loading while another binding in the boundary is pending', async () 
 test('listOps handles empty arrays and rejects primitive rows', () => {
   const item = { id: 1 }
   assert.equal(listOps([], [], 'id'), null)
-  assert.deepEqual(listOps([], [item], 'id'), [{ index: 0, del: 0, inserts: [item] }])
-  assert.deepEqual(listOps([item], [], 'id'), [{ index: 0, del: 1, inserts: [] }])
+  assert.deepEqual(listOps([], [item], 'id'), { index: 0, del: 0, inserts: [item] })
+  assert.deepEqual(listOps([item], [], 'id'), { index: 0, del: 1, inserts: [] })
   // Primitive rows have no key to align on, so the whole array is replaced.
   assert.equal(listOps([1, 2], [1, 3], 'x'), null)
   assert.equal(listOps([1], [1, 2], 'x'), null)
@@ -563,9 +563,11 @@ test('listOps handles empty arrays and rejects primitive rows', () => {
 
 test('listOps reports a middle replacement', () => {
   const [a, b, c, x] = ['a', 'b', 'c', 'x'].map((id) => ({ id }))
-  assert.deepEqual(listOps([a, b, c], [a, x, c], 'id'), [
-    { index: 1, del: 1, inserts: [x] },
-  ])
+  assert.deepEqual(listOps([a, b, c], [a, x, c], 'id'), {
+    index: 1,
+    del: 1,
+    inserts: [x],
+  })
 })
 
 test('listOps inserts and deletes multiple middle items', () => {
@@ -574,20 +576,26 @@ test('listOps inserts and deletes multiple middle items', () => {
   const x = { id: 'x' }
   const y = { id: 'y' }
 
-  assert.deepEqual(listOps([a, b, c, d], [a, x, y, d], 'id'), [
-    { index: 1, del: 2, inserts: [x, y] },
-  ])
-  assert.deepEqual(listOps([a, b, c, d, e], [a, e], 'id'), [
-    { index: 1, del: 3, inserts: [] },
-  ])
+  assert.deepEqual(listOps([a, b, c, d], [a, x, y, d], 'id'), {
+    index: 1,
+    del: 2,
+    inserts: [x, y],
+  })
+  assert.deepEqual(listOps([a, b, c, d, e], [a, e], 'id'), {
+    index: 1,
+    del: 3,
+    inserts: [],
+  })
 })
 
 test('listOps represents a pure reorder as one replacement', () => {
   const a = { id: 'a' }
   const b = { id: 'b' }
-  assert.deepEqual(listOps([a, b], [b, a], 'id'), [
-    { index: 0, del: 2, inserts: [b, a] },
-  ])
+  assert.deepEqual(listOps([a, b], [b, a], 'id'), {
+    index: 0,
+    del: 2,
+    inserts: [b, a],
+  })
 })
 
 test('listOps and listPatch reject *this and non-arrays', () => {
@@ -607,6 +615,23 @@ test('listPatch returns an empty patch for identical item references', () => {
 test('listPatch rejects added and removed fields', () => {
   assert.equal(listPatch([{ id: 1 }], [{ id: 1, extra: 2 }], 'id', 'b0'), null)
   assert.equal(listPatch([{ id: 1, extra: 2 }], [{ id: 1 }], 'id', 'b0'), null)
+})
+
+test('listPatch still detects a shared object pair compared in another field', () => {
+  const beforeShared = { value: 1 }
+  const afterShared = { value: 2 }
+  assert.deepEqual(
+    listPatch(
+      [{ id: 1, direct: beforeShared, nested: { inner: beforeShared } }],
+      [{ id: 1, direct: afterShared, nested: { inner: afterShared } }],
+      'id',
+      'b0',
+    ),
+    [
+      { path: ['b0', 0, 'direct'], value: afterShared },
+      { path: ['b0', 0, 'nested'], value: { inner: afterShared } },
+    ],
+  )
 })
 
 test('listPatches array-valued fields as whole replacements', () => {

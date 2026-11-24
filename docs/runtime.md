@@ -109,6 +109,11 @@ binding at mount; update paths are unchanged. The regression test
 `initial list data is detached from the source array` mutates the data copy and
 asserts the source row is untouched.
 
+The same rule now holds for every list update, not only the initial write.
+`materialize` builds a detached payload for `*this` and unkeyed lists too, and
+keeps a second snapshot as the diff baseline. See
+[`runtime-transport.md`](runtime-transport.md).
+
 ### Loading on and Errored reset
 
 `ctx.loadingOn(boundary, read)` creates a runtime effect for the `on`

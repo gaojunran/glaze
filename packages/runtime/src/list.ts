@@ -25,17 +25,27 @@ const equalValue = (left: unknown, right: unknown, seen: WeakMap<object, WeakSet
   }
   const leftObject = left as object
   const rightObject = right as object
-  const compared = seen.get(leftObject)
+  let compared = seen.get(leftObject)
   if (compared?.has(rightObject)) return true
-  if (!compared) seen.set(leftObject, new WeakSet([rightObject]))
-  else compared.add(rightObject)
+  if (!compared) {
+    compared = new WeakSet()
+    seen.set(leftObject, compared)
+  }
+  compared.add(rightObject)
   const leftRecord = left as Record<string, unknown>
   const rightRecord = right as Record<string, unknown>
   const leftKeys = Object.keys(leftRecord)
-  if (leftKeys.length !== Object.keys(rightRecord).length) return false
+  if (leftKeys.length !== Object.keys(rightRecord).length) {
+    compared.delete(rightObject)
+    return false
+  }
   for (const key of leftKeys) {
-    if (!Object.hasOwn(rightRecord, key)) return false
-    if (!equalValue(leftRecord[key], rightRecord[key], seen)) return false
+    if (!Object.hasOwn(rightRecord, key) || !equalValue(leftRecord[key], rightRecord[key], seen)) {
+      // Only equal pairs stay cached. Caching an unequal pair would hide the
+      // same pair when another field reaches it through a different path.
+      compared.delete(rightObject)
+      return false
+    }
   }
   return true
 }
@@ -47,6 +57,12 @@ const equalValue = (left: unknown, right: unknown, seen: WeakMap<object, WeakSet
  * snapshot makes both direct and nested field mutations visible to
  * `listPatch`; only the changed top-level field is still sent, because
  * `listPatch` compares row fields one level at a time.
+ *
+ * Supported inputs are primitives, arrays, `Date`, `RegExp`, plain objects and
+ * cyclic references. Any other object (class instance, `Map`, `Set`,
+ * `TypedArray`, ...) is copied by its enumerable own keys, so a `Map`/`Set`
+ * flattens to `{}` and a typed array becomes an index-keyed plain object. Keep
+ * such containers out of list rows, or replace the row as a whole.
  */
 const cloneValue = (value: unknown, seen: WeakMap<object, unknown>): unknown => {
   if (value === null || typeof value !== 'object') return value
@@ -105,7 +121,7 @@ export function projectList(value: unknown, fields: readonly string[] | null | u
 }
 
 /** Internal helper, exported for unit tests. */
-export function listOps(previous: unknown, next: unknown, key: string): ListOp[] | null {
+export function listOps(previous: unknown, next: unknown, key: string): ListOp | null {
   if (!Array.isArray(previous) || !Array.isArray(next)) return null
   if (key === LIST_KEY_WHOLE) return null
   // Primitive rows have no key to align on; splice ops would be ambiguous, so
@@ -137,18 +153,16 @@ export function listOps(previous: unknown, next: unknown, key: string): ListOp[]
 
   if (prefix === previous.length && prefix === next.length) return null
   if (prefix === previous.length) {
-    return [{ index: prefix, del: 0, inserts: next.slice(prefix) }]
+    return { index: prefix, del: 0, inserts: next.slice(prefix) }
   }
   if (prefix === next.length) {
-    return [{ index: prefix, del: previous.length - prefix, inserts: [] }]
+    return { index: prefix, del: previous.length - prefix, inserts: [] }
   }
-  return [
-    {
-      index: prefix,
-      del: previous.length - prefix - suffix,
-      inserts: next.slice(prefix, next.length - suffix),
-    },
-  ]
+  return {
+    index: prefix,
+    del: previous.length - prefix - suffix,
+    inserts: next.slice(prefix, next.length - suffix),
+  }
 }
 
 /** Internal helper, exported for unit tests. */
@@ -163,6 +177,10 @@ export function listPatch(
   if (previous.length !== next.length) return null
 
   const patch: DataChange[] = []
+  // One comparison cache for the whole call: a pair compared once yields the
+  // same structural result on every field and row, and the arrays do not
+  // change while this synchronous pass runs.
+  const seen = new WeakMap<object, WeakSet<object>>()
   for (let index = 0; index < next.length; index += 1) {
     const item = next[index]
     const before = previous[index]
@@ -170,7 +188,7 @@ export function listPatch(
     if (!Object.is(keyOf(before, key), keyOf(item, key))) return null
 
     for (const field of Object.keys(item)) {
-      if (equalValue(before[field], item[field], new WeakMap())) continue
+      if (equalValue(before[field], item[field], seen)) continue
       if (!(field in before)) return null
       patch.push({ path: [binding, index, field], value: item[field] })
     }
@@ -180,4 +198,24 @@ export function listPatch(
   }
 
   return patch
+}
+
+/**
+ * Decide how a list binding reaches component data: field patch first, then a
+ * single splice, then `null` so the caller sends the whole value. `canSplice`
+ * is the transport capability, not the presence of `spliceArrayDataOnPath`;
+ * without it a splice would be silently dropped by the setData fallback.
+ */
+export function diffList(
+  previous: unknown,
+  next: unknown,
+  key: string,
+  binding: string,
+  canSplice = true,
+): DataChange[] | null {
+  const patch = listPatch(previous, next, key, binding)
+  if (patch) return patch
+  if (!canSplice) return null
+  const op = listOps(previous, next, key)
+  return op ? [{ path: [binding], splice: op }] : null
 }

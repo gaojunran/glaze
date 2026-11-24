@@ -392,6 +392,12 @@ Two fallbacks remain, in this order:
 1. `groupUpdates` + `replaceDataOnPath` / `spliceArrayDataOnPath`;
 2. one `setData` built with `dataKey()` (`b3[0].done`).
 
+The fallback is chosen once per attach and reports whether it can commit a
+splice. A component that exposes `spliceArrayDataOnPath` but no group or data
+proxy uses the `setData` fallback and sends the whole list, instead of emitting
+a splice the fallback would drop. See
+[`runtime-transport.md`](runtime-transport.md).
+
 `dataKey()` is only used by the last fallback; the old `dataPath()` string parser
 was removed.
 

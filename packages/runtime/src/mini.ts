@@ -11,16 +11,17 @@ import {
 } from 'solid-js'
 import { CONTEXT_PROP, STRUCTURED_PROP, eventHandlerName } from '@glaze/shared'
 import {
-  dataKey,
   normalizeDataValue,
   normalizePropValue,
   GLAZE_EVENT_OPTIONS,
   reportBindingError as logBindingError,
+  reportTransportError,
   SCALAR_BINDING_GROUP,
 } from './data.ts'
-import { listOps, listPatch, projectList, snapshotList } from './list.ts'
+import { diffList, projectList, snapshotList } from './list.ts'
 import { isContextReader, withBoundaryContexts, withProvider } from './provider.ts'
 import { createNodeRef } from './ref.ts'
+import { createDataTransport } from './transport.ts'
 declare const Component: (options: Record<string, unknown>) => unknown
 
 import type {
@@ -35,7 +36,7 @@ import type {
 
 export { className, styleName, textValue } from './styles.ts'
 export { withBoundaryContexts, withProvider } from './provider.ts'
-export { listOps, listPatch, projectList, snapshotList } from './list.ts'
+export { diffList, listOps, listPatch, projectList, snapshotList } from './list.ts'
 export type { GlazeComponentConfig, GlazeContext, GlazeNode } from './types.ts'
 
 export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
@@ -331,15 +332,24 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   )
 
   const isListBinding = (index: number) => Object.hasOwn(listBindings, index)
-  const projectValue = (index: number, value: unknown) => {
-    if (!isListBinding(index)) return value
+  /**
+   * Build the component-data payload and the next diff baseline for one
+   * binding. List payloads are always detached snapshots: the platform applies
+   * path updates by mutating the data object in place (and `*this` used to
+   * hand the application array over unchanged). Payload and baseline are
+   * separate snapshots so a platform mutation of one cannot reach the other or
+   * the application row.
+   */
+  const materialize = (index: number, value: unknown): { payload: unknown; baseline: unknown } => {
+    if (!isListBinding(index)) return { payload: normalizeDataValue(value), baseline: value }
     const key = listBindings[index]
     const fields = listFields[index]
-    if (!fields || !key || key === '*this') return value
-    return projectList(value, fields.includes(key) ? fields : [...fields, key])
+    const projected =
+      !fields || !key || key === '*this'
+        ? value
+        : projectList(value, fields.includes(key) ? fields : [...fields, key])
+    return { payload: snapshotList(projected), baseline: snapshotList(projected) }
   }
-  const snapshotValue = (index: number, value: unknown) =>
-    isListBinding(index) ? snapshotList(value) : value
 
   const mount = (component: any, state: InstanceState) => {
     state.bindings.length = 0
@@ -407,17 +417,15 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         try {
           const value = fn()
           state.initial[index] = value
-          const projected = projectValue(index, value)
-          state.previous[index] = snapshotValue(index, projected)
+          const { payload, baseline } = materialize(index, value)
+          state.previous[index] = baseline
           // The initial pass already committed a value, so the boundary status
           // effect below may probe `isPending` for a later refetch.
           if (state.bindingBoundaries[index] != null || state.bindingErrorBoundaries[index] != null) state.settled[index] = true
           // Platform path updates mutate the data object in place. List data
           // must not alias the signal array, or the next page instance would
           // inherit a row mutated by the previous one.
-          initial[`b${index}`] = normalizeDataValue(
-            isListBinding(index) ? snapshotValue(index, projected) : value,
-          )
+          initial[`b${index}`] = payload
         } catch (error) {
           // One async or broken binding must not prevent the component from
           // rendering the remaining values.
@@ -484,92 +492,11 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   }
 
   const attach = (component: any, state: InstanceState) => {
-    const applyPending = (pending: DataChange[]) => {
-      const dataGroup = (
-        Component as unknown as {
-          getDataProxy?: (comp: unknown) => {
-            getChanges?: () => unknown[]
-            setChanges?: (changes: unknown[]) => void
-            applyDataUpdates?: () => void
-          }
-        }
-      ).getDataProxy?.(component) ??
-        (
-          component as {
-            _$dataGroup?: {
-              getChanges?: () => unknown[]
-              setChanges?: (changes: unknown[]) => void
-              applyDataUpdates?: () => void
-            }
-          }
-        )._$dataGroup
-      if (
-        dataGroup &&
-        typeof dataGroup.getChanges === 'function' &&
-        typeof dataGroup.setChanges === 'function' &&
-        typeof dataGroup.applyDataUpdates === 'function'
-      ) {
-        // Keep changes another writer queued before this flush, then append
-        // ours as glass-easel's own DataChange tuples. This is the same queue
-        // `replaceDataOnPath`/`spliceArrayDataOnPath` fill, but it avoids one
-        // component method call per field and applies replace + splice in one
-        // template update.
-        const queued = dataGroup.getChanges()
-        dataGroup.setChanges([
-          ...queued,
-          ...pending.map((change) =>
-            change.splice
-              ? [
-                  change.path,
-                  change.splice.inserts,
-                  change.splice.index,
-                  change.splice.del,
-                ]
-              : [change.path, normalizeDataValue(change.value), undefined, undefined],
-          ),
-        ])
-        dataGroup.applyDataUpdates()
-        return
-      }
-      if (
-        typeof component.groupUpdates === 'function' &&
-        (typeof component.replaceDataOnPath === 'function' ||
-          typeof component.spliceArrayDataOnPath === 'function')
-      ) {
-        const replacements: DataChange[] = []
-        component.groupUpdates(() => {
-          for (const change of pending) {
-            if (change.splice) {
-              component.spliceArrayDataOnPath?.(
-                change.path,
-                change.splice.index,
-                change.splice.del,
-                change.splice.inserts,
-              )
-            } else if (typeof component.replaceDataOnPath === 'function') {
-              component.replaceDataOnPath(change.path, normalizeDataValue(change.value))
-            } else {
-              replacements.push(change)
-            }
-          }
-        })
-        if (replacements.length > 0) {
-          component.setData(
-            Object.fromEntries(
-              replacements.map((change) => [dataKey(change.path), normalizeDataValue(change.value)]),
-            ),
-          )
-        }
-        return
-      }
-      component.setData(
-        Object.fromEntries(
-          pending
-            .filter((change) => !change.splice)
-            .map((change) => [dataKey(change.path), normalizeDataValue(change.value)]),
-        ),
-      )
-    }
+    // `canSplice` must mean "a splice can actually be committed". A component
+    // with `spliceArrayDataOnPath` but no group or data proxy falls to the
+    // setData fallback, which cannot carry a splice; list changes then take the
+    // whole-value path instead of being dropped by the final filter.
+    const transport = createDataTransport(component)
 
     const schedule = (changes: DataChange[]) => {
       if (changes.length === 0) return
@@ -581,7 +508,16 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         const pending = state.pending
         state.pending = []
         if (!state.active || pending.length === 0) return
-        applyPending(pending)
+        try {
+          transport.apply(pending)
+        } catch (error) {
+          // `state.previous` was advanced when this batch was scheduled, so the
+          // batch is intentionally not replayed; replay would re-apply changes
+          // that may already be committed. Surface it on the instance error and
+          // log channels instead of an async boundary.
+          state.error = error
+          reportTransportError(error)
+        }
       }
       if (typeof queueMicrotask === 'function') queueMicrotask(flush)
       else Promise.resolve().then(flush)
@@ -596,30 +532,12 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       // which also keeps the template engine on its binding-map path longer.
       if (!key && Object.is(value, state.previous[index])) return
       const binding = `b${index}`
-      const projected = projectValue(index, value)
-      // A projected row may still contain an object field. Snapshot it before
-      // it enters component data, because the platform mutates data in place.
-      const next = isListBinding(index) && listFields[index] ? snapshotList(projected) : projected
-      const patch = key ? listPatch(state.previous[index], next, key, binding) : null
-      if (patch) {
-        schedule(patch)
-      } else {
-        const ops =
-          key && typeof component.spliceArrayDataOnPath === 'function'
-            ? listOps(state.previous[index], next, key)
-            : null
-        if (ops) {
-          schedule(
-            ops.map((op) => ({
-              path: [binding] as (string | number)[],
-              splice: op,
-            })),
-          )
-        } else {
-          schedule([{ path: [binding], value: next }])
-        }
-      }
-      state.previous[index] = snapshotValue(index, next)
+      const { payload, baseline } = materialize(index, value)
+      const changes = key
+        ? diffList(state.previous[index], payload, key, binding, transport.canSplice)
+        : null
+      schedule(changes ?? [{ path: [binding], value: payload }])
+      state.previous[index] = baseline
     }
 
     // Status conditions are projected directly from the same signals the

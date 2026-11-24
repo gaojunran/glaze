@@ -1,0 +1,395 @@
+import assert from 'node:assert/strict'
+import test, { after } from 'node:test'
+import { createSignal } from 'solid-js'
+import { diffList } from '../src/list.ts'
+import { defineGlazeComponent } from '../src/mini.ts'
+import { createDataTransport } from '../src/transport.ts'
+
+const originalComponent = globalThis.Component
+globalThis.Component = (config) => config
+after(() => {
+  if (originalComponent === undefined) delete globalThis.Component
+  else globalThis.Component = originalComponent
+})
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+/**
+ * Instance stub covering every transport capability combination. `options`
+ * adds `groupUpdates`, `spliceArrayDataOnPath` and `replaceDataOnPath`; a test
+ * can attach `_$dataGroup` afterwards to exercise the full proxy path.
+ */
+function createInstance(def, properties = {}, options = {}) {
+  const calls = []
+  const ops = []
+  const pathCalls = []
+  const instance = {
+    properties,
+    __glaze: null,
+    calls,
+    ops,
+    pathCalls,
+    setData(data) {
+      calls.push(data)
+    },
+    triggerEvent() {},
+  }
+  if (options.groupUpdates !== false) instance.groupUpdates = (run) => run()
+  if (options.splice !== false) {
+    instance.spliceArrayDataOnPath = (path, index, del, inserts) => {
+      ops.push({ path, index, del, inserts })
+    }
+  }
+  if (options.replace) {
+    instance.replaceDataOnPath = (path, value) => pathCalls.push([path, value])
+  }
+  def.lifetimes.created.call(instance)
+  return instance
+}
+
+function captureConsoleError() {
+  const errors = []
+  const original = console.error
+  console.error = (...args) => errors.push(args)
+  return {
+    errors,
+    restore() {
+      console.error = original
+    },
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Capability matrix
+// ---------------------------------------------------------------------------
+
+test('DataGroup transport keeps the existing queue and the tuple format', () => {
+  const events = []
+  const group = {
+    queue: [['other', 1, undefined, undefined]],
+    getChanges() {
+      events.push('get')
+      assert.equal(this, group)
+      return this.queue
+    },
+    setChanges(changes) {
+      events.push('set')
+      assert.equal(this, group)
+      this.queue = changes
+    },
+    applyDataUpdates() {
+      events.push('apply')
+      assert.equal(this, group)
+    },
+  }
+  const component = {
+    setData() {
+      assert.fail('setData must not run when a data group exists')
+    },
+    groupUpdates() {
+      assert.fail('groupUpdates must not run when a data group exists')
+    },
+    spliceArrayDataOnPath() {
+      assert.fail('splice must go through the data group')
+    },
+    _$dataGroup: group,
+  }
+
+  const transport = createDataTransport(component)
+  assert.equal(transport.kind, 'data-group')
+  assert.equal(transport.canSplice, true)
+  transport.apply([
+    { path: ['b0'], value: 1 },
+    { path: ['b1'], splice: { index: 2, del: 1, inserts: [{ id: 3 }] } },
+  ])
+
+  assert.deepEqual(group.queue, [
+    ['other', 1, undefined, undefined],
+    [['b0'], 1, undefined, undefined],
+    [['b1'], [{ id: 3 }], 2, 1],
+  ])
+  assert.deepEqual(events, ['get', 'set', 'apply'])
+})
+
+test('groupUpdates + replaceDataOnPath cannot commit a splice', () => {
+  const replacements = []
+  const component = {
+    setData() {
+      assert.fail('setData must not run while replaceDataOnPath can take the change')
+    },
+    groupUpdates(run) {
+      run()
+    },
+    replaceDataOnPath(path, value) {
+      replacements.push([path, value])
+    },
+  }
+
+  const transport = createDataTransport(component)
+  assert.equal(transport.kind, 'grouped')
+  assert.equal(transport.canSplice, false)
+
+  transport.apply([{ path: ['b0'], value: 1 }])
+  assert.deepEqual(replacements, [[['b0'], 1]])
+
+  replacements.length = 0
+  assert.throws(
+    () => transport.apply([{ path: ['b0'], splice: { index: 0, del: 1, inserts: [] } }]),
+    /cannot commit a splice/,
+  )
+  // Validation happens before groupUpdates, so nothing is partially applied.
+  assert.deepEqual(replacements, [])
+})
+
+test('groupUpdates + spliceArrayDataOnPath commits splices and setDatas replaces', () => {
+  const ops = []
+  const calls = []
+  const component = {
+    setData(data) {
+      calls.push(data)
+    },
+    groupUpdates(run) {
+      run()
+    },
+    spliceArrayDataOnPath(path, index, del, inserts) {
+      ops.push({ path, index, del, inserts })
+    },
+  }
+
+  const transport = createDataTransport(component)
+  assert.equal(transport.kind, 'grouped')
+  assert.equal(transport.canSplice, true)
+
+  transport.apply([{ path: ['b0'], splice: { index: 1, del: 1, inserts: [{ id: 9 }] } }])
+  assert.deepEqual(ops, [{ path: ['b0'], index: 1, del: 1, inserts: [{ id: 9 }] }])
+
+  transport.apply([{ path: ['b1'], value: 2 }])
+  assert.deepEqual(calls, [{ b1: 2 }])
+})
+
+test('groupUpdates + replace + splice uses the path APIs for both shapes', () => {
+  const ops = []
+  const replacements = []
+  const component = {
+    setData() {
+      assert.fail('setData must not run when both path APIs exist')
+    },
+    groupUpdates(run) {
+      run()
+    },
+    replaceDataOnPath(path, value) {
+      replacements.push([path, value])
+    },
+    spliceArrayDataOnPath(path, index, del, inserts) {
+      ops.push({ path, index, del, inserts })
+    },
+  }
+
+  const transport = createDataTransport(component)
+  assert.equal(transport.canSplice, true)
+  transport.apply([
+    { path: ['b0', 0, 'done'], value: true },
+    { path: ['b1'], splice: { index: 0, del: 0, inserts: [{ id: 1 }] } },
+  ])
+
+  assert.deepEqual(replacements, [[['b0', 0, 'done'], true]])
+  assert.deepEqual(ops, [{ path: ['b1'], index: 0, del: 0, inserts: [{ id: 1 }] }])
+})
+
+test('plain setData transport rejects a splice instead of dropping it', () => {
+  const calls = []
+  const component = {
+    setData(data) {
+      calls.push(data)
+    },
+  }
+
+  const transport = createDataTransport(component)
+  assert.equal(transport.kind, 'set-data')
+  assert.equal(transport.canSplice, false)
+
+  transport.apply([{ path: ['b0', 0, 'done'], value: true }])
+  assert.deepEqual(calls, [{ 'b0[0].done': true }])
+
+  assert.throws(
+    () => transport.apply([{ path: ['b0'], splice: { index: 0, del: 1, inserts: [] } }]),
+    /cannot commit a splice/,
+  )
+  // The rejected call did not reach setData.
+  assert.equal(calls.length, 1)
+})
+
+// ---------------------------------------------------------------------------
+// Runtime integration
+// ---------------------------------------------------------------------------
+
+test('a splice without a group or data proxy replaces the whole list', async () => {
+  let setItems
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    setup(ctx) {
+      const [items, set] = createSignal([{ id: 1 }, { id: 2 }, { id: 3 }])
+      setItems = set
+      ctx.bind(0, () => items())
+    },
+  })
+
+  // The splice API exists, but without `groupUpdates` it cannot be committed.
+  const instance = createInstance(def, {}, { groupUpdates: false })
+  def.lifetimes.attached.call(instance)
+
+  setItems([{ id: 1 }, { id: 9 }, { id: 3 }])
+  await tick()
+
+  assert.deepEqual(instance.ops, [])
+  assert.deepEqual(instance.calls.at(-1), { b0: [{ id: 1 }, { id: 9 }, { id: 3 }] })
+})
+
+test('a grouped splice transport keeps structural list changes as splices', async () => {
+  let setItems
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    setup(ctx) {
+      const [items, set] = createSignal([{ id: 1 }, { id: 2 }, { id: 3 }])
+      setItems = set
+      ctx.bind(0, () => items())
+    },
+  })
+
+  const instance = createInstance(def, {}, { replace: false })
+  def.lifetimes.attached.call(instance)
+
+  setItems([{ id: 1 }, { id: 9 }, { id: 3 }])
+  await tick()
+
+  assert.deepEqual(instance.ops, [{ path: ['b0'], index: 1, del: 1, inserts: [{ id: 9 }] }])
+  assert.equal(instance.calls.length, 1)
+})
+
+test('*this list updates send a detached, unprojected payload', async () => {
+  let setRows
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: '*this' },
+    setup(ctx) {
+      const [rows, set] = createSignal([{ id: 1, value: 2, extra: 'keep' }])
+      setRows = set
+      ctx.bind(0, () => rows())
+    },
+  })
+
+  const instance = createInstance(def, {}, { groupUpdates: false, splice: false })
+  def.lifetimes.attached.call(instance)
+
+  const next = [{ id: 1, value: 3, extra: 'keep' }]
+  setRows(next)
+  await tick()
+
+  const payload = instance.calls.at(-1).b0
+  assert.notEqual(payload, next)
+  assert.notEqual(payload[0], next[0])
+  // `*this` lists are never projected by the compiler; the payload keeps every
+  // field and is only detached from the application row.
+  assert.deepEqual(payload, next)
+
+  payload[0].value = 99
+  payload.push({ id: 2, value: 4 })
+  assert.equal(next[0].value, 3)
+  assert.equal(next.length, 1)
+})
+
+test('a keyed list without listFields also sends a detached payload', async () => {
+  let setRows
+  const row = { id: 1, value: 2 }
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    setup(ctx) {
+      const [rows, set] = createSignal([row])
+      setRows = set
+      ctx.bind(0, () => rows())
+    },
+  })
+
+  const instance = createInstance(def, {}, { groupUpdates: false, splice: false })
+  def.lifetimes.attached.call(instance)
+
+  const next = [{ id: 1, value: 2 }, { id: 2, value: 3 }]
+  setRows(next)
+  await tick()
+
+  const payload = instance.calls.at(-1).b0
+  assert.notEqual(payload, next)
+  assert.notEqual(payload[0], next[0])
+  payload[0].value = 99
+  payload.push({ id: 3, value: 4 })
+  assert.equal(next[0].value, 2)
+  assert.equal(next.length, 2)
+})
+
+test('a throwing transport reports the failure and does not replay the batch', async () => {
+  let setCount
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    setup(ctx) {
+      const [count, set] = createSignal(0)
+      setCount = set
+      ctx.bind(0, () => count())
+    },
+  })
+
+  const instance = createInstance(def, {}, { groupUpdates: false, splice: false })
+  const failure = new Error('transport failed')
+  let applies = 0
+  instance._$dataGroup = {
+    getChanges: () => [],
+    setChanges: () => {},
+    applyDataUpdates: () => {
+      applies += 1
+      throw failure
+    },
+  }
+
+  const log = captureConsoleError()
+  try {
+    def.lifetimes.attached.call(instance)
+
+    setCount(1)
+    await tick()
+    assert.equal(applies, 1)
+    assert.equal(instance.__glaze.error, failure)
+    assert.ok(log.errors.some((args) => String(args[0]).includes('data transport failed')))
+
+    // `pending` was cleared and `previous` already advanced: the failed batch
+    // is gone, and the next change flushes once on its own.
+    setCount(2)
+    await tick()
+    assert.equal(applies, 2)
+    assert.equal(instance.calls.length, 1)
+  } finally {
+    log.restore()
+  }
+})
+
+// ---------------------------------------------------------------------------
+// diffList entry point
+// ---------------------------------------------------------------------------
+
+test('diffList picks patch, splice, or whole value in one place', () => {
+  const before = [{ id: 1, done: false }]
+  const fieldChange = diffList(before, [{ id: 1, done: true }], 'id', 'b0', true)
+  assert.deepEqual(fieldChange, [{ path: ['b0', 0, 'done'], value: true }])
+
+  const inserted = { id: 2, done: false }
+  const structural = diffList(before, [...before, inserted], 'id', 'b0', true)
+  assert.deepEqual(structural, [
+    { path: ['b0'], splice: { index: 1, del: 0, inserts: [inserted] } },
+  ])
+
+  // Same structural change without splice support must fall back to setData.
+  assert.equal(diffList(before, [...before, inserted], 'id', 'b0', false), null)
+  assert.equal(diffList([1, 2], [1, 3], 'x', 'b0', true), null)
+  assert.equal(diffList(before, before, '*this', 'b0', true), null)
+})
