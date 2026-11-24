@@ -9,6 +9,7 @@ import {
   runWithOwner,
   useContext,
 } from 'solid-js'
+import { CONTEXT_PROP, STRUCTURED_PROP, eventHandlerName } from '@glaze/shared'
 import {
   dataKey,
   normalizeDataValue,
@@ -36,10 +37,6 @@ export { className, styleName, textValue } from './styles.ts'
 export { withBoundaryContexts, withProvider } from './provider.ts'
 export { listOps, listPatch, projectList, snapshotList } from './list.ts'
 export type { GlazeComponentConfig, GlazeContext, GlazeNode } from './types.ts'
-
-// The compiler passes a child's compact scalar props as one object property so a
-// parent update writes the child boundary once instead of once per prop.
-const STRUCTURED_PROP = 'glazeprops'
 
 export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   const publicPropertyNames = config.properties ?? []
@@ -258,7 +255,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   const methods: Record<string, unknown> = {}
   const handlerCount = config.handlerCount ?? 0
   for (let i = 0; i < handlerCount; i += 1) {
-    const name = `e${i}`
+    const name = eventHandlerName(i)
     methods[name] = function handleEvent(
       this: { __glaze?: InstanceState | null },
       event?: unknown,
@@ -280,14 +277,14 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   const properties = Object.fromEntries(
     propertyNames.map((name) => [
       name,
-      name === 'glazecontext' || name === STRUCTURED_PROP
+      name === CONTEXT_PROP || name === STRUCTURED_PROP
         ? { type: Object, value: null }
         : { type: null, value: null },
     ]),
   )
   const signalNames = new Set(config.propSignals ?? propertyNames)
   // Context is always observed so a boundary can wait for the property bridge.
-  if (deferredContext) signalNames.add('glazecontext')
+  if (deferredContext) signalNames.add(CONTEXT_PROP)
   // Compact props only need a signal when the child reads a prop from JS. A
   // WXML-only child reads `glazeprops` directly, so adding a signal there would
   // recreate the per-prop observer cost this property exists to avoid.
@@ -305,11 +302,11 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         const state = this.__glaze
         state?.props[name]?.[1](normalizePropValue(value))
         if (
-          name === 'glazecontext' &&
+          name === CONTEXT_PROP &&
           state &&
           deferredContext &&
           !state.mounted &&
-          state.props.glazecontext?.[0]() != null
+          state.props[CONTEXT_PROP]?.[0]() != null
         ) {
           mount(this, state)
           if (state.active) attach(this, state)
@@ -876,7 +873,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
                   this.triggerEvent(eventName, args.length <= 1 ? args[0] : args, GLAZE_EVENT_OPTIONS)
               }
               const mapped = Object.hasOwn(propMap, key) ? propMap[key]! : key
-              if (mapped !== 'glazecontext') {
+              if (mapped !== CONTEXT_PROP) {
                 const structured = state.props[STRUCTURED_PROP]?.[0]()
                 if (
                   structured != null &&

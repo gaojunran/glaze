@@ -25,10 +25,11 @@ The fixes stay inside `mini.ts` and `list.ts` and add focused tests in
 `reportError(state, index, error)` now checks
 `state.bindingBoundaries[index]`. A binding with an async boundary surfaces
 failures through the Errored state and stays quiet; a binding without one has no
-channel, so it still logs through `reportBindingError`. `config.errorBoundary`
-is no longer used as a blanket suppression flag. Every call site passes the
-instance state: the initial mount pass, the memo-backed boundary effect, and the
-scalar/list binding effects.
+channel, so it still logs through `reportBindingError`. The per-component
+`config.errorBoundary` flag was removed; the per-binding boundary id is now the
+only suppression condition. Every call site passes the instance state: the
+initial mount pass, the memo-backed boundary effect, and the scalar/list binding
+effects.
 
 ### Committed bindings become probeable for `isPending`
 
@@ -151,9 +152,9 @@ runtime levels.
 
 ## Trade-offs
 
-- Logging no longer reads `config.errorBoundary`. The field stays in the config
-  type because the compiler emits it; behavior now derives from each binding's
-  boundary id, which is what distinguishes mixed components.
+- Logging no longer reads a component-wide flag. `config.errorBoundary` is
+  gone from the contract; behavior derives from each binding's boundary id,
+  which is what distinguishes mixed components.
 - `settled` is established at mount instead of removing the guard in the status
   effect. Probing an uninitialized memo can suspend instead of answering false,
   so the guard is required.

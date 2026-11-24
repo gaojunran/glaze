@@ -1,5 +1,6 @@
 import path from 'node:path'
 import * as t from '@babel/types'
+import { CONTEXT_PROP } from '@glaze/shared'
 import { codeOf, containsJsx, isStaticPropertyKey, walkAst } from './ast.ts'
 import { STRUCTURED_PROPS, WXS_SOURCE, WXS_VALUE_SOURCE } from './constants.ts'
 import { emitModule } from './emit.ts'
@@ -38,12 +39,32 @@ const NON_GROUPABLE_PROPS = new Set([
   'slot',
   'key',
   'children',
-  'glazecontext',
-  'glazeprops',
+  CONTEXT_PROP,
+  STRUCTURED_PROPS,
 ])
 const isEventProp = (name: string) => /^on[A-Z]/.test(name)
 const groupableProps = (props: string[]) =>
   props.filter((name) => !isEventProp(name) && !NON_GROUPABLE_PROPS.has(name.toLowerCase()))
+
+/** True when any generated fragment reads a prop that was not registered. */
+export function hasUnregisteredPropRead(
+  codes: string[],
+  propName: string,
+  propReads: Set<string>,
+): boolean {
+  const param = propName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const reference = new RegExp(
+    `\\b${param}\\b\\s*(?:\\??\\.\\s*([A-Za-z_$][\\w$]*))?`,
+    'g',
+  )
+  for (const code of codes) {
+    for (const match of code.matchAll(reference)) {
+      const name = match[1]
+      if (!name || !propReads.has(name)) return true
+    }
+  }
+  return false
+}
 
 export function hasMultipleProps(source: string): boolean {
   try {
@@ -149,7 +170,6 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     boundaryContexts: [],
     currentProvider: null,
     usesSlot: false,
-    usesErrorBoundary: false,
     nextAsyncBoundary: 0,
     currentLoadingBoundary: null,
     currentErrorBoundary: null,
@@ -358,7 +378,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
   }
   const plainProps = [
     ...props.filter((name) => !eventProps[name]),
-    ...(ctx.boundaryContexts.length > 0 ? ['glazecontext'] : []),
+    ...(ctx.boundaryContexts.length > 0 ? [CONTEXT_PROP] : []),
   ]
   // A one-prop child has no property fan-out to remove, and its parent keeps
   // the normal attribute path; do not add the compact property or fallback.
@@ -392,32 +412,21 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
       ...ctx.refs.map((ref) => ref.code),
       ...ctx.blocks.flatMap((block) => [
         ...block.setup.map((node) => codeOf(node)),
+        ...block.effects,
         ...block.propGetters.map((getter) => getter.code),
         ...(block.providerValue ? [block.providerValue] : []),
       ]),
     ]
-    const param = propsParam.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const reference = new RegExp(
-      `\\b${param}\\b\\s*(?:\\??\\.\\s*([A-Za-z_$][\\w$]*))?`,
-      'g',
-    )
-    for (const code of audit) {
-      for (const match of code.matchAll(reference)) {
-        const name = match[1]
-        if (!name || !ctx.propReads.has(name)) {
-          ctx.allPropsRead = true
-          break
-        }
-      }
-      if (ctx.allPropsRead) break
+    if (hasUnregisteredPropRead(audit, propsParam.name, ctx.propReads)) {
+      ctx.allPropsRead = true
     }
   }
 
   const propSignals = plainProps
     .filter((name) => ctx.allPropsRead || ctx.propReads.has(name))
     .map((name) => propMap[name])
-  if (ctx.boundaryContexts.length > 0 && !propSignals.includes('glazecontext')) {
-    propSignals.push('glazecontext')
+  if (ctx.boundaryContexts.length > 0 && !propSignals.includes(CONTEXT_PROP)) {
+    propSignals.push(CONTEXT_PROP)
   }
 
   const effectivePropsParam =
@@ -429,7 +438,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
         : [],
     ),
   )
-  const js = emitModule(ast, statements.slice(0, returnIndex), ctx, {
+  const js = emitModule(ast, ctx, {
     bindingGroupSize: options.bindingGroupSize,
     propsParam: effectivePropsParam,
     props: plainProps,
@@ -437,7 +446,6 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     propMap,
     eventProps,
     usesSlot: ctx.usesSlot,
-    errorBoundary: ctx.usesErrorBoundary,
     namedSlots: [...ctx.namedSlots],
     boundaryContexts: ctx.boundaryContexts,
     asyncStatus: ctx.asyncStatus,
@@ -454,7 +462,6 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     propMap,
     eventProps,
     usesSlot: ctx.usesSlot,
-    errorBoundary: ctx.usesErrorBoundary,
     namedSlots: [...ctx.namedSlots],
     boundaryContexts: ctx.boundaryContexts,
     asyncStatus: ctx.asyncStatus,
@@ -465,7 +472,6 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     assets: ctx.assets,
     bindingCount: ctx.bindings.length,
     handlerCount: ctx.events.length,
-    refCount: ctx.refs.length,
     structuredProps: ctx.structuredProps,
   }
 }

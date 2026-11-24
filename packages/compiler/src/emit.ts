@@ -1,9 +1,10 @@
 import * as t from '@babel/types'
+import { CONTEXT_PROP, bindingKey, dataIndexKey } from '@glaze/shared'
 import { codeOf } from './ast.ts'
 import { rewriteAccessorCalls } from './scope.ts'
 import type { AnyNode, CompilerContext, EmitOptions } from './types.ts'
 
-export function emitModule(ast: AnyNode, setupStatements: AnyNode[], ctx: CompilerContext, options: EmitOptions): string {
+export function emitModule(ast: AnyNode, ctx: CompilerContext, options: EmitOptions): string {
   const componentNames = new Set(
     [...ctx.components, ...ctx.inlineComponents].map((item) => item.name),
   )
@@ -31,7 +32,7 @@ export function emitModule(ast: AnyNode, setupStatements: AnyNode[], ctx: Compil
     .join('\n')
 
   const data = JSON.stringify(
-    Object.fromEntries(ctx.bindings.map((_, index) => [`b${index}`, null])),
+    Object.fromEntries(ctx.bindings.map((_, index) => [bindingKey(index), null])),
   )
   const listBindings = Object.fromEntries(
     ctx.bindings
@@ -51,7 +52,6 @@ export function emitModule(ast: AnyNode, setupStatements: AnyNode[], ctx: Compil
     options.propSignals && options.propSignals.length !== options.propertyNames.length
       ? `  propSignals: ${JSON.stringify(options.propSignals)},\n`
       : ''
-  const errorBoundary = options.errorBoundary ? '  errorBoundary: true,\n' : ''
   const asyncStatus =
     options.asyncStatus && options.asyncStatus.length > 0
       ? `  asyncStatus: ${JSON.stringify(options.asyncStatus)},\n`
@@ -116,7 +116,7 @@ export function emitModule(ast: AnyNode, setupStatements: AnyNode[], ctx: Compil
             if (scope.direct) {
               return `      const ${scope.eventItem ?? scope.item} = (${scope.direct});`
             }
-            const key = scope.level === 0 ? 'glazeIndex' : `glazeIndex${scope.level}`
+            const key = dataIndexKey(scope.level)
             const indexLine = `      const ${scope.index} = Number(__glazeEvent.currentTarget.dataset.${key});`
             if (scope.isIndexRepeat) {
               const offset = scope.offset ? ` + (${scope.offset})` : ''
@@ -186,7 +186,7 @@ ${lines}
     boundaryContexts
       .map((item) => `{ context: ${item.name}, key: ${JSON.stringify(item.key)} }`)
       .join(', ')
-  }], () => ${options.propsParam}.glazecontext, () => {
+  }], () => ${options.propsParam}.${CONTEXT_PROP}, () => {
 ${indent(rawSetup, 4)}
   });`
     : rawSetup
@@ -205,7 +205,7 @@ import { ${runtimeImports} } from "@glaze/runtime/mini";
 ${moduleStatements}
 
 export default defineGlazeComponent({
-${properties}${propMap}${eventProps}${propSignals}${errorBoundary}${asyncStatus}${structuredProps}${
+${properties}${propMap}${eventProps}${propSignals}${asyncStatus}${structuredProps}${
     options.bindingGroupSize === undefined
       ? ''
       : `  bindingGroupSize: ${options.bindingGroupSize},\n`
@@ -213,7 +213,6 @@ ${properties}${propMap}${eventProps}${propSignals}${errorBoundary}${asyncStatus}
   listBindings: ${JSON.stringify(listBindings)},
 ${listFields}
   handlerCount: ${ctx.events.length},
-  refCount: ${ctx.refs.length},
   setup(ctx${setupParams}) {
 ${setup}
   },

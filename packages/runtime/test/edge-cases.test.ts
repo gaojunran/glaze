@@ -423,7 +423,6 @@ test('tracks loading for a manually thrown NotReady until it resolves', async ()
 test('recovers from an errored binding and clears errored and error', async () => {
   let setPhase
   const def = defineGlazeComponent({
-    errorBoundary: true,
     asyncStatus: [{ index: 1, kind: 'error', boundary: 0 }],
     data: { b0: null, b1: null, b2: null },
     setup(ctx) {
@@ -460,7 +459,6 @@ test('keeps a shared error source errored until every binding recovers', async (
   shared.source = 'feed'
   let setPhase
   const def = defineGlazeComponent({
-    errorBoundary: true,
     asyncStatus: [{ index: 1, kind: 'error', boundary: 0 }],
     data: { b0: null, b1: null, b2: null },
     setup(ctx) {

@@ -79,6 +79,9 @@ importers:
 
   packages/runtime:
     dependencies:
+      '@glaze/shared':
+        specifier: workspace:*
+        version: link:../shared
       glass-easel:
         specifier: ^1.2.1
         version: 1.2.1

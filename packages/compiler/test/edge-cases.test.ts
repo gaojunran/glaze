@@ -1129,7 +1129,6 @@ test('allocates distinct ids for multiple refs', () => {
   `)
   assert.ok(result.wxml.includes('id="glaze-r0"'))
   assert.ok(result.wxml.includes('id="glaze-r1"'))
-  assert.equal(result.refCount, 2)
   assert.ok(result.js.includes('ctx.ref(0, node => first(node));'))
   assert.ok(result.js.includes('ctx.ref(1, node => second(node));'))
 })

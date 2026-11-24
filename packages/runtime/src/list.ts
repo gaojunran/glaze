@@ -1,3 +1,5 @@
+import { LIST_KEY_WHOLE } from '@glaze/shared'
+
 import type { DataChange } from './types.ts'
 
 export type ListOp = { index: number; del: number; inserts: unknown[] }
@@ -105,7 +107,7 @@ export function projectList(value: unknown, fields: readonly string[] | null | u
 /** Internal helper, exported for unit tests. */
 export function listOps(previous: unknown, next: unknown, key: string): ListOp[] | null {
   if (!Array.isArray(previous) || !Array.isArray(next)) return null
-  if (key === '*this') return null
+  if (key === LIST_KEY_WHOLE) return null
   // Primitive rows have no key to align on; splice ops would be ambiguous, so
   // let the caller replace the whole array instead.
   if (previous.some((item) => !isObjectItem(item)) || next.some((item) => !isObjectItem(item))) {
@@ -157,7 +159,7 @@ export function listPatch(
   binding: string,
 ): DataChange[] | null {
   if (!Array.isArray(previous) || !Array.isArray(next)) return null
-  if (key === '*this') return null
+  if (key === LIST_KEY_WHOLE) return null
   if (previous.length !== next.length) return null
 
   const patch: DataChange[] = []

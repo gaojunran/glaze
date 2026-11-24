@@ -532,7 +532,6 @@ test('compiles ref to a generated id and runtime query', () => {
   `)
   assert.match(result.wxml, /<view id="glaze-r0">x<\/view>/)
   assert.match(result.js, /ctx.ref\(0, node => console.log\(node\)\)/)
-  assert.equal(result.refCount, 1)
 })
 
 test('rejects ref together with id', () => {
@@ -1372,7 +1371,6 @@ test('compiles Loading and Errored boundaries', () => {
   assert.match(result.wxml, /wx:if="\{\{b1\}\}"><text>failed<\/text><\/block><block wx:else><text>value/)
   assert.match(result.js, /ctx\.bind\(0, \(\) => \(ctx\.loading\(0\)\)\)/)
   assert.match(result.js, /ctx\.bind\(1, \(\) => \(ctx\.errored\(1\)\)\)/)
-  assert.match(result.js, /errorBoundary: true/)
   assert.match(
     result.js,
     /asyncStatus: \[\{\"index\":0,\"kind\":\"loading\",\"boundary\":0\},\{\"index\":1,\"kind\":\"error\",\"boundary\":1\}\]/,

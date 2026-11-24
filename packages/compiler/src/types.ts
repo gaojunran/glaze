@@ -61,7 +61,6 @@ export type CompileResult = {
   propMap: Record<string, string>
   eventProps: Record<string, string>
   usesSlot: boolean
-  errorBoundary: boolean
   namedSlots: string[]
   boundaryContexts: BoundaryContext[]
   asyncStatus: { index: number; kind: 'loading' | 'error'; boundary: number }[]
@@ -72,7 +71,6 @@ export type CompileResult = {
   assets: AssetEntry[]
   bindingCount: number
   handlerCount: number
-  refCount: number
   structuredProps: boolean
 }
 export type EmitOptions = {
@@ -83,7 +81,6 @@ export type EmitOptions = {
   propMap: Record<string, string>
   eventProps: Record<string, string>
   usesSlot: boolean
-  errorBoundary: boolean
   namedSlots: string[]
   boundaryContexts: BoundaryContext[]
   asyncStatus: { index: number; kind: 'loading' | 'error'; boundary: number }[]
@@ -117,7 +114,6 @@ export type CompilerContext = {
   boundaryContexts: BoundaryContext[]
   currentProvider: number | null
   usesSlot: boolean
-  usesErrorBoundary: boolean
   nextAsyncBoundary: number
   currentLoadingBoundary: number | null
   currentErrorBoundary: number | null

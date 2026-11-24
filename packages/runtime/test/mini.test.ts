@@ -775,7 +775,6 @@ test('store nested fields and store arrays share one runtime flush', async () =>
 
 test('tracks async pending and errored bindings for Loading and Errored', async () => {
   const def = defineGlazeComponent({
-    errorBoundary: true,
     asyncStatus: [
       { index: 1, kind: 'loading', boundary: 0 },
       { index: 3, kind: 'error', boundary: 0 },
@@ -805,7 +804,6 @@ test('tracks async pending and errored bindings for Loading and Errored', async 
 
 test('tracks nested async boundaries separately', async () => {
   const def = defineGlazeComponent({
-    errorBoundary: true,
     asyncStatus: [
       { index: 1, kind: 'loading', boundary: 0 },
       { index: 3, kind: 'loading', boundary: 1 },
@@ -875,7 +873,6 @@ test('derives Loading from Solid pending state across commit and refetch', async
 test('clears pending when a boundary binding fails instead of resolving', async () => {
   let setPhase
   const def = defineGlazeComponent({
-    errorBoundary: true,
     asyncStatus: [
       { index: 1, kind: 'loading', boundary: 0 },
       { index: 2, kind: 'error', boundary: 0 },
@@ -946,11 +943,10 @@ test('a context-consuming component rebuilds its root when re-attached', async (
   assert.equal(merged().b1, 4)
 })
 
-test('logs a failing binding that has no async boundary even with errorBoundary', () => {
+test('logs a failing binding that has no async boundary', () => {
   const log = captureConsoleError()
   try {
     const def = defineGlazeComponent({
-      errorBoundary: true,
       data: { b0: null, b1: null },
       setup(ctx) {
         ctx.bind(0, () => {
@@ -974,7 +970,6 @@ test('logs a failing binding that has no async boundary even with errorBoundary'
 test('a manual NotReadyError after a commit toggles Loading', async () => {
   let setPhase
   const def = defineGlazeComponent({
-    errorBoundary: true,
     asyncStatus: [{ index: 1, kind: 'loading', boundary: 0 }],
     data: { b0: null, b1: null },
     setup(ctx) {
@@ -1008,7 +1003,6 @@ test('a manual NotReadyError after a commit toggles Loading', async () => {
 test('bindings sharing an error source update one Errored entry', async () => {
   let setMessage
   const def = defineGlazeComponent({
-    errorBoundary: true,
     asyncStatus: [{ index: 3, kind: 'error', boundary: 0 }],
     data: { b0: null, b1: null, b2: null, b3: null, b4: null },
     setup(ctx) {
@@ -1197,7 +1191,6 @@ test('Errored reset retries a binding that failed on every earlier attempt', asy
   let reset
   let calls = 0
   const def = defineGlazeComponent({
-    errorBoundary: true,
     asyncStatus: [{ index: 1, kind: 'error', boundary: 0 }],
     data: { b0: null, b1: null, b2: null },
     setup(ctx) {
@@ -1336,7 +1329,6 @@ test('a binding uses the nearest Loading and the nearest Errored boundary separa
   let setPhase
   const def = defineGlazeComponent({
     data: { b0: null, b1: null, b2: null },
-    errorBoundary: true,
     asyncStatus: [
       { index: 0, kind: 'loading', boundary: 0 },
       { index: 1, kind: 'error', boundary: 1 },

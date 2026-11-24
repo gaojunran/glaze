@@ -1,5 +1,5 @@
 import * as t from '@babel/types'
-import { kebabCase } from '@glaze/shared'
+import { CONTEXT_PROP, bindingKey, dataIndexAttr, kebabCase, refId } from '@glaze/shared'
 import {
   codeOf,
   containsJsx,
@@ -39,7 +39,7 @@ import type { AnyNode, CompilerContext, Scope } from './types.ts'
 export function pushScopeIndexAttrs(attrs, scope) {
   for (let cursor = scope; cursor; cursor = cursor.parent) {
     if (cursor.direct) continue
-    const attr = cursor.level === 0 ? 'data-glaze-index' : `data-glaze-index${cursor.level}`
+    const attr = dataIndexAttr(cursor.level)
     const generated = `${attr}="{{${cursor.index}}}"`
     const existing = attrs.find((item) => item.startsWith(`${attr}=`))
     if (!existing) attrs.push(generated)
@@ -165,7 +165,7 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
       if (!expression) throw new Error('ref requires a callback')
       if (containsJsx(expression)) throw new Error('ref cannot be JSX')
       const index = ctx.addRef(expression)
-      attrs.push(`id="glaze-r${index}"`)
+      attrs.push(`id="${refId(index)}"`)
       continue
     }
 
@@ -214,7 +214,7 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
       attrs.push(`${propName}="{{${inlineExpression(expression, scope, ctx)}}}"`)
     } else {
       const index = ctx.addBinding(expression)
-      attrs.push(`${propName}="{{b${index}}}"`)
+      attrs.push(`${propName}="{{${bindingKey(index)}}}"`)
     }
   }
 
@@ -257,7 +257,7 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
       .map((provider) => `${JSON.stringify(provider.key)}: (${provider.code})`)
       .join(', ')} })`
     const index = ctx.addBindingCode(value)
-    attrs.push(`glazecontext="{{b${index}}}"`)
+    attrs.push(`${CONTEXT_PROP}="{{${bindingKey(index)}}}"`)
   }
   for (const attr of expandAttributes(node.openingElement.attributes)) {
     if (!t.isJSXAttribute(attr)) {
@@ -309,7 +309,7 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
           attrs.push(`${attrName}="{{${inlineExpression(expression, scope, ctx)}}}"`)
         } else {
           const index = ctx.addBinding(expression)
-          attrs.push(`${attrName}="{{b${index}}}"`)
+          attrs.push(`${attrName}="{{${bindingKey(index)}}}"`)
         }
       }
       continue
@@ -320,8 +320,8 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
     if (attrName.toLowerCase() === STRUCTURED_PROPS) {
       throw new Error(`"${STRUCTURED_PROPS}" is reserved for compiled component props`)
     }
-    if (attrName.toLowerCase() === 'glazecontext') {
-      throw new Error('"glazecontext" is reserved for compiled context props')
+    if (attrName.toLowerCase() === CONTEXT_PROP) {
+      throw new Error(`"${CONTEXT_PROP}" is reserved for compiled context props`)
     }
 
     const propName = attrName.toLowerCase()
@@ -337,7 +337,7 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
     }
     // class/style/id/slot and context are host attributes or helpers, not
     // scalar props.
-    const group = !['class', 'style', 'id', 'slot', 'glazecontext'].includes(propName)
+    const group = !['class', 'style', 'id', 'slot', CONTEXT_PROP].includes(propName)
     if (t.isStringLiteral(expression)) {
       const value = staticAssetAttr(propName, expression.value, ctx) ?? expression.value
       scalarProps.push({
@@ -377,8 +377,8 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
       const index = ctx.addBinding(expression)
       scalarProps.push({
         name: propName,
-        attr: `${propName}="{{b${index}}}"`,
-        expr: `b${index}`,
+        attr: `${propName}="{{${bindingKey(index)}}}"`,
+        expr: bindingKey(index),
         group,
       })
     }
@@ -590,8 +590,8 @@ export function compileExpressionChild(expression, ctx, scope) {
   if (booleanish) {
     ctx.addHelper('textValue')
     const index = ctx.addBindingCode(`textValue(${codeOf(expression)})`, null, expression)
-    return `{{b${index}}}`
+    return `{{${bindingKey(index)}}}`
   }
   const index = ctx.addBinding(expression)
-  return `{{b${index}}}`
+  return `{{${bindingKey(index)}}}`
 }

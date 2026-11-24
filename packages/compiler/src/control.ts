@@ -143,7 +143,6 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
   const fallbackAttr = getAttribute(node, 'fallback')
   const fallback = getExpression(fallbackAttr)
   if (kind === 'Errored' && !fallback) throw new Error('<Errored> requires a fallback')
-  if (kind === 'Errored') ctx.usesErrorBoundary = true
 
   const outerLoading = ctx.currentLoadingBoundary
   const outerError = ctx.currentErrorBoundary

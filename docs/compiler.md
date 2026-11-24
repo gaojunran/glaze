@@ -864,6 +864,11 @@ values still go through one synchronous `setData` before the first paint.
 
 ### Generated runtime
 
+Generated config keys (`data`, `listBindings`, `asyncStatus`, `handlerCount`, ...)
+are defined once in `@glaze/shared` protocol (`packages/shared/src/protocol.ts`);
+the compiler and runtime both import that module instead of repeating string
+literals.
+
 ```
 defineGlazeComponent({
   properties: ["done", "title"],

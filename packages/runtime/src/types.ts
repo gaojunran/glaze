@@ -38,7 +38,13 @@ export type GlazeContextProvider = (props: {
 
 
 export type GlazeContext = {
-  bind(index: number, fn: GlazeBinding, asyncBoundary?: number | null): void
+  /** The fourth boundary is the nearest Errored; the third is the nearest Loading. */
+  bind(
+    index: number,
+    fn: GlazeBinding,
+    loadingBoundary?: number | null,
+    errorBoundary?: number | null,
+  ): void
   event(index: number, fn: GlazeEventHandler): void
   ref(index: number, fn: (node: unknown) => void): void
   context(context: GlazeContextProvider): () => unknown
@@ -54,7 +60,6 @@ export type GlazeComponentConfig = {
   data?: Record<string, unknown>
   bindingGroupSize?: number
   boundaryContexts?: { name: string; key: string }[]
-  errorBoundary?: boolean
   asyncStatus?: { index: number; kind: 'loading' | 'error'; boundary: number }[]
   properties?: string[]
   propMap?: Record<string, string>
@@ -64,7 +69,6 @@ export type GlazeComponentConfig = {
   listFields?: Record<string, string[]>
   structuredProps?: boolean
   handlerCount?: number
-  refCount?: number
   setup(ctx: GlazeContext, props: GlazeProps): void
 }
 

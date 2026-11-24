@@ -9,6 +9,7 @@
     "./mini": "./src/mini.ts"
   },
   "dependencies": {
+    "@glaze/shared": "workspace:*",
     "glass-easel": "^1.2.1",
     "solid-js": "^2.0.3"
   },

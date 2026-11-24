@@ -108,11 +108,6 @@ export const wxmlCodeOf = (node) => {
     .code.replace(/"/g, '\\u0022')
 }
 
-const eventNameFor = (prop) => {
-  const rest = prop.slice(2)
-  return rest.charAt(0).toLowerCase() + rest.slice(1)
-}
-
 export const containsJsx = (node) => {
   let found = false
   walkAst(node, (item) => {
@@ -130,20 +125,6 @@ export const walkAst = (node, visit) => {
     else walkAst(child, visit)
   }
 }
-
-/**
- * Compile one Solid component source into a mini-program component pair.
- *
- * Supported in the first wave:
- * - a default-exported function with zero or one props parameter;
- * - static JSX structure, dynamic text and attributes;
- * - <Show when={...}> and <For each={...} key="...">;
- * - imported Solid components with scalar props;
- * - native elements and DOM-like event props (onClick, onInput, ...).
- *
- * Everything else is a compile error on purpose. Silent fallback would hide
- * exactly the cases where the mini-program runtime diverges from Solid.
- */
 
 /** Rename free identifier references in a cloned AST (used for generated callback helpers). */
 export function renameIdentifiers(node, from, to) {
