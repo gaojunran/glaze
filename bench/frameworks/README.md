@@ -179,6 +179,19 @@ page `reLaunch` before every timed route. Ranges are min–max of the three runs
 The machine is the development host, not a phone; first render includes routing
 and automator round-trips.
 
+### Measurement correctness
+
+`run.mjs` measures from the automator tap until a probed text changes. Its
+`waitFor` loop sleeps 50 ms between probes, and every probe is an automator
+RPC, so values below about 100 ms are quantized by the harness. A `53 ms`
+result can mean one polling interval, and `146 ms` can mean three intervals;
+do not subtract those numbers as CPU time.
+
+For sub-100 ms updates use `precise.mjs`. It installs a `setData` wrapper inside
+the appservice, invokes the same page method or Glaze event handler, and reads
+`performance.now()` in the `setData` callback. The RPC that starts the probe is
+outside the measured interval.
+
 ### Flat 1000-row page
 
 | Implementation | First render | Scalar bump | First-row update | Reverse 1000 rows |
@@ -242,12 +255,13 @@ a phone run is available.
 | Glaze, stateful after structured props | 3315–3335 ms | **53–54 ms** | 135–147 ms |
 | Glaze, pure row inline | 3209–3227 ms | — | **53–54 ms** |
 
-Keeping a real child boundary costs one props/data round-trip per row. uni-app
-and Glaze stateful are close on one row, but all-row updates separate them:
-Glaze's stateful row is 130–153 ms after prop projection, uni-app 61–70 ms,
-Vue Mini 133–152 ms, Taro 156–172 ms. Inlining a pure row removes the boundary
-entirely and returns to native speed. Taro's one-child update is also slower
-than the others, which matches its recursive template/tree cost.
+The all-500 column above is automator wall clock and is not valid for
+sub-100 ms comparison. The precise `props-1` probe gives Glaze **20–22 ms**,
+Native **15–37 ms** and uni-app **29–31 ms**; the old “Glaze 135–147 ms vs
+uni-app 61–70 ms” gap was created by the polling harness, not by the component
+boundary. One child update and 100-child updates remain at the polling floor.
+Taro's one-child update is still slower than the others, which matches its
+recursive template/tree cost.
 
 ### Complex cases (2026-11-23)
 
@@ -300,9 +314,9 @@ Mini's whole-list watcher and Taro's recursive template are the visible costs.
 This is the opposite of the fine-page payload case: here Glaze's field patch /
 splice path is the efficient one.
 
-**Props** — 500 real child components, each with 8 props (`a`..`h`) plus local
-state. `#update` changes all 8 props of row 0; `#update-all` changes all 8 props
-of every row.
+**Props (automator wall clock; not CPU for sub-100 ms cells)** — 500 real child
+components, each with 8 props (`a`..`h`) plus local state. `#update` changes all
+8 props of row 0; `#update-all` changes all 8 props of every row.
 
 | Implementation | First render | Update one row | Update all 500 × 8 props |
 | --- | ---: | ---: | ---: |
@@ -313,16 +327,17 @@ of every row.
 | Glaze before structured props | 3413–3531 ms | 53–54 ms | 781–829 ms |
 | Glaze with structured props | 3427–3482 ms | 53–55 ms | **183–204 ms** |
 
-This was the clear Glaze weakness in this batch. With 500 child boundaries,
-one-row updates are fine, but changing 8 props in every child was 7–8× native
-and uni-app. A diagnostic variant that changed only `a` in every row took
-140–153 ms, so the cost tracked the number of changed props per child. Forcing
-the parent list binding to replace the whole array instead of emitting field
-paths did not improve it (776–833 ms), so the number of list `DataChange` paths
-was not the explanation by itself. Coalescing the eight props into one object
-property brings the update to 183–204 ms, about 1.8–2.0× native and in the
-same range as the manual object-prop control (178–189 ms). The remaining cost
-is the 500 real component boundaries, not prop fan-out.
+The table above is automator wall clock, so its sub-100 ms cells are not CPU
+measurements. The precise probe for the same shape with eight props gives
+Glaze **28–31 ms**, Native **20–21 ms** and uni-app **38–70 ms**. The earlier
+claim that Glaze was 7–8× native came from the polling harness. The remaining
+cost is small and consistent with a few extra milliseconds for eight property
+reads, not a 700 ms boundary cost.
+
+The precise probe also shows that replacing the whole array is not needed:
+Glaze's field paths already stay close to native. The row-replacement change
+in `listPatch` reduces the generated path count for dense multi-field rows;
+it is not required for the one-prop or two-prop cases.
 
 ### Props-object A/B (2026-11-23)
 
@@ -341,12 +356,10 @@ object prop.
 | uni-app Vue3 Vite | 136–188 ms | 131–146 ms |
 | Taro 4.3.3 (Vite) | 502–585 ms | 486–588 ms |
 
-Glaze drops 4.4–4.7×: the eight-property child update was dominated by eight
-property writes per child, not by Solid, the list diff, or child `setData` (the
-child still has `propSignals: []` and no child `setData`). Native improves only
-slightly, and Taro/uni-app do not improve at all, so this is a Glaze
-property-fan-out cost rather than a general mini-program cost. The automatic
-row is within run spread of the manual object control (178–189 ms).
+The A/B numbers above predate `precise.mjs` and are automator wall clock; the
+precise props-8 run is Glaze **28–31 ms** vs Native **20–21 ms**, so the old
+“4.4–4.7×” figure was the polling harness, not a CPU ratio. The manual object
+page is kept only as a control.
 
 Vue Mini was not measured in this A/B; its minidev appservice did not respond to
 the automator during this run, and the existing eight-prop number is kept as the
@@ -404,7 +417,8 @@ NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
   --action 'u10=#u10:#probe10' --action 'u100=#u100:#probe100'
 ```
 
-List field update, 5000 rows (ms):
+List field update, 5000 rows (automator wall clock; sub-100 ms cells are
+polling-limited):
 
 | Implementation | 1 row | 10 rows | 100 rows | 500 rows |
 | --- | ---: | ---: | ---: | ---: |
@@ -414,7 +428,8 @@ List field update, 5000 rows (ms):
 | Taro 4.3.3 (Vite) | 458 | 437 | 476 | 661 |
 | uni-app Vue3 Vite | 56 | 60 | 67 | 67 |
 
-Child component prop update, 500 boundaries (ms):
+Child component prop update, 500 boundaries (automator wall clock; see
+precise note below):
 
 | Implementation | 1 child | 10 children | 100 children | 500 children |
 | --- | ---: | ---: | ---: | ---: |
@@ -437,10 +452,11 @@ Insert/delete at head, index 2500 and tail (ms):
 Glaze and native stay at the simulator floor for up to 500 changed rows because
 the list patch sends only changed field paths; Vue Mini's whole-array watcher is
 flat at ~124–133 ms even for one row; Taro grows with the number of changed
-rows. The component table isolates the remaining Glaze cost: one and 100 child
-updates are close to native, but 500 child updates cost ~3× native, while
-uni-app stays flat. Taro already pays ~110 ms for one child update, so its
-500-child number is not purely boundary fan-out.
+rows. The 500-child column is automator wall clock and is not a CPU measurement.
+The precise `props-1` probe gives Glaze **20–22 ms**, Native **15–37 ms** and
+uni-app **29–31 ms**, so the earlier “~3× native” reading was the polling
+floor. The component table's 1/10/100-child columns remain useful only as a
+coarse check.
 
 ### Prop-shape, mixed and move microbenchmarks (2026-11-24)
 
@@ -450,22 +466,32 @@ rewrites those N props on every row. `#update` rewrites row 0 only. The child is
 one text node that renders all sixteen prop reads, so only the property fan-out
 changes between variants.
 
-Prop-shape `update-all`, 500 children (ms, median of five warmed runs):
+Prop-shape `update-all`, 500 children, **precise in-appservice `setData`**
+(ms; 3 runs, same host):
 
 | Implementation | 1 prop | 2 props | 4 props | 8 props | 16 props |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Glaze | 146 | 153 | 155 | 175 | 158 |
-| Native WXML | 55 | 55 | 54 | 54 | 67 |
-| Vue Mini 1.2.16 | 133 | 192 | 371 | 633 | 1275 |
-| Taro 4.3.3 (Vite) | 84 | 81 | 83 | 84 | 92 |
-| uni-app Vue3 Vite | 63 | 65 | 68 | 73 | 92 |
+| Glaze | 20–22 | 25–27 | 23–27 | 28–31 | 29–34 |
+| Native WXML | 15–37 | 16–17 | 18–20 | 20–21 | 26–27 |
+| uni-app Vue3 Vite | 29–31 | 31–33 | 32–34 | 38–70 | 46–79 |
 
-Glaze keeps the per-prop increment small, but the 16-prop row now uses one
-row replacement per changed row instead of one field path per prop; that
-single change moved the 16-prop median from 192 ms to 158 ms (10 warmed runs,
-same host). Vue Mini grows almost linearly with the number of props, reaching
-1275 ms at 16 props. Taro's prop page stays flat at 81–92 ms, so its high
-component cost is not prop fan-out.
+This table replaces the earlier `146 / 153 / 155 / 175 / 158` Glaze and
+`63 / 65 / 68 / 73 / 92` uni-app numbers. Those were automator wall-clock
+values and were dominated by the 50 ms polling loop; they are not CPU times.
+The precise probe puts Glaze within roughly 5–10 ms of native at one to four
+props and within 3–8 ms at 16 props. uni-app is slower at larger prop counts.
+Vue Mini and Taro were not measured with the precise probe.
+
+```bash
+# Glaze prop-shape, 16 props; use the matching route for 1/2/4/8
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/precise.mjs \
+  --suite glaze --port 9610 --route /pages/bench-props-16/index \
+  --root '#app' --runs 3
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/precise.mjs \
+  --suite native --port 9610 --route /pages/native-props-16/index --runs 3
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/precise.mjs \
+  --suite uni --port 9611 --route /pages/props-16/index --runs 3
+```
 
 `#mixed` on the fine page updates a scalar, ten row titles and ten row `done`
 flags in one handler; `#noop` writes a new array whose first row has the same

@@ -79,14 +79,14 @@ objects, so replace such a row instead of mutating it.
 
 `listPatch` normally emits one data path per changed top-level field, which is
 right for the common one- or two-field edit. When a row changes more than two
-fields, it instead emits one `[binding, index]` replacement carrying the
-projected row. The child property receives the same row object either way; the
+fields and those fields are a majority of the projected row, it instead emits
+one `[binding, index]` replacement carrying the projected row. The child property receives the same row object either way; the
 parent just sends 500 paths instead of 8,000 for a 500-row, 16-field update.
 
-On the 500-child prop-shape benchmark, `update-all` at 16 props measured a
-median of 185 ms before this change and 158 ms after it (10 warmed minidev runs
-per side, same host). The one- and two-field cases keep field paths, so the
-single-row update path and the two-prop benchmark are unchanged.
+On the 500-child prop-shape page this changes the parent's generated list
+update from 8,000 field paths to 500 row paths at 16 props. The wall-clock
+numbers from the 50ms polling harness are not used as CPU evidence; use
+`bench/frameworks/precise.mjs` for in-appservice `setData` timing.
 
 ### List view-model projection
 
