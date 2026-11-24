@@ -187,10 +187,11 @@ RPC, so values below about 100 ms are quantized by the harness. A `53 ms`
 result can mean one polling interval, and `146 ms` can mean three intervals;
 do not subtract those numbers as CPU time.
 
-For sub-100 ms updates use `precise.mjs`. It installs a `setData` wrapper inside
-the appservice, invokes the same page method or Glaze event handler, and reads
-`performance.now()` in the `setData` callback. The RPC that starts the probe is
-outside the measured interval.
+For sub-100 ms updates use `run.mjs --precise`. It installs a `setData`
+wrapper inside the appservice before tapping the real button, then reports the
+`setData` callback time from that real event. The automator RPC and polling stay
+outside the measured interval. A direct `__glaze.events[...]` call is not a
+substitute: it bypasses the platform event/view flush and undercounts Glaze.
 
 ### Flat 1000-row page
 
@@ -256,12 +257,13 @@ a phone run is available.
 | Glaze, pure row inline | 3209–3227 ms | — | **53–54 ms** |
 
 The all-500 column above is automator wall clock and is not valid for
-sub-100 ms comparison. The precise `props-1` probe gives Glaze **20–22 ms**,
-Native **15–37 ms** and uni-app **29–31 ms**; the old “Glaze 135–147 ms vs
-uni-app 61–70 ms” gap was created by the polling harness, not by the component
-boundary. One child update and 100-child updates remain at the polling floor.
-Taro's one-child update is still slower than the others, which matches its
-recursive template/tree cost.
+sub-100 ms comparison. The precise tap gives Glaze **56–65 ms**, Native
+**13–14 ms** and uni-app **22–28 ms** for the 500-child row page. The old
+“Glaze 135–147 ms vs uni-app 61–70 ms” absolute values were exaggerated by the
+polling harness, but the 500-boundary gap is real: Glaze is about 4× native and
+2.5× uni-app. One child update and 100-child updates remain at the polling
+floor. Taro's one-child update is still slower than the others, which matches
+its recursive template/tree cost.
 
 ### Complex cases (2026-11-23)
 
@@ -328,16 +330,17 @@ components, each with 8 props (`a`..`h`) plus local state. `#update` changes all
 | Glaze with structured props | 3427–3482 ms | 53–55 ms | **183–204 ms** |
 
 The table above is automator wall clock, so its sub-100 ms cells are not CPU
-measurements. The precise probe for the same shape with eight props gives
-Glaze **28–31 ms**, Native **20–21 ms** and uni-app **38–70 ms**. The earlier
-claim that Glaze was 7–8× native came from the polling harness. The remaining
-cost is small and consistent with a few extra milliseconds for eight property
-reads, not a 700 ms boundary cost.
+measurements. The precise tap for the same shape with eight props gives Glaze
+**67–89 ms**, Native **22–23 ms** and uni-app **36–37 ms**. The earlier claim
+that Glaze was 7–8× native came from the polling harness. The remaining cost is
+about 3× native and 2× uni-app for eight property reads, not a 700 ms boundary
+cost.
 
-The precise probe also shows that replacing the whole array is not needed:
-Glaze's field paths already stay close to native. The row-replacement change
-in `listPatch` reduces the generated path count for dense multi-field rows;
-it is not required for the one-prop or two-prop cases.
+The precise tap still measures Glaze about 3× native for eight props, so the
+field-path implementation is not as close as the old wall-clock table implied.
+The row-replacement change in `listPatch` reduces the generated path count for
+dense multi-field rows; its effect is separate from the one-prop or two-prop
+cases.
 
 ### Props-object A/B (2026-11-23)
 
@@ -356,10 +359,11 @@ object prop.
 | uni-app Vue3 Vite | 136–188 ms | 131–146 ms |
 | Taro 4.3.3 (Vite) | 502–585 ms | 486–588 ms |
 
-The A/B numbers above predate `precise.mjs` and are automator wall clock; the
-precise props-8 run is Glaze **28–31 ms** vs Native **20–21 ms**, so the old
-“4.4–4.7×” figure was the polling harness, not a CPU ratio. The manual object
-page is kept only as a control.
+The A/B numbers above predate the precise tap mode and are automator wall
+clock. The precise tap for eight props is Glaze **67–89 ms**, Native
+**22–23 ms** and uni-app **36–37 ms**, so the old “4.4–4.7×” figure is not a
+CPU ratio; the real remaining gap is roughly 3× native / 2× uni-app. The manual
+object page is kept only as a control.
 
 Vue Mini was not measured in this A/B; its minidev appservice did not respond to
 the automator during this run, and the existing eight-prop number is kept as the
@@ -428,6 +432,11 @@ polling-limited):
 | Taro 4.3.3 (Vite) | 458 | 437 | 476 | 661 |
 | uni-app Vue3 Vite | 56 | 60 | 67 | 67 |
 
+The 500-row column above is polling wall clock. The precise tap for `u500` is
+Glaze **20–22 ms**, Native **18–19 ms** and uni-app **26–34 ms**; the old
+`55 / 54 / 56` values were all at the polling floor. Glaze and native are
+close on this list-field path.
+
 Child component prop update, 500 boundaries (automator wall clock; see
 precise note below):
 
@@ -453,10 +462,10 @@ Glaze and native stay at the simulator floor for up to 500 changed rows because
 the list patch sends only changed field paths; Vue Mini's whole-array watcher is
 flat at ~124–133 ms even for one row; Taro grows with the number of changed
 rows. The 500-child column is automator wall clock and is not a CPU measurement.
-The precise `props-1` probe gives Glaze **20–22 ms**, Native **15–37 ms** and
-uni-app **29–31 ms**, so the earlier “~3× native” reading was the polling
-floor. The component table's 1/10/100-child columns remain useful only as a
-coarse check.
+The precise tap gives Glaze **56–65 ms**, Native **13–14 ms** and uni-app
+**22–28 ms**, so the earlier “~3× native” reading was too small in relative
+terms; the real gap is about 4× native and 2.5× uni-app. The table's
+1/10/100-child columns remain useful only as a coarse check.
 
 ### Prop-shape, mixed and move microbenchmarks (2026-11-24)
 
@@ -466,44 +475,62 @@ rewrites those N props on every row. `#update` rewrites row 0 only. The child is
 one text node that renders all sixteen prop reads, so only the property fan-out
 changes between variants.
 
-Prop-shape `update-all`, 500 children, **precise in-appservice `setData`**
-(ms; 3 runs, same host):
+Prop-shape `update-all`, 500 children, **precise in-appservice `setData`
+from a real tap** (ms; 3 runs, same host):
 
 | Implementation | 1 prop | 2 props | 4 props | 8 props | 16 props |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Glaze | 20–22 | 25–27 | 23–27 | 28–31 | 29–34 |
-| Native WXML | 15–37 | 16–17 | 18–20 | 20–21 | 26–27 |
-| uni-app Vue3 Vite | 29–31 | 31–33 | 32–34 | 38–70 | 46–79 |
+| Glaze | 58–63 | 63–70 | 63–76 | 67–89 | 75–95 |
+| Native WXML | 13–15 | 16–17 | 18 | 22–23 | 32 |
+| uni-app Vue3 Vite | 30–36 | 30–32 | 32–33 | 36–37 | 40–44 |
 
 This table replaces the earlier `146 / 153 / 155 / 175 / 158` Glaze and
 `63 / 65 / 68 / 73 / 92` uni-app numbers. Those were automator wall-clock
 values and were dominated by the 50 ms polling loop; they are not CPU times.
-The precise probe puts Glaze within roughly 5–10 ms of native at one to four
-props and within 3–8 ms at 16 props. uni-app is slower at larger prop counts.
+The precise tap still shows a real Glaze cost: about **4–5× native** at one
+prop and **2–3× uni-app**, narrowing to about **2.4× native / 1.8× uni-app**
+at 16 props. The absolute gap is much smaller than the old table suggested, but
+the direction was not a polling artifact.
+
+An earlier probe that called `__glaze.events[...]` directly undercounted Glaze
+(about 20 ms) because it bypassed the platform event/view flush. A real tap
+calls `setData` through that path and is the number to use.
+
 Vue Mini and Taro were not measured with the precise probe.
 
 ```bash
-# Glaze prop-shape, 16 props; use the matching route for 1/2/4/8
-NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/precise.mjs \
-  --suite glaze --port 9610 --route /pages/bench-props-16/index \
-  --root '#app' --runs 3
-NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/precise.mjs \
-  --suite native --port 9610 --route /pages/native-props-16/index --runs 3
-NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/precise.mjs \
-  --suite uni --port 9611 --route /pages/props-16/index --runs 3
+# Glaze prop-shape, 16 props; change the route for 1/2/4/8
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
+  --port 9610 --route /pages/bench-props-16/index --neutral /pages/index/index \
+  --root '#app' --count 500 --row '.row-card' --first-text '.row-title' \
+  --last-text '#last' --tick '#last' --warm '#update-all' \
+  --update-all '#update-all' --skip-reverse --runs 3 --precise
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
+  --port 9610 --route /pages/native-props-16/index --neutral /pages/index/index \
+  --count 500 --row '.row-card' --first-text '.row-title' \
+  --last-text '#last' --tick '#last' --warm '#update-all' \
+  --update-all '#update-all' --skip-reverse --runs 3 --precise
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
+  --port 9611 --route /pages/props-16/index --neutral /pages/index/index \
+  --count 500 --row '.row-card' --first-text '.row-title' \
+  --last-text '#last' --tick '#last' --warm '#update-all' \
+  --update-all '#update-all' --skip-reverse --runs 3 --precise
 ```
 
 `#mixed` on the fine page updates a scalar, ten row titles and ten row `done`
 flags in one handler; `#noop` writes a new array whose first row has the same
 title. `move-shapes` adds middle→front and swap-ends to the 2000-row keyed page.
 
-| Implementation | Mixed handler | No-op list write | Middle→front | Swap ends |
+| Implementation | Mixed handler (precise) | No-op list write (precise) | Middle→front (wall clock) | Swap ends (wall clock) |
 | --- | ---: | ---: | ---: | ---: |
-| Glaze | 78 | 70 | 414 | 396 |
-| Native WXML | 75 | 86 | 423 | 405 |
-| Vue Mini 1.2.16 | 135 | 132 | 453 | 425 |
-| Taro 4.3.3 (Vite) | 561 | 540 | 2210 | 2128 |
-| uni-app Vue3 Vite | 77 | 72 | 467 | 394 |
+| Glaze | 16–21 | 15–17 | 414 | 396 |
+| Native WXML | 15–19 | 44 | 423 | 405 |
+| uni-app Vue3 Vite | 21–23 | 20–21 | 467 | 394 |
+
+Mixed and no-op are precise `setData` times (3 runs); the move columns are
+still automator wall clock and should be rerun with `--precise` before
+comparing close values. The old mixed/no-op values (Glaze 78/70, Native
+75/86) were polling wall clock.
 
 Mixed updates merge into one batch for Glaze and native; Vue still pays its
 whole-array watcher, Taro its recursive tree, and uni-app stays at native time.

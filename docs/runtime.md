@@ -86,7 +86,7 @@ parent just sends 500 paths instead of 8,000 for a 500-row, 16-field update.
 On the 500-child prop-shape page this changes the parent's generated list
 update from 8,000 field paths to 500 row paths at 16 props. The wall-clock
 numbers from the 50ms polling harness are not used as CPU evidence; use
-`bench/frameworks/precise.mjs` for in-appservice `setData` timing.
+`bench/frameworks/run.mjs --precise` for in-appservice `setData` timing.
 
 ### List view-model projection
 

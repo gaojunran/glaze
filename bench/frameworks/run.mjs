@@ -48,9 +48,10 @@ const lastTitle = option('last')
 const timeout = Number(option('timeout', '120000'))
 const warmSelector = option('warm')
 const actionSpecs = options('action')
+const precise = args.includes('--precise')
 
 if (!route) {
-  console.error('usage: node bench/frameworks/run.mjs --port 9440 --route /pages/home/index [--neutral /pages/blank/index] [--root "#app"] [--update "#update"] [--last "Row 999"] [--runs 3]')
+  console.error('usage: node bench/frameworks/run.mjs --port 9440 --route /pages/home/index [--neutral /pages/blank/index] [--root "#app"] [--update "#update"] [--last "Row 999"] [--runs 3] [--precise]')
   process.exit(2)
 }
 
@@ -93,7 +94,44 @@ async function measure(mp) {
 
   const firstRender = Date.now() - started
   const controls = rootSelector ? root : page
+  const preciseTap = async (selector, waitForResult, label) => {
+    const button = await waitFor(selector, () => controls.$(selector))
+    const key = `__glazeBench${Date.now()}${Math.random().toString(36).slice(2)}`
+    await mp.evaluate(
+      ({ root, key }) => {
+        const current = getCurrentPages()[getCurrentPages().length - 1]
+        const target = root ? current.selectComponent(root) : current
+        if (!target || typeof target.setData !== 'function') {
+          throw new Error(`no setData target for ${root ?? 'page'}`)
+        }
+        const original = target.setData
+        const records = []
+        target.setData = function (payload, callback) {
+          const record = { start: performance.now() }
+          records.push(record)
+          return original.call(this, payload, () => {
+            record.ms = performance.now() - record.start
+            if (typeof callback === 'function') callback()
+          })
+        }
+        globalThis[key] = { target, original, records }
+      },
+      { root: rootSelector, key },
+    )
+    const started = Date.now()
+    await button.tap()
+    await waitFor(label, waitForResult)
+    const times = await mp.evaluate(({ key }) => {
+      const state = globalThis[key]
+      if (!state) return []
+      state.target.setData = state.original
+      delete globalThis[key]
+      return state.records.map((record) => record.ms ?? 0)
+    }, { key })
+    return times.length > 0 ? times.reduce((sum, value) => sum + value, 0) : Date.now() - started
+  }
   const tap = async (selector, waitForResult, label) => {
+    if (precise) return preciseTap(selector, waitForResult, label)
     const button = await waitFor(selector, () => controls.$(selector))
     const started = Date.now()
     await button.tap()
