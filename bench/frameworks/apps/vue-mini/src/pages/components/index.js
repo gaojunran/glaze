@@ -24,5 +24,14 @@ definePage(() => {
     rows.value = rows.value.map((row) => ({ ...row, title: `${row.title.split(' ').slice(0, 2).join(' ')} ${suffix}` }));
   };
 
-  return { rows, tick, updateFirst, updateAll };
+  const updateRange = (count) => {
+    const nextTick = tick.value + 1;
+    tick.value = nextTick;
+    rows.value = rows.value.map((row, index) =>
+      index < count ? { ...row, title: `Row ${row.id} ${nextTick}` } : row,
+    );
+  };
+
+  return { rows, tick, updateFirst, updateAll,
+    update10: () => updateRange(10), update100: () => updateRange(100) };
 });

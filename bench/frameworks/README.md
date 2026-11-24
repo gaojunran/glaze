@@ -358,6 +358,90 @@ component with at least two groupable scalar props: the child source still reads
 `glazeprops.a` with the scalar property as a fallback. The manual object page is
 kept as the A/B control; it is no longer the recommended component API.
 
+### Microbenchmarks (2026-11-24)
+
+The fine and component pages now expose the incremental cases below. Every
+number is the median of five runs after one warm-up tap, so the first platform
+scheduler tick is not part of the measurement.
+
+Fine page, 5000 keyed rows with 2 KB extra data per row:
+
+- `#u10`, `#u100`, `#u500` update the title of the first 10, 100 or 500 rows;
+  `#probe10`, `#probe100`, `#probe500` expose the last changed title.
+- `#im` / `#dm` insert or delete at index 2500; `#it` / `#dt` insert or delete
+  at the tail. The runner waits for a row-count change.
+
+Component page, 500 real child components:
+
+- `#u10`, `#u100` update the title prop of the first 10 or 100 children;
+  `#probe10`, `#probe100` expose the last changed title.
+
+`run.mjs` accepts repeated `--action name=selector:wait` flags, where `wait` is
+either a selector whose text must change or `count+N` / `count-N` for a row
+count change. `--warm selector` performs one untimed tap and waits for `#tick`
+to change.
+
+```bash
+# Glaze fine-page scaling; change --port/--route/--root for the other fixtures
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
+  --port 9550 --route /pages/bench-fine/index --neutral /pages/index/index \
+  --root '#app' --count 5000 --warm '#update' --update '#update' \
+  --last 'Row 4999' --skip-reverse --runs 5 \
+  --action 'u10=#u10:#probe10' --action 'u100=#u100:#probe100' \
+  --action 'u500=#u500:#probe500' \
+  --action 'im=#im:count+1' --action 'dm=#dm:count-1' \
+  --action 'it=#it:count+1' --action 'dt=#dt:count-1'
+```
+
+```bash
+# Glaze component-boundary scaling
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
+  --port 9550 --route /pages/bench-component-rows/index \
+  --neutral /pages/index/index --root '#app' --count 500 \
+  --row '.row-card' --first-text '.row-title' --last-text '#last' \
+  --warm '#update' --update '#update' --update-all '#update-all' \
+  --skip-reverse --runs 5 \
+  --action 'u10=#u10:#probe10' --action 'u100=#u100:#probe100'
+```
+
+List field update, 5000 rows (ms):
+
+| Implementation | 1 row | 10 rows | 100 rows | 500 rows |
+| --- | ---: | ---: | ---: | ---: |
+| Glaze | 55 | 56 | 53 | 54 |
+| Native WXML | 54 | 54 | 54 | 54 |
+| Vue Mini 1.2.16 | 124 | 133 | 126 | 133 |
+| Taro 4.3.3 (Vite) | 458 | 437 | 476 | 661 |
+| uni-app Vue3 Vite | 56 | 60 | 67 | 67 |
+
+Child component prop update, 500 boundaries (ms):
+
+| Implementation | 1 child | 10 children | 100 children | 500 children |
+| --- | ---: | ---: | ---: | ---: |
+| Glaze | 54 | 56 | 58 | 152 |
+| Native WXML | 54 | 56 | 57 | 55 |
+| Vue Mini 1.2.16 | 54 | 54 | 68 | 136 |
+| Taro 4.3.3 (Vite) | 110 | 110 | 118 | 156 |
+| uni-app Vue3 Vite | 54 | 54 | 54 | 60 |
+
+Insert/delete at head, index 2500 and tail (ms):
+
+| Implementation | Insert head | Insert mid | Insert tail | Delete head | Delete mid | Delete tail |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Glaze | 877 | 838 | 863 | 865 | 857 | 898 |
+| Native WXML | 860 | 815 | 887 | 861 | 815 | 852 |
+| Vue Mini 1.2.16 | 979 | 966 | 936 | 903 | 936 | 935 |
+| Taro 4.3.3 (Vite) | 2915 | 3146 | 1287 | 3256 | 3295 | 3802 |
+| uni-app Vue3 Vite | 855 | 846 | 819 | 767 | 766 | 800 |
+
+Glaze and native stay at the simulator floor for up to 500 changed rows because
+the list patch sends only changed field paths; Vue Mini's whole-array watcher is
+flat at ~124–133 ms even for one row; Taro grows with the number of changed
+rows. The component table isolates the remaining Glaze cost: one and 100 child
+updates are close to native, but 500 child updates cost ~3× native, while
+uni-app stays flat. Taro already pays ~110 ms for one child update, so its
+500-child number is not purely boundary fan-out.
+
 ## Repeated-run correctness
 
 A 3-run benchmark exposed a real runtime bug: the mini-program platform applies

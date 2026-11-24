@@ -8,6 +8,16 @@
     <button id="insert" class="insert" @click="insertFirst">insert</button>
     <button id="delete" class="delete" @click="deleteFirst">delete</button>
     <button id="reverse" class="reverse" @click="reverse">reverse</button>
+    <text id="probe10">{{ rows[9].title }}</text>
+    <text id="probe100">{{ rows[99].title }}</text>
+    <text id="probe500">{{ rows[499].title }}</text>
+    <button id="u10" class="u10" @click="update10">u10</button>
+    <button id="u100" class="u100" @click="update100">u100</button>
+    <button id="u500" class="u500" @click="update500">u500</button>
+    <button id="im" class="im" @click="insertMid">insert mid</button>
+    <button id="dm" class="dm" @click="deleteMid">delete mid</button>
+    <button id="it" class="it" @click="insertTail">insert tail</button>
+    <button id="dt" class="dt" @click="deleteTail">delete tail</button>
     <view v-for="row in rows" :key="row.id" class="row">
       <text class="row-title">{{ row.title }}</text>
       <text class="row-done">{{ row.done }}</text>
@@ -52,6 +62,38 @@ export default {
     },
     reverse() {
       this.rows = this.rows.slice().reverse()
+    },
+    updateRange(count) {
+      const nextTick = this.tick + 1
+      this.tick = nextTick
+      this.rows = this.rows.map((row, index) => (
+        index < count ? { ...row, title: `Row ${row.id} ${nextTick}` } : row
+      ))
+    },
+    update10() { this.updateRange(10) },
+    update100() { this.updateRange(100) },
+    update500() { this.updateRange(500) },
+    insertMid() {
+      const id = -100000 - this.tick
+      const nextTick = this.tick + 1
+      const next = this.rows.slice()
+      next.splice(2500, 0, { id, title: `Row ${id}`, done: false, extra: 'x' })
+      this.tick = nextTick
+      this.rows = next
+    },
+    deleteMid() {
+      const next = this.rows.slice()
+      next.splice(2500, 1)
+      this.rows = next
+    },
+    insertTail() {
+      const id = 100000 + this.tick
+      const nextTick = this.tick + 1
+      this.tick = nextTick
+      this.rows = [...this.rows, { id, title: `Row ${id}`, done: false, extra: 'x' }]
+    },
+    deleteTail() {
+      this.rows = this.rows.slice(0, -1)
     },
   },
 }

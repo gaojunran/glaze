@@ -21,6 +21,10 @@ const option = (name, fallback) => {
   const index = args.indexOf(`--${name}`)
   return index === -1 ? fallback : args[index + 1]
 }
+const options = (name) => args.reduce(
+  (values, arg, index) => (arg === `--${name}` ? [...values, args[index + 1]] : values),
+  [],
+)
 const port = option('port', '9422')
 const route = option('route')
 const neutral = option('neutral')
@@ -42,6 +46,8 @@ const deleteSelector = option('delete')
 const doneSelector = option('done', '.row-done')
 const lastTitle = option('last')
 const timeout = Number(option('timeout', '120000'))
+const warmSelector = option('warm')
+const actionSpecs = options('action')
 
 if (!route) {
   console.error('usage: node bench/frameworks/run.mjs --port 9440 --route /pages/home/index [--neutral /pages/blank/index] [--root "#app"] [--update "#update"] [--last "Row 999"] [--runs 3]')
@@ -95,6 +101,14 @@ async function measure(mp) {
     return Date.now() - started
   }
 
+  if (warmSelector) {
+    const tick = await waitFor(tickSelector, () => controls.$(tickSelector))
+    const before = await tick.text()
+    const button = await waitFor(warmSelector, () => controls.$(warmSelector))
+    await button.tap()
+    await waitFor('warm-up tick', async () => (await (await controls.$(tickSelector)).text()) !== before)
+  }
+
   let update
   if (updateSelector) {
     const before = await (await controls.$(titleSelector)).text()
@@ -145,6 +159,25 @@ async function measure(mp) {
     deleteRow = await tap(deleteSelector, async () => (await root.$$(rowSelector)).length === before - 1, 'deleted row')
   }
 
+  const actionResults = {}
+  for (const spec of actionSpecs) {
+    const [name, rest] = spec.split('=')
+    const [selector, wait] = (rest ?? '').split(':')
+    if (!name || !selector || !wait) throw new Error(`bad --action ${spec}`)
+    if (wait.startsWith('count')) {
+      const delta = Number(wait.slice(5))
+      const before = (await root.$$(rowSelector)).length
+      actionResults[name] = await tap(selector, async () => (
+        (await root.$$(rowSelector)).length === before + delta
+      ), `${name} row count`)
+    } else {
+      const before = await (await controls.$(wait)).text()
+      actionResults[name] = await tap(selector, async () => (
+        (await (await controls.$(wait)).text()) !== before
+      ), `${name} value`)
+    }
+  }
+
   let reverseMs
   if (!args.includes('--skip-reverse')) {
     const reverse = await waitFor(reverseSelector, () => controls.$(reverseSelector))
@@ -159,7 +192,7 @@ async function measure(mp) {
     reverseMs = Date.now() - reverseStarted
   }
 
-  return { firstRender, bump, update, updateAll, toggle, insert, delete: deleteRow, reverse: reverseMs }
+  return { firstRender, bump, update, updateAll, toggle, insert, delete: deleteRow, reverse: reverseMs, ...actionResults }
 }
 
 const mp = await automator.connect(`ws://127.0.0.1:${port}/automator`)

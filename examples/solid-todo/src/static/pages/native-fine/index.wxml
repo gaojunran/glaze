@@ -7,6 +7,16 @@
   <button id="insert" class="insert" bindtap="insertFirst">insert</button>
   <button id="delete" class="delete" bindtap="deleteFirst">delete</button>
   <button id="reverse" class="reverse" bindtap="reverse">reverse</button>
+  <text id="probe10">{{rows[9].title}}</text>
+  <text id="probe100">{{rows[99].title}}</text>
+  <text id="probe500">{{rows[499].title}}</text>
+  <button id="u10" class="u10" bindtap="update10">u10</button>
+  <button id="u100" class="u100" bindtap="update100">u100</button>
+  <button id="u500" class="u500" bindtap="update500">u500</button>
+  <button id="im" class="im" bindtap="insertMid">insert mid</button>
+  <button id="dm" class="dm" bindtap="deleteMid">delete mid</button>
+  <button id="it" class="it" bindtap="insertTail">insert tail</button>
+  <button id="dt" class="dt" bindtap="deleteTail">delete tail</button>
   <view wx:for="{{rows}}" wx:key="id" class="row">
     <text class="row-title">{{item.title}}</text>
     <text class="row-done">{{item.done}}</text>

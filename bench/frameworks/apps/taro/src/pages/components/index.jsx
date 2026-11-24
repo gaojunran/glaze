@@ -30,11 +30,23 @@ export default function Components() {
     })))
   }
 
+  const updateRange = (count) => {
+    const nextTick = tick + 1
+    setTick(nextTick)
+    setRows((items) => items.map((row, index) => (
+      index < count ? { ...row, title: `Row ${row.id} ${nextTick}` } : row
+    )))
+  }
+
   return (
     <View className="bench">
       <Text id="tick">{tick}</Text>
       <Text id="title">{rows[0].title}</Text>
       <Text id="last">{rows[499].title}</Text>
+      <Text id="probe10">{rows[9].title}</Text>
+      <Text id="probe100">{rows[99].title}</Text>
+      <Button id="u10" className="u10" onClick={() => updateRange(10)}>u10</Button>
+      <Button id="u100" className="u100" onClick={() => updateRange(100)}>u100</Button>
       <Button id="update" className="update" onClick={updateFirst}>update</Button>
       <Button id="update-all" className="update-all" onClick={updateAll}>update all</Button>
       {rows.map((row) => (
