@@ -206,6 +206,17 @@ flag resets in `mount` and on `detached`, so a rebuilt root installs a fresh set
 once. The regression test updates one signal after `ready` + `attached` and
 asserts the binding read ran once.
 
+### Config validation
+
+`defineGlazeComponent` validates the generated config before it builds any
+state. It rejects names that collide after lowercasing, `propSignals` entries
+that are not declared properties (including the internal `glazeprops` and
+`glazecontext` names when structured props or boundary contexts are in use), a
+non-positive `bindingGroupSize`, a negative `handlerCount`, malformed
+`listBindings`/`listFields` pairs, and invalid `asyncStatus` indexes, boundaries
+or kinds. These are all cases where the old runtime would silently build the
+wrong signal set or skip a generated feature.
+
 ## Trade-offs
 
 - Logging no longer reads a component-wide flag. `config.errorBoundary` is
@@ -221,7 +232,7 @@ asserts the binding read ran once.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 162, pass 162, fail 0
+# tests 169, pass 169, fail 0
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json (no output)
 pnpm --filter @glaze/build test

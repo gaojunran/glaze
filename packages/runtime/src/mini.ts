@@ -37,6 +37,7 @@ import {
   resetVersionOf,
   setLoading,
 } from './boundary.ts'
+import { validateConfig } from './config.ts'
 import { createBindingState, resetBindingStates } from './state.ts'
 import { createDataTransport } from './transport.ts'
 import {
@@ -88,6 +89,7 @@ const bindingIndexOf = (change: DataChange): number | null => {
 }
 
 export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
+  validateConfig(config)
   const publicPropertyNames = config.properties ?? []
   const structuredProps = config.structuredProps === true
   if (
