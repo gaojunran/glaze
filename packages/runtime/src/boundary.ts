@@ -55,24 +55,24 @@ export function normalizeErrorValue(error: unknown): { name: string; message: st
 const signalFor = <T>(
   signals: Map<number, BoundarySignal<T>>,
   boundary: number,
-  initial: T,
+  create: () => BoundarySignal<T>,
 ): BoundarySignal<T> => {
   let signal = signals.get(boundary)
   if (!signal) {
-    signal = createSignal(initial)
+    signal = create()
     signals.set(boundary, signal)
   }
   return signal
 }
 
 const booleanSignal = (signals: Map<number, BoundarySignal<boolean>>, boundary: number) =>
-  signalFor(signals, boundary, false)
+  signalFor(signals, boundary, () => createSignal(false))
 
 const errorValueSignal = (signals: Map<number, BoundarySignal<unknown>>, boundary: number) =>
-  signalFor(signals, boundary, null as unknown)
+  signalFor(signals, boundary, () => createSignal<unknown>(null))
 
 const resetSignal = (signals: Map<number, BoundarySignal<number>>, boundary: number) =>
-  signalFor(signals, boundary, 0)
+  signalFor(signals, boundary, () => createSignal(0))
 
 /** Record a `NotReadyError` for a binding. Returns true when it was new. */
 export function markPending(state: BoundaryState, boundary: number, index: number): boolean {
