@@ -209,6 +209,13 @@ than `undefined`. `class`, `style`, `id`, `slot`, `data-*`/`aria-*`, events,
 keeps the normal attribute form. Pages are compiled without `structuredProps`, so
 a component used as a page never receives or emits the object.
 
+The build marker, the parent grouping decision and the child projection all call
+one `isGroupableProp` predicate (`packages/compiler/src/props.ts`), so a
+component is marked `structuredProps` exactly when it has at least two groupable
+props. `@glaze/build` asserts the marker and the compiler decision agree.
+`glazeprops` and `glazecontext` are reserved: passing them as an attribute or
+declaring them as a prop is a compile error.
+
 The runtime adds the `glazeprops` property only when the marker is present. It
 creates a `glazeprops` signal only when the child has at least two public props
 and at least one prop signal; an all-WXML child needs no observer. The `props`
@@ -867,7 +874,9 @@ values still go through one synchronous `setData` before the first paint.
 Generated config keys (`data`, `listBindings`, `asyncStatus`, `handlerCount`, ...)
 are defined once in `@glaze/shared` protocol (`packages/shared/src/protocol.ts`);
 the compiler and runtime both import that module instead of repeating string
-literals.
+literals. The JSON half of the config is typed as `GeneratedConfigJson`; the
+emitter builds that object and serializes it, while `setup` stays generated code
+outside the JSON type.
 
 ```
 defineGlazeComponent({

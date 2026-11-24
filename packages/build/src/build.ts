@@ -245,22 +245,28 @@ async function buildProjectInternal(
       }
     }
     const dependencies = new Set<string>()
-    const entry = {
-      result: compileComponent(sources.get(file), {
-        inline: true,
-        sourceFile: file,
-        bindingGroupSize,
-        structuredProps: structuredFor(file),
-        resolveComponent: (_name, specifier, fromFile = file) => {
-          const child = resolveSourceImport(fromFile, specifier, sources)
-          if (child) dependencies.add(child)
-          return child
-            ? { source: sources.get(child), file: child, structuredProps: structuredFor(child) }
-            : null
-        },
-      }),
-      dependencies,
+    const result = compileComponent(sources.get(file), {
+      inline: true,
+      sourceFile: file,
+      bindingGroupSize,
+      structuredProps: structuredFor(file),
+      resolveComponent: (_name, specifier, fromFile = file) => {
+        const child = resolveSourceImport(fromFile, specifier, sources)
+        if (child) dependencies.add(child)
+        return child
+          ? { source: sources.get(child), file: child, structuredProps: structuredFor(child) }
+          : null
+      },
+    })
+    // The build marker and the compiler decision share one predicate; a
+    // mismatch would mean the parent groups props the child never reads.
+    if (!pageFiles.has(file) && result.structuredProps !== structuredFor(file)) {
+      throw new Error(
+        `Structured prop mismatch for ${path.relative(project, file)}: ` +
+          `build marked ${structuredFor(file)} but the compiler emitted ${result.structuredProps}`,
+      )
     }
+    const entry = { result, dependencies }
     compiled.set(file, entry)
     compileCache.set(file, { fingerprint, entry })
     return entry

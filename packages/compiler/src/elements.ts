@@ -33,6 +33,7 @@ import {
 } from './events.ts'
 import { inlineComponent } from './inline.ts'
 import { projectExpression } from './projection.ts'
+import { isGroupableProp } from './props.ts'
 import { inlineExpression } from './scope.ts'
 import type { AnyNode, CompilerContext, Scope } from './types.ts'
 
@@ -339,9 +340,8 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
       attrs.push(styleAttr(expression, ctx, scope))
       continue
     }
-    // class/style/id/slot and context are host attributes or helpers, not
-    // scalar props.
-    const group = !['class', 'style', 'id', 'slot', CONTEXT_PROP].includes(propName)
+    // One predicate decides what the compact object carries; see ./props.ts.
+    const group = isGroupableProp(propName)
     if (t.isStringLiteral(expression)) {
       const value = staticAssetAttr(propName, expression.value, ctx) ?? expression.value
       scalarProps.push({

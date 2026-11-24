@@ -8,6 +8,7 @@ import { eventNameFor, splitEventBinding } from './events.ts'
 import { parseComponent, collectImports } from './parse.ts'
 import { compileNode } from './elements.ts'
 import { rewriteContextAccess } from './context.ts'
+import { groupableProps, hasGroupableProps, isEventProp } from './props.ts'
 import type {
   AnyNode,
   BoundaryContext,
@@ -28,24 +29,6 @@ import type {
  * Everything else is a compile error on purpose. Silent fallback would hide
  * exactly the cases where the mini-program runtime diverges from Solid.
  */
-/**
- * A structured child needs at least two props that the parent can actually
- * group. Host attributes and event props never enter the compact object, so
- * counting them would mark a child whose parent cannot group anything.
- */
-const NON_GROUPABLE_PROPS = new Set([
-  'class',
-  'style',
-  'id',
-  'slot',
-  'key',
-  'children',
-  CONTEXT_PROP,
-  STRUCTURED_PROPS,
-])
-const isEventProp = (name: string) => /^on[A-Z]/.test(name)
-const groupableProps = (props: string[]) =>
-  props.filter((name) => !isEventProp(name) && !NON_GROUPABLE_PROPS.has(name.toLowerCase()))
 
 /** True when any generated fragment reads a prop that was not registered. */
 export function hasUnregisteredPropRead(
@@ -69,7 +52,7 @@ export function hasUnregisteredPropRead(
 
 export function hasMultipleProps(source: string): boolean {
   try {
-    return groupableProps(parseComponent(source).props).length >= 2
+    return hasGroupableProps(parseComponent(source).props)
   } catch {
     return false
   }
@@ -168,13 +151,20 @@ function finalizeProps(props: string[], boundaryContexts: BoundaryContext[], str
       `Component props may not use the reserved compiler property "${STRUCTURED_PROPS}"`,
     )
   }
+  // The parent cannot pass this name either; declaring it would emit a property
+  // that always collides with the compiled context bridge.
+  if (props.some((name) => name.toLowerCase() === CONTEXT_PROP)) {
+    throw new Error(
+      `Component props may not use the reserved compiler property "${CONTEXT_PROP}"`,
+    )
+  }
   const plainProps = [
     ...props.filter((name) => !eventProps[name]),
     ...(boundaryContexts.length > 0 ? [CONTEXT_PROP] : []),
   ]
   // A one-prop child has no property fan-out to remove, and its parent keeps
   // the normal attribute path; do not add the compact property or fallback.
-  const structuredProps = structured && groupableProps(plainProps).length >= 2
+  const structuredProps = structured && hasGroupableProps(plainProps)
   const propertyNames = plainProps.map((name) => name.toLowerCase())
   if (new Set(propertyNames).size !== propertyNames.length) {
     throw new Error('Component props collide after lowercasing to mini-program property names')

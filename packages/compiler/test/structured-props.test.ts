@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { compileComponent, hasMultipleProps } from '../src/index.ts'
+import { compileComponent, hasMultipleProps, isGroupableProp } from '../src/index.ts'
 
 const child = `
   import { createSignal } from 'solid-js'
@@ -282,5 +282,101 @@ test('rejects the reserved compact property name', () => {
         },
       ),
     /reserved for compiled context props/,
+  )
+})
+
+test('one groupable prop plus host attributes and an event is not structured', () => {
+  const source = `
+    export default function Child(props) {
+      return (
+        <view id={props.id} onClick={props.onPick}>
+          <text>{props.title}</text>
+        </view>
+      )
+    }
+  `
+  assert.equal(hasMultipleProps(source), false)
+  const child = compileComponent(source, { structuredProps: true })
+  assert.equal(child.structuredProps, false)
+  assert.doesNotMatch(child.wxml, /glazeprops/)
+
+  const parent = compileComponent(
+    `
+      import Child from './Child'
+      export default function Page() {
+        return (
+          <Child
+            title="row"
+            id="card"
+            class={{ active: true }}
+            style={{ color: 'red' }}
+            onPick={() => {}}
+          />
+        )
+      }
+    `,
+    {
+      sourceFile: '/project/src/Page.tsx',
+      resolveComponent: () => ({
+        source,
+        file: '/project/src/Child.tsx',
+        structuredProps: true,
+      }),
+    },
+  )
+  assert.doesNotMatch(parent.wxml, /glazeprops/)
+  assert.match(parent.wxml, /\btitle="row"/)
+  assert.match(parent.wxml, /\bid="card"/)
+})
+
+test('two groupable props mark the component structured', () => {
+  const source = `
+    export default function Child(props) {
+      return <view><text>{props.title}</text><text>{props.done}</text></view>
+    }
+  `
+  assert.equal(hasMultipleProps(source), true)
+  assert.equal(compileComponent(source, { structuredProps: true }).structuredProps, true)
+})
+
+test('zero groupable props never mark a component structured', () => {
+  const source = `
+    export default function Child(props) {
+      return <view id={props.id}>{props.children}</view>
+    }
+  `
+  assert.equal(hasMultipleProps(source), false)
+  const result = compileComponent(source, { structuredProps: true })
+  assert.equal(result.structuredProps, false)
+  assert.doesNotMatch(result.wxml, /glazeprops/)
+})
+
+test('the marker and parent grouping share one groupable predicate', () => {
+  for (const name of ['class', 'style', 'id', 'slot', 'key', 'children', 'onPick']) {
+    assert.equal(isGroupableProp(name), false, `${name} must not be groupable`)
+  }
+  for (const name of ['title', 'done', 'dataRole']) {
+    assert.equal(isGroupableProp(name), true, `${name} must be groupable`)
+  }
+})
+
+test('rejects glazecontext as a declared prop as well as an attribute', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Child(props) {
+          return <view>{props.glazecontext}</view>
+        }
+      `),
+    /reserved compiler property "glazecontext"/,
+  )
+  assert.throws(
+    () =>
+      compileComponent(`
+        export default function Child(props) {
+          return <view>{props.glazeContext}</view>
+        }
+      `),
+    /reserved compiler property "glazecontext"/,
   )
 })

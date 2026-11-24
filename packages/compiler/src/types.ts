@@ -1,4 +1,10 @@
 
+import type {
+  AsyncStatusEntry,
+  BoundaryContextEntry,
+  GeneratedConfigJson,
+} from '@glaze/shared/protocol'
+
 export type AnyNode = any
 
 export type CompileOptions = {
@@ -27,7 +33,7 @@ export type EventEntry = { code: string; ast: AnyNode; scope: Scope | null; cust
 export type RefEntry = { code: string; block: number }
 export type PropGetter = { name: string; code: string; expression: AnyNode }
 export type ContextProvider = { name: string; key: string; imported: boolean; code: string }
-export type BoundaryContext = { name: string; key: string }
+export type BoundaryContext = BoundaryContextEntry
 export type Block = {
   setup: AnyNode[]
   effects: string[]
@@ -65,7 +71,7 @@ export type CompileResult = {
   usesSlot: boolean
   namedSlots: string[]
   boundaryContexts: BoundaryContext[]
-  asyncStatus: { index: number; kind: 'loading' | 'error'; boundary: number }[]
+  asyncStatus: AsyncStatusEntry[]
   propSignals: string[]
   listFields: Record<string, string[]>
   components: ComponentRef[]
@@ -75,6 +81,26 @@ export type CompileResult = {
   handlerCount: number
   structuredProps: boolean
 }
+
+/**
+ * The JSON metadata the compiler writes into the generated component config.
+ * Serialized by ./emit.ts; `setup` is code, not JSON, and stays outside it.
+ */
+export type GeneratedConfigMetadata = Pick<
+  GeneratedConfigJson,
+  | 'data'
+  | 'properties'
+  | 'propMap'
+  | 'eventProps'
+  | 'propSignals'
+  | 'structuredProps'
+  | 'boundaryContexts'
+  | 'asyncStatus'
+  | 'bindingGroupSize'
+  | 'listBindings'
+  | 'listFields'
+  | 'handlerCount'
+>
 export type EmitOptions = {
   bindingGroupSize?: number
   propsParam: string | null
@@ -85,7 +111,7 @@ export type EmitOptions = {
   usesSlot: boolean
   namedSlots: string[]
   boundaryContexts: BoundaryContext[]
-  asyncStatus: { index: number; kind: 'loading' | 'error'; boundary: number }[]
+  asyncStatus: AsyncStatusEntry[]
   propSignals: string[]
   listFields: Record<string, string[]>
   structuredProps?: boolean
@@ -119,7 +145,7 @@ export type CompilerContext = {
   nextAsyncBoundary: number
   currentLoadingBoundary: number | null
   currentErrorBoundary: number | null
-  asyncStatus: { index: number; kind: 'loading' | 'error'; boundary: number }[]
+  asyncStatus: AsyncStatusEntry[]
   listProjectionBlocked: Set<number>
   namedSlots: Set<string>
   usesWxs: boolean

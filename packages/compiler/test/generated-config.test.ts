@@ -3,6 +3,7 @@ import { unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import test from 'node:test'
 import { pathToFileURL } from 'node:url'
+import type { GeneratedConfigJson } from '@glaze/shared/protocol'
 import { compileComponent } from '../src/index.ts'
 
 const child = `
@@ -55,38 +56,67 @@ test('generated config matches the shared runtime protocol', async () => {
   )
   try {
     await writeFile(file, generated)
-    const { config } = await import(pathToFileURL(file).href)
+    const { config } = (await import(pathToFileURL(file).href)) as {
+      config: GeneratedConfigJson
+    }
 
-    for (const key of Object.keys(config.data)) {
+    // The JSON metadata is exactly the shared contract; `setup` is generated
+    // code and must not appear among the JSON fields.
+    assert.equal(typeof (config as { setup?: unknown }).setup, 'function')
+    const jsonKeys = Object.keys(config).filter(
+      (key) => typeof (config as Record<string, unknown>)[key] !== 'function',
+    )
+    for (const key of jsonKeys) {
+      assert.ok(
+        [
+          'data',
+          'properties',
+          'propMap',
+          'eventProps',
+          'propSignals',
+          'structuredProps',
+          'boundaryContexts',
+          'asyncStatus',
+          'bindingGroupSize',
+          'listBindings',
+          'listFields',
+          'handlerCount',
+        ].includes(key),
+        `unexpected generated config key ${key}`,
+      )
+    }
+    assert.equal(typeof config.handlerCount, 'number')
+    assert.equal(typeof config.listBindings, 'object')
+    for (const key of Object.keys(config.data!)) {
       assert.match(key, /^b\d+$/)
       assert.ok(Number(key.slice(1)) < result.bindingCount)
     }
-    assert.equal(Object.keys(config.data).length, result.bindingCount)
+    assert.equal(Object.keys(config.data!).length, result.bindingCount)
     assert.deepEqual(config.properties, result.propertyNames)
     assert.equal(config.handlerCount, result.handlerCount)
-    assert.ok(config.handlerCount > 0)
+    assert.ok(config.handlerCount! > 0)
     assert.equal('errorBoundary' in config, false)
     assert.equal('refCount' in config, false)
     assert.ok(result.wxml.includes('glazeprops'))
-    assert.ok(Object.keys(config.listBindings).length > 0)
-    assert.ok(Object.keys(config.listFields).length > 0)
-    assert.ok(config.asyncStatus.length > 0)
-    assert.ok(config.propSignals.length > 0)
+    assert.ok(Object.keys(config.listBindings!).length > 0)
+    assert.ok(Object.keys(config.listFields!).length > 0)
+    assert.ok(config.asyncStatus!.length > 0)
+    assert.ok(config.propSignals!.length > 0)
 
-    for (const [index, key] of Object.entries(config.listBindings)) {
+    for (const [index, key] of Object.entries(config.listBindings!)) {
       assert.match(index, /^\d+$/)
       assert.ok(Number(index) < result.bindingCount)
       assert.equal(typeof key, 'string')
     }
-    for (const index of Object.keys(config.listFields)) {
-      assert.ok(Object.hasOwn(config.listBindings, index), `listFields ${index} has no listBindings entry`)
+    for (const index of Object.keys(config.listFields!)) {
+      assert.ok(Object.hasOwn(config.listBindings!, index), `listFields ${index} has no listBindings entry`)
     }
-    for (const status of config.asyncStatus) {
+    for (const status of config.asyncStatus!) {
       assert.ok(status.index < result.bindingCount)
     }
-    for (const signal of config.propSignals) {
+    for (const signal of config.propSignals!) {
       assert.ok(
-        signal === 'glazecontext' || config.properties.includes(signal),
+        signal === 'glazecontext' || config.properties!.includes(signal),
         `prop signal ${signal} is not a declared property`,
       )
     }

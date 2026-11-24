@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Small framework-neutral helpers shared by Glaze packages",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./protocol": "./src/protocol.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

@@ -2,7 +2,7 @@ import * as t from '@babel/types'
 import { CONTEXT_PROP, bindingKey, dataIndexKey } from '@glaze/shared'
 import { codeOf } from './ast.ts'
 import { rewriteAccessorCalls } from './scope.ts'
-import type { AnyNode, CompilerContext, EmitOptions } from './types.ts'
+import type { AnyNode, CompilerContext, EmitOptions, GeneratedConfigMetadata } from './types.ts'
 
 export function emitModule(ast: AnyNode, ctx: CompilerContext, options: EmitOptions): string {
   const componentNames = new Set(
@@ -31,40 +31,6 @@ export function emitModule(ast: AnyNode, ctx: CompilerContext, options: EmitOpti
     })
     .join('\n')
 
-  const data = JSON.stringify(
-    Object.fromEntries(ctx.bindings.map((_, index) => [bindingKey(index), null])),
-  )
-  const listBindings = Object.fromEntries(
-    ctx.bindings
-      .map((binding, index) => [index, binding.listKey])
-      .filter(([, key]) => key),
-  )
-  const properties =
-    options.propertyNames.length > 0
-      ? `  properties: ${JSON.stringify(options.propertyNames)},\n`
-      : ''
-  const propMap =
-    Object.keys(options.propMap).length > 0 &&
-    options.propertyNames.some((name, index) => name !== options.props[index])
-      ? `  propMap: ${JSON.stringify(options.propMap)},\n`
-      : ''
-  const propSignals =
-    options.propSignals && options.propSignals.length !== options.propertyNames.length
-      ? `  propSignals: ${JSON.stringify(options.propSignals)},\n`
-      : ''
-  const asyncStatus =
-    options.asyncStatus && options.asyncStatus.length > 0
-      ? `  asyncStatus: ${JSON.stringify(options.asyncStatus)},\n`
-      : ''
-  const eventProps =
-    Object.keys(options.eventProps ?? {}).length > 0
-      ? `  eventProps: ${JSON.stringify(options.eventProps)},\n`
-      : ''
-  const listFields =
-    Object.keys(options.listFields ?? {}).length > 0
-      ? `  listFields: ${JSON.stringify(options.listFields)},\n`
-      : ''
-  const structuredProps = options.structuredProps ? '  structuredProps: true,\n' : ''
   const setupParams = options.propsParam ? `, ${options.propsParam}` : ''
 
   const renderRefs = (blockId) =>
@@ -199,21 +165,71 @@ ${indent(rawSetup, 4)}
     ...(hasBoundaryContext ? ['withBoundaryContexts'] : []),
     ...helpers,
   ].join(', ')
+
+  // The JSON half of the generated config. Its field order matches the original
+  // hand-written emitter so the emitted code is byte-identical.
+  const metadata: GeneratedConfigMetadata = {
+    data: Object.fromEntries(ctx.bindings.map((_, index) => [bindingKey(index), null])),
+    listBindings: Object.fromEntries(
+      ctx.bindings
+        .map((binding, index) => [index, binding.listKey])
+        .filter(([, key]) => key),
+    ),
+    handlerCount: ctx.events.length,
+  }
+  if (options.propertyNames.length > 0) metadata.properties = options.propertyNames
+  if (
+    Object.keys(options.propMap).length > 0 &&
+    options.propertyNames.some((name, index) => name !== options.props[index])
+  ) {
+    metadata.propMap = options.propMap
+  }
+  if (options.propSignals && options.propSignals.length !== options.propertyNames.length) {
+    metadata.propSignals = options.propSignals
+  }
+  if (options.asyncStatus && options.asyncStatus.length > 0) {
+    metadata.asyncStatus = options.asyncStatus
+  }
+  if (Object.keys(options.eventProps ?? {}).length > 0) metadata.eventProps = options.eventProps
+  if (Object.keys(options.listFields ?? {}).length > 0) metadata.listFields = options.listFields
+  if (options.structuredProps) metadata.structuredProps = true
+  if (options.bindingGroupSize !== undefined) metadata.bindingGroupSize = options.bindingGroupSize
+  if (hasBoundaryContext) {
+    metadata.boundaryContexts = boundaryContexts.map((item) => ({
+      name: item.name,
+      key: item.key,
+    }))
+  }
+  const renderMetadata = (config: GeneratedConfigMetadata) => {
+    const line = (key: keyof GeneratedConfigMetadata, value: unknown) =>
+      `  ${key}: ${JSON.stringify(value)},\n`
+    return [
+      config.properties && line('properties', config.properties),
+      config.propMap && line('propMap', config.propMap),
+      config.eventProps && line('eventProps', config.eventProps),
+      config.propSignals && line('propSignals', config.propSignals),
+      config.asyncStatus && line('asyncStatus', config.asyncStatus),
+      config.structuredProps && line('structuredProps', config.structuredProps),
+      config.bindingGroupSize !== undefined &&
+        line('bindingGroupSize', config.bindingGroupSize),
+      config.boundaryContexts && line('boundaryContexts', config.boundaryContexts),
+      config.data && line('data', config.data),
+      config.listBindings && line('listBindings', config.listBindings),
+      config.listFields && line('listFields', config.listFields),
+      // The original emitter always left a blank line before handlerCount.
+      '\n',
+      config.handlerCount !== undefined && line('handlerCount', config.handlerCount),
+    ]
+      .filter(Boolean)
+      .join('')
+  }
   return `${imports}
 import { ${runtimeImports} } from "@glaze/runtime/mini";
 
 ${moduleStatements}
 
 export default defineGlazeComponent({
-${properties}${propMap}${eventProps}${propSignals}${asyncStatus}${structuredProps}${
-    options.bindingGroupSize === undefined
-      ? ''
-      : `  bindingGroupSize: ${options.bindingGroupSize},\n`
-  }${hasBoundaryContext ? `  boundaryContexts: ${JSON.stringify(boundaryContexts.map((item) => ({ name: item.name, key: item.key })))},\n` : ''}  data: ${data},
-  listBindings: ${JSON.stringify(listBindings)},
-${listFields}
-  handlerCount: ${ctx.events.length},
-  setup(ctx${setupParams}) {
+${renderMetadata(metadata)}  setup(ctx${setupParams}) {
 ${setup}
   },
 });
