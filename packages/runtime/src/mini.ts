@@ -21,13 +21,39 @@ import {
 import { diffList, projectList, snapshotList } from './list.ts'
 import { isContextReader, withBoundaryContexts, withProvider } from './provider.ts'
 import { createNodeRef } from './ref.ts'
+import {
+  clearBoundaryContent,
+  clearError,
+  createBoundaryState,
+  errorArrayOf,
+  errorValueOf,
+  erroredOf,
+  hasPending as hasBoundaryPending,
+  loadingOf,
+  markError,
+  markPending,
+  markSettled,
+  resetBoundary as resetBoundaryState,
+  resetVersionOf,
+  setLoading,
+} from './boundary.ts'
+import { createBindingState, resetBindingStates } from './state.ts'
 import { createDataTransport } from './transport.ts'
+import {
+  attach as attachLifecycle,
+  attachWhileWaiting,
+  detach as detachLifecycle,
+  initialLifecycle,
+  mountImmediately,
+  readyMount,
+  reattach,
+  type LifecycleState,
+} from './lifecycle.ts'
 declare const Component: (options: Record<string, unknown>) => unknown
 
 import type {
-  GlazeBinding,
-  GlazeComponentConfig,
   DataChange,
+  GlazeComponentConfig,
   GlazeContext,
   GlazeContextProvider,
   GlazeProps,
@@ -56,101 +82,34 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   // Only a binding with an async boundary surfaces its failure through the
   // Errored state; anything else has no channel and must still reach the log.
   const reportError = (state: InstanceState, index: number, error: unknown) => {
-    if (state.bindingErrorBoundaries[index] == null) logBindingError(index, error)
+    if (state.core.bindings[index]?.errorBoundary == null) logBindingError(index, error)
   }
   const BINDING_ERROR = Symbol('glaze.bindingError')
   type BindingResult = { value: unknown } | { [BINDING_ERROR]: unknown }
   const isBindingError = (result: BindingResult): result is { [BINDING_ERROR]: unknown } =>
     Object.hasOwn(result, BINDING_ERROR)
-  type BoundarySignal = [() => boolean, (value: boolean) => void]
-  type BoundaryValueSignal = [() => unknown, (value: unknown) => void]
-  const boundarySignal = (
-    signals: Map<number, BoundarySignal>,
-    boundary: number,
-  ): BoundarySignal => {
-    let signal = signals.get(boundary)
-    if (!signal) {
-      signal = createSignal(false)
-      signals.set(boundary, signal)
-    }
-    return signal
-  }
-  const boundaryNumberSignal = (
-    signals: Map<number, [() => number, (value: number) => void]>,
-    boundary: number,
-  ): [() => number, (value: number) => void] => {
-    let signal = signals.get(boundary)
-    if (!signal) {
-      signal = createSignal(0)
-      signals.set(boundary, signal)
-    }
-    return signal
-  }
-  const boundaryValueSignal = (
-    signals: Map<number, BoundaryValueSignal>,
-    boundary: number,
-  ): BoundaryValueSignal => {
-    let signal = signals.get(boundary)
-    if (!signal) {
-      signal = createSignal<unknown>(null)
-      signals.set(boundary, signal)
-    }
-    return signal
-  }
-  const normalizeAsyncError = (error: unknown): unknown => {
-    if (error instanceof Error) return { name: error.name, message: error.message }
-    if (error && typeof error === 'object' && 'message' in error) {
-      const value = error as { name?: unknown; message?: unknown }
-      return {
-        name: typeof value.name === 'string' ? value.name : 'Error',
-        message: String(value.message),
-      }
-    }
-    return { name: 'Error', message: String(error) }
-  }
   const sourceKey = (state: InstanceState, index: number, error: unknown) => {
     const source = (error as { source?: unknown } | null)?.source
     if (source != null) return source
-    let fallback = state.fallbackSources[index]
-    if (fallback === undefined) {
-      fallback = { binding: index }
-      state.fallbackSources[index] = fallback
-    }
-    return fallback
+    const binding = state.core.bindings[index]!
+    if (binding.fallbackSource === undefined) binding.fallbackSource = { binding: index }
+    return binding.fallbackSource
   }
   const clearAsync = (state: InstanceState, index: number) => {
-    const loadingBoundary = state.bindingBoundaries[index]
-    if (loadingBoundary != null) {
-      const pending = state.asyncPending.get(loadingBoundary)
-      if (pending?.delete(index)) {
-        if (pending.size === 0) state.asyncPending.delete(loadingBoundary)
-        state.statusVersion[1](state.statusVersion[0]() + 1)
-        boundarySignal(state.loadingSignals, loadingBoundary)[1](pending.size > 0)
-        applyAsyncStatus(state, loadingBoundary, 'loading')
-      }
+    const binding = state.core.bindings[index]
+    if (!binding) return
+    const loadingBoundary = binding.loadingBoundary
+    if (loadingBoundary != null && markSettled(state.boundaries, loadingBoundary, index)) {
+      state.statusVersion[1](state.statusVersion[0]() + 1)
+      applyAsyncStatus(state, loadingBoundary, 'loading')
     }
-    const boundary = state.bindingErrorBoundaries[index]
+    const boundary = binding.errorBoundary
     if (boundary == null) return
-    const source = state.bindingSources[index]
-    const sources = state.errorBindings.get(boundary)
-    if (sources) {
-      const consumers = sources.get(source)
-      consumers?.delete(index)
-      if (consumers?.size === 0) {
-        sources.delete(source)
-        state.errorValues.get(boundary)?.delete(source)
-      }
-      if (sources.size === 0) state.errorBindings.delete(boundary)
-      boundarySignal(state.errorSignals, boundary)[1](sources.size > 0)
-      applyAsyncStatus(state, boundary, 'error')
-    }
-    const errors = state.errorValues.get(boundary)
-    if (errors) {
-      if (errors.size === 0) state.errorValues.delete(boundary)
-      boundaryValueSignal(state.errorValueSignals, boundary)[1](
-        errors.size > 0 ? normalizeAsyncError(errors.values().next().value) : null,
-      )
-    }
+    // The old code projected Errored only when this boundary had a consumers
+    // map; `clearError` also updates the error-value signal independently.
+    const hadConsumers = state.boundaries.consumers.has(boundary)
+    clearError(state.boundaries, boundary, binding.source, index)
+    if (hadConsumers) applyAsyncStatus(state, boundary, 'error')
   }
   const applyAsyncStatus = (
     state: InstanceState,
@@ -165,92 +124,59 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         state.applyStatus?.(
           status.index,
           kind === 'loading'
-            ? boundarySignal(state.loadingSignals, boundary)[0]()
-            : boundarySignal(state.errorSignals, boundary)[0](),
+            ? loadingOf(state.boundaries, boundary)
+            : erroredOf(state.boundaries, boundary),
         )
       if (typeof queueMicrotask === 'function') queueMicrotask(project)
       else Promise.resolve().then(project)
     }
   }
   const resetBoundary = (state: InstanceState, boundary: number) => {
-    state.asyncPending.delete(boundary)
-    state.errorBindings.delete(boundary)
-    state.errorValues.delete(boundary)
+    // Clears pending/error content, rewrites the status signals and bumps the
+    // reset counter read by every memo in this boundary.
+    resetBoundaryState(state.boundaries, boundary)
     state.statusVersion[1](state.statusVersion[0]() + 1)
-    boundarySignal(state.loadingSignals, boundary)[1](false)
-    boundarySignal(state.errorSignals, boundary)[1](false)
-    boundaryValueSignal(state.errorValueSignals, boundary)[1](null)
     applyAsyncStatus(state, boundary, 'loading')
     applyAsyncStatus(state, boundary, 'error')
-    // Re-evaluate every memo that belongs to this boundary. The reset signal
-    // is read inside the memo, so a cached error or value is not reused.
-    const reset = boundaryNumberSignal(state.resetSignals, boundary)
-    reset[1](reset[0]() + 1)
   }
   const hasPending = (state: InstanceState, boundary: number) => {
-    if ((state.asyncPending.get(boundary)?.size ?? 0) > 0) return true
-    return state.bindingBoundaries.some(
-      (item, index) =>
-        item === boundary &&
-        state.settled[index] === true &&
-        state.bindingMemos[index] != null &&
-        isPending(state.bindingMemos[index]!),
+    if (hasBoundaryPending(state.boundaries, boundary)) return true
+    return state.core.bindings.some(
+      (binding) =>
+        binding != null &&
+        binding.loadingBoundary === boundary &&
+        binding.settled &&
+        binding.memo != null &&
+        isPending(binding.memo),
     )
   }
   const armLoading = (state: InstanceState, boundary: number) => {
     if (!hasPending(state, boundary)) return
-    boundarySignal(state.loadingSignals, boundary)[1](true)
+    setLoading(state.boundaries, boundary, true)
     applyAsyncStatus(state, boundary, 'loading')
   }
   const markAsync = (state: InstanceState, index: number, error: unknown) => {
-    const loadingBoundary = state.bindingBoundaries[index]
+    const binding = state.core.bindings[index]
+    if (!binding) return
+    const loadingBoundary = binding.loadingBoundary
     if (isNotReady(error)) {
       if (loadingBoundary == null) return
-      const pending = state.asyncPending.get(loadingBoundary) ?? new Set<number>()
-      if (pending.has(index)) return
-      pending.add(index)
-      state.asyncPending.set(loadingBoundary, pending)
-      boundarySignal(state.loadingSignals, loadingBoundary)[1](true)
+      if (!markPending(state.boundaries, loadingBoundary, index)) return
       applyAsyncStatus(state, loadingBoundary, 'loading')
       return
     }
-    if (loadingBoundary != null) {
-      const pending = state.asyncPending.get(loadingBoundary)
-      if (pending?.delete(index)) {
-        if (pending.size === 0) state.asyncPending.delete(loadingBoundary)
-        state.statusVersion[1](state.statusVersion[0]() + 1)
-        boundarySignal(state.loadingSignals, loadingBoundary)[1](pending.size > 0)
-        applyAsyncStatus(state, loadingBoundary, 'loading')
-      }
+    if (loadingBoundary != null && markSettled(state.boundaries, loadingBoundary, index)) {
+      state.statusVersion[1](state.statusVersion[0]() + 1)
+      applyAsyncStatus(state, loadingBoundary, 'loading')
     }
-    const boundary = state.bindingErrorBoundaries[index]
+    const boundary = binding.errorBoundary
     if (boundary == null) return
-    const source = sourceKey(state, index, error)
-    state.bindingSources[index] = source
-    const values = state.errorValues.get(boundary) ?? new Map<unknown, unknown>()
-    const normalized = normalizeAsyncError(error) as { name: string; message: string }
-    const previousError = values.get(source)
-    const previousNormalized =
-      previousError == null
-        ? null
-        : (normalizeAsyncError(previousError) as { name: string; message: string })
-    if (
-      previousNormalized == null ||
-      previousNormalized.name !== normalized.name ||
-      previousNormalized.message !== normalized.message
-    ) {
-      values.set(source, error)
-      state.errorValues.set(boundary, values)
-      boundaryValueSignal(state.errorValueSignals, boundary)[1](normalized)
+    binding.source = sourceKey(state, index, error)
+    // A repeated consumer does not re-project status, matching the old early
+    // return after the error-value signal was possibly refreshed.
+    if (markError(state.boundaries, boundary, binding.source, index, error).added) {
+      applyAsyncStatus(state, boundary, 'error')
     }
-    const sources = state.errorBindings.get(boundary) ?? new Map<unknown, Set<number>>()
-    const consumers = sources.get(source) ?? new Set<number>()
-    if (consumers.has(index)) return
-    consumers.add(index)
-    sources.set(source, consumers)
-    state.errorBindings.set(boundary, sources)
-    boundarySignal(state.errorSignals, boundary)[1](true)
-    applyAsyncStatus(state, boundary, 'error')
   }
   const deferredContext = (config.boundaryContexts?.length ?? 0) > 0
   const methods: Record<string, unknown> = {}
@@ -352,25 +278,10 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
   }
 
   const mount = (component: any, state: InstanceState) => {
-    state.bindings.length = 0
-    state.bindingFns.length = 0
-    state.asyncPending.clear()
-    state.loadingOn.clear()
-    state.bindingMemos.length = 0
-    state.settled.length = 0
+    resetBindingStates(state.core.bindings)
+    clearBoundaryContent(state.boundaries)
     state.events.length = 0
     state.refs.length = 0
-    state.initial.length = 0
-    state.previous.length = 0
-    state.errorBindings.clear()
-    state.errorValues.clear()
-    state.bindingBoundaries.length = 0
-    state.bindingErrorBoundaries.length = 0
-    state.bindingSources.length = 0
-    state.fallbackSources.length = 0
-    state.loadingSignals.forEach((signal) => signal[1](false))
-    state.errorSignals.forEach((signal) => signal[1](false))
-    state.errorValueSignals.forEach((signal) => signal[1](null))
     state.error = undefined
     state.owner = null
 
@@ -378,10 +289,11 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       config.setup(
         {
           bind(index, fn, asyncBoundary = null, errorBoundary = asyncBoundary) {
-            state.bindingFns[index] = fn
-            state.bindings[index] = fn
-            state.bindingBoundaries[index] = asyncBoundary
-            state.bindingErrorBoundaries[index] = errorBoundary
+            state.core.bindings[index] = createBindingState({
+              raw: fn,
+              loadingBoundary: asyncBoundary,
+              errorBoundary,
+            })
           },
           event(index, fn) {
             state.events[index] = fn
@@ -394,34 +306,34 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
             return isContextReader(value) ? value : () => value
           },
           loadingOn(boundary: number, fn: () => unknown) {
-            state.loadingOn.set(boundary, fn)
+            state.boundaries.loadingOn.set(boundary, fn)
           },
           reset(boundary: number) {
             resetBoundary(state, boundary)
           },
-          loading: (boundary) => boundarySignal(state.loadingSignals, boundary)[0](),
-          errored: (boundary) => boundarySignal(state.errorSignals, boundary)[0](),
-          error: (boundary) => boundaryValueSignal(state.errorValueSignals, boundary)[0](),
-          errorArray: (boundary) => {
-            const value = boundaryValueSignal(state.errorValueSignals, boundary)[0]()
-            return value == null ? [] : [value]
-          },
+          loading: (boundary) => loadingOf(state.boundaries, boundary),
+          errored: (boundary) => erroredOf(state.boundaries, boundary),
+          error: (boundary) => errorValueOf(state.boundaries, boundary),
+          errorArray: (boundary) => errorArrayOf(state.boundaries, boundary),
         },
         state.propsProxy!,
       )
       state.owner = getOwner()
 
       const initial: Record<string, unknown> = {}
-      state.bindingFns.forEach((fn, index) => {
-        if (!fn) return
+      for (let index = 0; index < state.core.bindings.length; index += 1) {
+        const binding = state.core.bindings[index]
+        if (!binding?.raw) continue
         try {
-          const value = fn()
-          state.initial[index] = value
+          const value = binding.raw()
+          binding.initial = value
           const { payload, baseline } = materialize(index, value)
-          state.previous[index] = baseline
+          binding.previous = baseline
           // The initial pass already committed a value, so the boundary status
           // effect below may probe `isPending` for a later refetch.
-          if (state.bindingBoundaries[index] != null || state.bindingErrorBoundaries[index] != null) state.settled[index] = true
+          if (binding.loadingBoundary != null || binding.errorBoundary != null) {
+            binding.settled = true
+          }
           // Platform path updates mutate the data object in place. List data
           // must not alias the signal array, or the next page instance would
           // inherit a row mutated by the previous one.
@@ -433,37 +345,37 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           markAsync(state, index, error)
           reportError(state, index, error)
         }
-      })
+      }
       // Components with async boundaries get one memo per binding. The memo
       // is a real Solid graph node, so the data effects and status probes read
       // the same cached value instead of evaluating the expression twice.
       // Initial values above still call the raw binding first: a memo created
       // before that pass could cache a first-attempt error and never retry.
-      if (state.bindingBoundaries.some((boundary) => boundary != null)) {
-        for (const boundary of new Set(state.bindingBoundaries)) {
-          if (boundary != null) boundarySignal(state.loadingSignals, boundary)
+      if (state.core.bindings.some((binding) => binding?.loadingBoundary != null)) {
+        for (const binding of state.core.bindings) {
+          if (binding?.loadingBoundary != null) {
+            loadingOf(state.boundaries, binding.loadingBoundary)
+          }
         }
-        state.bindingMemos = state.bindingFns.map((fn, index) => {
-          if (!fn) return null
+        for (let index = 0; index < state.core.bindings.length; index += 1) {
+          const binding = state.core.bindings[index]
+          const raw = binding?.raw
+          if (!binding || !raw) continue
           // A memo is a real Solid graph node. Real (non-NotReady) failures
           // become values so they cannot halt the reactive system; the data
           // effect unwraps the error and keeps the existing skip/log path.
-          const boundaryId = state.bindingBoundaries[index]
-          const errorBoundaryId = state.bindingErrorBoundaries[index]
-          const resetSignal =
-            boundaryId != null ? boundaryNumberSignal(state.resetSignals, boundaryId) : null
-          const errorResetSignal =
-            errorBoundaryId != null && errorBoundaryId !== boundaryId
-              ? boundaryNumberSignal(state.resetSignals, errorBoundaryId)
-              : null
-          return createMemo<BindingResult>(
+          const boundaryId = binding.loadingBoundary
+          const errorBoundaryId = binding.errorBoundary
+          const memo = createMemo<BindingResult>(
             () => {
               // A boundary reset bumps this signal; reading it here makes the
               // memo retry even when its own dependencies did not change.
-              resetSignal?.[0]()
-              errorResetSignal?.[0]()
+              if (boundaryId != null) resetVersionOf(state.boundaries, boundaryId)
+              if (errorBoundaryId != null && errorBoundaryId !== boundaryId) {
+                resetVersionOf(state.boundaries, errorBoundaryId)
+              }
               try {
-                return { value: fn() }
+                return { value: raw() }
               } catch (error) {
                 if (isNotReady(error)) throw error
                 return { [BINDING_ERROR]: error }
@@ -471,16 +383,13 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
             },
             isListBinding(index) ? { equals: false } : undefined,
           )
-        })
-        state.bindings = state.bindingMemos.map((memo) =>
-          memo
-            ? () => {
-                const result = memo() as BindingResult
-                if (isBindingError(result)) throw result[BINDING_ERROR]
-                return result.value
-              }
-            : undefined!,
-        )
+          binding.memo = memo
+          binding.read = () => {
+            const result = memo() as BindingResult
+            if (isBindingError(result)) throw result[BINDING_ERROR]
+            return result.value
+          }
+        }
       }
       // Pending/error signals remain runtime-owned; the memos above keep each
       // binding a single cached Solid graph node.
@@ -524,20 +433,22 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     }
 
     const applyBinding = (index: number, value: unknown) => {
-      if (state.bindingBoundaries[index] != null || state.bindingErrorBoundaries[index] != null) state.settled[index] = true
+      const binding = state.core.bindings[index]
+      if (!binding) return
+      if (binding.loadingBoundary != null || binding.errorBoundary != null) binding.settled = true
       clearAsync(state, index)
       const key = listBindings[index]
       // Scalar bindings in one effect group are recomputed together. Skip the
       // unchanged ones so one signal write only produces its own data path,
       // which also keeps the template engine on its binding-map path longer.
-      if (!key && Object.is(value, state.previous[index])) return
-      const binding = `b${index}`
+      if (!key && Object.is(value, binding.previous)) return
+      const name = `b${index}`
       const { payload, baseline } = materialize(index, value)
       const changes = key
-        ? diffList(state.previous[index], payload, key, binding, transport.canSplice)
+        ? diffList(binding.previous, payload, key, name, transport.canSplice)
         : null
-      schedule(changes ?? [{ path: [binding], value: payload }])
-      state.previous[index] = baseline
+      schedule(changes ?? [{ path: [name], value: payload }])
+      binding.previous = baseline
     }
 
     // Status conditions are projected directly from the same signals the
@@ -549,21 +460,20 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
         applyBinding(
           status.index,
           status.kind === 'loading'
-            ? boundarySignal(state.loadingSignals, status.boundary)[0]()
-            : boundarySignal(state.errorSignals, status.boundary)[0](),
+            ? loadingOf(state.boundaries, status.boundary)
+            : erroredOf(state.boundaries, status.boundary),
         )
       if (typeof queueMicrotask === 'function') queueMicrotask(project)
       else Promise.resolve().then(project)
     }
 
     const boundaryIndexes = new Map<number, number[]>()
-    state.bindingMemos.forEach((memo, index) => {
-      const boundary = state.bindingBoundaries[index]
-      if (memo && boundary != null) {
-        const indexes = boundaryIndexes.get(boundary) ?? []
-        indexes.push(index)
-        boundaryIndexes.set(boundary, indexes)
-      }
+    state.core.bindings.forEach((binding, index) => {
+      const boundary = binding?.loadingBoundary
+      if (!binding?.memo || boundary == null) return
+      const indexes = boundaryIndexes.get(boundary) ?? []
+      indexes.push(index)
+      boundaryIndexes.set(boundary, indexes)
     })
     runWithOwner(state.owner, () => {
       for (const [boundary, indexes] of boundaryIndexes) {
@@ -572,11 +482,16 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
             state.statusVersion[0]()
             // Initial pending is captured by `markAsync`; `isPending` has no
             // value to report until the first content has landed.
-            if ((state.asyncPending.get(boundary)?.size ?? 0) > 0) return
-            const pending = indexes.some(
-              (index) => state.settled[index] && isPending(state.bindingMemos[index]!),
-            )
-            boundarySignal(state.loadingSignals, boundary)[1](pending)
+            if (hasBoundaryPending(state.boundaries, boundary)) return
+            const pending = indexes.some((index) => {
+              const binding = state.core.bindings[index]
+              return (
+                binding?.settled === true &&
+                binding.memo != null &&
+                isPending(binding.memo)
+              )
+            })
+            setLoading(state.boundaries, boundary, pending)
             applyAsyncStatus(state, boundary, 'loading')
           },
           {
@@ -595,7 +510,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     // with nothing pending does nothing (the status effect will show it when a
     // pending read starts).
     runWithOwner(state.owner, () => {
-      for (const [boundary, fn] of state.loadingOn) {
+      for (const [boundary, fn] of state.boundaries.loadingOn) {
         let first = true
         try {
           createEffect(fn, {
@@ -619,15 +534,16 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     for (const ref of state.refs.filter(Boolean)) createNodeRef(component, ref.id, ref.fn)
 
     const createBindingEffect = (index: number) => {
-      const fn = state.bindings[index]
-      if (!fn) return
+      const binding = state.core.bindings[index]
+      const fn = binding?.read
+      if (!binding || !fn) return
       let first = true
       try {
         createEffect(fn, {
           effect(value) {
             if (first) {
               first = false
-              if (Object.is(value, state.initial[index])) return
+              if (Object.is(value, binding.initial)) return
             }
             try {
               applyBinding(index, value)
@@ -659,8 +575,8 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     // arrays can be expensive to diff.
     const statusIndexes = new Set((config.asyncStatus ?? []).map((status) => status.index))
     const scalarIndexes: number[] = []
-    state.bindings.forEach((fn, index) => {
-      if (!fn || Object.hasOwn(listBindings, index) || statusIndexes.has(index)) return
+    state.core.bindings.forEach((binding, index) => {
+      if (!binding?.read || Object.hasOwn(listBindings, index) || statusIndexes.has(index)) return
       scalarIndexes.push(index)
     })
     const groupSize =
@@ -680,7 +596,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
             () =>
               group.map((index) => {
                 try {
-                  return { index, value: state.bindings[index]!() }
+                  return { index, value: state.core.bindings[index]!.read!() }
                 } catch (error) {
                   if (!isNotReady(error)) state.error = error
                   markAsync(state, index, error)
@@ -692,12 +608,10 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
               effect(values) {
                 if (first) {
                   first = false
-                  const unchanged = values.every(
-                    (item) =>
-                      item.failed ||
-                      item.value === undefined ||
-                      Object.is(item.value, state.initial[item.index]),
-                  )
+                  const unchanged = values.every((item) => {
+                    if (item.failed || item.value === undefined) return true
+                    return Object.is(item.value, state.core.bindings[item.index]?.initial)
+                  })
                   if (unchanged) return
                 }
                 for (const item of values) {
@@ -721,8 +635,10 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           reportError(state, group[0] ?? 0, error)
         }
       }
-      state.bindings.forEach((fn, index) => {
-        if (Object.hasOwn(listBindings, index) && !statusIndexes.has(index)) createBindingEffect(index)
+      state.core.bindings.forEach((binding, index) => {
+        if (binding?.read && Object.hasOwn(listBindings, index) && !statusIndexes.has(index)) {
+          createBindingEffect(index)
+        }
       })
     })
   }
@@ -738,17 +654,11 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     lifetimes: {
       created(this: any) {
         const state: InstanceState = {
-          bindings: [],
-          bindingFns: [],
-          bindingMemos: [],
+          core: { bindings: [] },
+          boundaries: createBoundaryState(),
           events: [],
           refs: [],
-          initial: [],
-          previous: [],
           pending: [],
-          asyncPending: new Map(),
-          loadingOn: new Map(),
-          settled: [],
           statusVersion: createSignal(0),
           asyncStatus: config.asyncStatus,
           applyStatus: null,
@@ -760,16 +670,6 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
           mounted: false,
           everMounted: false,
           active: false,
-          loadingSignals: new Map(),
-          errorSignals: new Map(),
-          bindingBoundaries: [],
-          bindingErrorBoundaries: [],
-          bindingSources: [],
-          fallbackSources: [],
-          errorBindings: new Map(),
-          errorValues: new Map(),
-          errorValueSignals: new Map(),
-          resetSignals: new Map(),
           error: undefined,
         }
         this.__glaze = state

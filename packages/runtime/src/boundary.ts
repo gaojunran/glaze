@@ -74,6 +74,22 @@ const errorValueSignal = (signals: Map<number, BoundarySignal<unknown>>, boundar
 const resetSignal = (signals: Map<number, BoundarySignal<number>>, boundary: number) =>
   signalFor(signals, boundary, () => createSignal(0))
 
+/** Current reset counter. The memo reads this so a reset retries a cached error. */
+export const resetVersionOf = (state: BoundaryState, boundary: number): number =>
+  resetSignal(state.resetSignals, boundary)[0]()
+
+/**
+ * Force the Loading signal. A `loadingOn` dependency that saw real pending
+ * work uses this; `markPending` is about a specific binding index.
+ */
+export function setLoading(
+  state: BoundaryState,
+  boundary: number,
+  value: boolean,
+): void {
+  booleanSignal(state.loadingSignals, boundary)[1](value)
+}
+
 /** Record a `NotReadyError` for a binding. Returns true when it was new. */
 export function markPending(state: BoundaryState, boundary: number, index: number): boolean {
   const current = state.pending.get(boundary)

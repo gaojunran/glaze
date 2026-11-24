@@ -1,4 +1,6 @@
 import type { getOwner } from 'solid-js'
+import type { BoundaryState } from './boundary.ts'
+import type { RuntimeStateCore } from './state.ts'
 
 export type GlazeBinding = () => unknown
 export type GlazeEventHandler = (event?: unknown) => void
@@ -73,17 +75,11 @@ export type GlazeComponentConfig = {
 }
 
 export type InstanceState = {
-  bindings: GlazeBinding[]
-  bindingFns: GlazeBinding[]
-  bindingMemos: (GlazeBinding | null)[]
+  core: RuntimeStateCore
+  boundaries: BoundaryState
   events: GlazeEventHandler[]
   refs: { id: string; fn: (node: unknown) => void }[]
-  initial: unknown[]
-  previous: unknown[]
   pending: DataChange[]
-  asyncPending: Map<number, Set<number>>
-  loadingOn: Map<number, () => unknown>
-  settled: boolean[]
   statusVersion: [() => number, (value: number) => void]
   applyStatus: ((index: number, value: unknown) => void) | null
   flushScheduled: boolean
@@ -94,16 +90,6 @@ export type InstanceState = {
   mounted: boolean
   everMounted: boolean
   active: boolean
-  loadingSignals: Map<number, [() => boolean, (value: boolean) => void]>
-  errorSignals: Map<number, [() => boolean, (value: boolean) => void]>
-  bindingBoundaries: (number | null)[]
-  bindingErrorBoundaries: (number | null)[]
-  bindingSources: unknown[]
-  fallbackSources: unknown[]
-  errorBindings: Map<number, Map<unknown, Set<number>>>
-  errorValues: Map<number, Map<unknown, unknown>>
-  errorValueSignals: Map<number, [() => unknown, (value: unknown) => void]>
-  resetSignals: Map<number, [() => number, (value: number) => void]>
   asyncStatus?: { index: number; kind: 'loading' | 'error'; boundary: number }[]
   error: unknown
 }
