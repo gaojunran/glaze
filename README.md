@@ -75,12 +75,12 @@ Working spike, not a production framework. It covers:
   component boundary as one internal object property;
 - stores: `@glaze/store` adds lazy, app-wide setup stores over
   `solid-js/store`, with one instance per id across every component bundle;
-- validation: 635 unit tests (shared 2, store 8, runtime 202, compiler 300,
-  build 123), glass-easel rendering tests and 11 minidev e2e cases.
+- validation: 637 unit tests (shared 2, store 8, runtime 202, compiler 302,
+  build 123), glass-easel rendering tests and 12 minidev e2e cases.
 
 Known limits are documented in [Compiler](docs/compiler.md),
-[Store](docs/store.md), [Build](docs/build.md) and
-[Optimizations](docs/optimizations.md). The
+[Store](docs/store.md), [UI SDK port](docs/ui.md), [Build](docs/build.md)
+and [Optimizations](docs/optimizations.md). The
 compiler/runtime structural refactor is recorded in
 [Code quality](docs/code-quality-refactor.md).
 
@@ -176,6 +176,7 @@ fallback rather than pretending the compiler can cover everything.
 - [Compiler](docs/compiler.md)
 - [Runtime edge behavior](docs/runtime.md)
 - [Store](docs/store.md)
+- [UI SDK port](docs/ui.md)
 - [Implementation plan](docs/plan.md)
 - [Build](docs/build.md)
 - [Single-file snippets](docs/snippet.md)

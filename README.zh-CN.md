@@ -68,11 +68,11 @@ glass-easel 组件，不替换平台渲染器。
   属性穿过组件边界；
 - Store：`@glaze/store` 在 `solid-js/store` 上提供懒加载、应用级的 setup
   store，每个 id 在所有组件 bundle 之间共享同一个实例；
-- 验证：635 个单元测试（shared 2、store 8、runtime 202、compiler 300、
-  build 123）、glass-easel 渲染测试和 11 个 minidev e2e 用例。
+- 验证：637 个单元测试（shared 2、store 8、runtime 202、compiler 302、
+  build 123）、glass-easel 渲染测试和 12 个 minidev e2e 用例。
 
 已知限制记录在 [编译器](docs/compiler.md)、[Store](docs/store.md)、
-[构建](docs/build.md) 和 [优化](docs/optimizations.md) 中。编译器与运行时的结构重构记录在
+[UI SDK 移植](docs/ui.md)、[构建](docs/build.md) 和 [优化](docs/optimizations.md) 中。编译器与运行时的结构重构记录在
 [代码质量](docs/code-quality-refactor.md)。
 
 ## 基准测试
@@ -160,6 +160,7 @@ Chromium 1248）：
 - [编译器](docs/compiler.md)
 - [运行时边界行为](docs/runtime.md)
 - [Store](docs/store.md)
+- [UI SDK 移植](docs/ui.md)
 - [实现计划](docs/plan.md)
 - [构建](docs/build.md)
 - [单文件 snippet](docs/snippet.md)

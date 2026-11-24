@@ -1,0 +1,37 @@
+.glaze-switch {
+  position: relative;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 92rpx;
+  height: 52rpx;
+  margin: 0;
+  padding: 4rpx;
+  border: 0;
+  border-radius: 999rpx;
+  background: #d1d5db;
+}
+
+.glaze-switch::after {
+  border: 0;
+}
+
+.glaze-switch--on {
+  background: #111827;
+}
+
+.glaze-switch__thumb {
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: transform 0.15s ease;
+}
+
+.glaze-switch--on .glaze-switch__thumb {
+  transform: translateX(40rpx);
+}
+
+.glaze-switch--disabled {
+  opacity: 0.5;
+}

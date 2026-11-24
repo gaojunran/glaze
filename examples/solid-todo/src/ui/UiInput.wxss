@@ -1,0 +1,16 @@
+.glaze-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 80rpx;
+  padding: 0 20rpx;
+  border: 1rpx solid #d1d5db;
+  border-radius: 10rpx;
+  background: #ffffff;
+  color: #111827;
+  font-size: 30rpx;
+}
+
+.glaze-input--disabled {
+  opacity: 0.5;
+}

@@ -1,0 +1,29 @@
+.glaze-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 64rpx;
+  margin: 0;
+  padding: 0 24rpx;
+  border: 1rpx solid #d1d5db;
+  border-radius: 999rpx;
+  background: #f3f4f6;
+  color: #111827;
+  font-size: 26rpx;
+  line-height: 1.2;
+}
+
+.glaze-toggle::after {
+  border: 0;
+}
+
+.glaze-toggle--on {
+  border-color: #111827;
+  background: #111827;
+  color: #ffffff;
+}
+
+.glaze-toggle--disabled {
+  opacity: 0.5;
+}
