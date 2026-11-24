@@ -138,7 +138,7 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
   if (
     t.isJSXIdentifier(tag) &&
     (ctx.contextNames.has(name) ||
-      (ctx.contextKeys.get(name)?.imported === true && getAttribute(node, 'value')))
+      (ctx.importedContexts.has(name) && getAttribute(node, 'value')))
   ) {
     return wrapDirectives(compileProvider(node, ctx, scope), extraAttrs)
   }

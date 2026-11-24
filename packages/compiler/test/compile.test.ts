@@ -166,6 +166,47 @@ test('inlines a stateless imported component outside For', () => {
   assert.deepEqual(result.inlineComponents, [{ name: 'Header', source: './Header' }])
 })
 
+test('still treats an imported Context as a provider', () => {
+  const result = compileComponent(`
+    import { ThemeContext } from './theme'
+
+    export default function Page() {
+      return (
+        <ThemeContext.Provider value="dark">
+          <text class="theme">themed</text>
+        </ThemeContext.Provider>
+      )
+    }
+  `)
+
+  assert.match(result.wxml, /<text class="theme">themed<\/text>/)
+  assert.match(result.js, /withProvider\(ThemeContext, \("dark"\)/)
+})
+
+test('does not treat an imported component with a value prop as a context provider', () => {
+  const input = `
+    export default function ContextMenu(props) {
+      return <input class="value-input" value={props.value} />
+    }
+  `
+  const result = compileComponent(
+    `
+      import ContextMenu from './ContextMenu'
+
+      export default function Page(props) {
+        return <ContextMenu value={props.value} />
+      }
+    `,
+    {
+      inline: true,
+      resolveComponent: (name) => (name === 'ContextMenu' ? input : null),
+    },
+  )
+
+  assert.match(result.wxml, /<input class="value-input" value="\{\{b0\}\}" \/>/)
+  assert.doesNotMatch(result.js, /withProvider/)
+})
+
 test('inlines a stateful imported component and merges solid-js imports', () => {
   const child = `
     import { createSignal } from 'solid-js'

@@ -92,6 +92,7 @@ function analyzeComponent(
   }
 
   const contextNames = new Set<string>()
+  const importedContexts = new Set<string>()
   const contextKeys = new Map<string, { key: string; imported: boolean }>()
   walkAst(ast, (node) => {
     if (!t.isVariableDeclarator(node) || !t.isIdentifier(node.id) || !node.init) return
@@ -106,6 +107,26 @@ function analyzeComponent(
       })
     }
   })
+  // An import is only a context when the file uses it as one: passed to
+  // `useContext`, or provided through `Context.Provider`. Without this set,
+  // every imported component with a `value` prop would compile as a provider.
+  walkAst(ast, (node) => {
+    if (
+      t.isCallExpression(node) &&
+      t.isIdentifier(node.callee, { name: 'useContext' }) &&
+      t.isIdentifier(node.arguments[0])
+    ) {
+      importedContexts.add(node.arguments[0].name)
+      return
+    }
+    if (
+      t.isJSXMemberExpression(node) &&
+      t.isJSXIdentifier(node.object) &&
+      t.isJSXIdentifier(node.property, { name: 'Provider' })
+    ) {
+      importedContexts.add(node.object.name)
+    }
+  })
   for (const node of ast.program.body) {
     if (!t.isImportDeclaration(node)) continue
     const source = node.source.value
@@ -114,16 +135,18 @@ function analyzeComponent(
         ? path.resolve(path.dirname(options.sourceFile), source)
         : source
     for (const specifier of node.specifiers) {
+      const local = specifier.local.name
+      if (!importedContexts.has(local)) continue
       if (t.isImportSpecifier(specifier)) {
         const imported = t.isIdentifier(specifier.imported)
           ? specifier.imported.name
           : specifier.imported.value
-        contextKeys.set(specifier.local.name, {
+        contextKeys.set(local, {
           key: `${resolved}#${imported}`,
           imported: true,
         })
       } else if (t.isImportDefaultSpecifier(specifier)) {
-        contextKeys.set(specifier.local.name, {
+        contextKeys.set(local, {
           key: `${resolved}#default`,
           imported: true,
         })
@@ -131,7 +154,7 @@ function analyzeComponent(
     }
   }
 
-  return { localNames, contextNames, contextKeys }
+  return { localNames, contextNames, importedContexts, contextKeys }
 }
 
 /**
@@ -191,7 +214,7 @@ function finalizeProps(
 export function compileComponent(source: string, options: CompileOptions = {}): CompileResult {
   const parsed = parseComponent(source)
   const { ast, statements, returnIndex, jsx, propsParam, props } = parsed
-  const { localNames, contextNames, contextKeys } = analyzeComponent(parsed, options)
+  const { localNames, contextNames, importedContexts, contextKeys } = analyzeComponent(parsed, options)
 
   const ctx: CompilerContext = {
     bindings: [],
@@ -220,6 +243,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     pageContext: options.pageContext === true,
     pageRoot: options.pageRoot === true,
     contextNames,
+    importedContexts,
     contextKeys,
     activeProviders: [],
     boundaryContexts: [],

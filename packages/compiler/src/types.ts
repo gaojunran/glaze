@@ -154,6 +154,7 @@ export type CompilerContext = {
   pageContext: boolean
   pageRoot: boolean
   contextNames: Set<string>
+  importedContexts: Set<string>
   contextKeys: Map<string, { key: string; imported: boolean }>
   activeProviders: ContextProvider[]
   boundaryContexts: BoundaryContext[]
