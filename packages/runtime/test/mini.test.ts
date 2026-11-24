@@ -306,6 +306,29 @@ test('uses replaceDataOnPath for list field patches too', async () => {
   assert.deepEqual(instance.pathCalls, [[['b0', 0, 'done'], true]])
 })
 
+test('normalizes an undefined list payload to null on mount and update', async () => {
+  let setRows
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    setup(ctx) {
+      const [rows, set] = createSignal(undefined)
+      setRows = set
+      ctx.bind(0, () => rows())
+    },
+  })
+
+  const instance = createInstance(def)
+  assert.equal(instance.calls[0].b0, null)
+
+  def.lifetimes.attached.call(instance)
+  setRows([{ id: 1 }])
+  await tick()
+  setRows(undefined)
+  await tick()
+  assert.equal(instance.calls.at(-1).b0, null)
+})
+
 test('projects only the fields the compiler recorded for a keyed list', () => {
   const rows = [
     { id: 1, title: 'one', extra: 'x'.repeat(2000) },

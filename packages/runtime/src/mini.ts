@@ -291,7 +291,10 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       !fields || !key || key === '*this'
         ? value
         : projectList(value, fields.includes(key) ? fields : [...fields, key])
-    return { payload: snapshotList(projected), baseline: snapshotList(projected) }
+    return {
+      payload: normalizeDataValue(snapshotList(projected)),
+      baseline: snapshotList(projected),
+    }
   }
 
   const mount = (component: any, state: InstanceState) => {
