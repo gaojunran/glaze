@@ -91,6 +91,15 @@ compiler/runtime structural refactor is recorded in
 
 ## Benchmarks
 
+![Microbenchmark overview](docs/assets/microbench-overview.png)
+
+The overview covers every microbenchmark workload (flat/fine list actions,
+component and prop boundaries, pure inline rows, scalars, grid and keyed
+moves), not only the page-root prop-shape case. Each cell is the median of
+three real-tap runs; color is the ratio to native WXML. First render is omitted
+because minidev routing and simulator noise dominate it. The raw results and
+the `bench/frameworks/chart.mjs` renderer are in the repository.
+
 These are **same-harness** numbers: Glaze versus a hand-written
 WXML/WXSS/JS page, measured in the minidev simulator with the automator. They
 include page routing and automator round-trips, so they compare the two pages

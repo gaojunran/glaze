@@ -100,6 +100,18 @@ A separate `bench-component-rows` case (500 stateful children with 8 props)
 measured 60.1 ms on the component root and 15.6–23.3 ms on the page root in an
 earlier run.
 
+Page root also applies to the other component-heavy fixtures:
+
+| Fixture | Component root | Page root |
+| --- | ---: | ---: |
+| 1000 pure + 1000 stateful rows | 60.1 ms | **20.4–26.2 ms** |
+| 500 props rows, update all | 86.0 ms | **42.9–45.9 ms** |
+| 500 props-object rows, update all | 86.1 ms | **35.0–41.8 ms** |
+
+Native WXML measures 17.7 ms, 46.8 ms and 34.4 ms respectively. Page root is at
+or below native on the props pages; the remaining 1000+1000 gap is the
+per-child Glaze runtime and WXML projection, not the page boundary.
+
 This is simulator evidence. The same-page native comparison (`Page` vs
 `Component`) is also simulator-only; real-device confirmation is still needed
 before making this the default.

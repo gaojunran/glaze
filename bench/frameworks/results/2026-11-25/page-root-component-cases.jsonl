@@ -1,0 +1,32 @@
+[
+  {
+    "port": "9635",
+    "route": "/pages/bench-components/index",
+    "neutral": "/pages/index/index",
+    "runs": [
+      { "firstRender": 3873, "updateAll": 23.8 },
+      { "firstRender": 3792, "updateAll": 20.4 },
+      { "firstRender": 3800, "updateAll": 26.2 }
+    ]
+  },
+  {
+    "port": "9634",
+    "route": "/pages/bench-props/index",
+    "neutral": "/pages/index/index",
+    "runs": [
+      { "firstRender": 3623, "updateAll": 42.9 },
+      { "firstRender": 3615, "updateAll": 43.6 },
+      { "firstRender": 3591, "updateAll": 45.9 }
+    ]
+  },
+  {
+    "port": "9634",
+    "route": "/pages/bench-props-object/index",
+    "neutral": "/pages/index/index",
+    "runs": [
+      { "firstRender": 3609, "updateAll": 39.6 },
+      { "firstRender": 3584, "updateAll": 35 },
+      { "firstRender": 3559, "updateAll": 41.8 }
+    ]
+  }
+]

@@ -12,6 +12,7 @@ const config: GlazeConfig = {
       'pages/bench-props-16/index',
       'pages/bench-component-rows/index',
       'pages/bench-component-rows-pure/index',
+      'pages/bench-components/index',
     ],
   },
   source: 'src',

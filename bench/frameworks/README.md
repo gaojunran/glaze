@@ -508,9 +508,18 @@ and the page's own `setData` target (no `--root`):
 | 8 props | 70.7 ms | **25.6 ms** |
 | 16 props | 81.3 ms | **30.5 ms** |
 
-A separate `bench-component-rows` case (500 stateful children, 8 props) was
-60.1 ms on the component root and 15.6–23.3 ms on the page root. The generated
-chart is in [Generated charts](#generated-charts) above.
+Page root on the other component-heavy fixtures, same precise tap:
+
+| Fixture | Component root | Page root |
+| --- | ---: | ---: |
+| 1000 pure + 1000 stateful rows | 60.1 ms | **20.4–26.2 ms** |
+| 500 props rows, update all | 86.0 ms | **42.9–45.9 ms** |
+| 500 props-object rows, update all | 86.1 ms | **35.0–41.8 ms** |
+
+For comparison, native WXML is 17.7 ms on the 1000+1000 page, 46.8 ms on
+props and 34.4 ms on props-object. Page root puts Glaze at or below native on
+the props pages; the remaining 1000+1000 gap is the per-child Glaze runtime and
+WXML projection.
 
 ```bash
 # Page-root pages have no component target; omit --root.

@@ -105,7 +105,7 @@ const overviewRows = [
   { group: 'fine · 5000 rows', label: 'no-op write', case: 'fine', metric: 'noop' },
   { group: 'fine · 5000 rows', label: 'reverse 5000', case: 'fine', metric: 'reverse' },
   { group: 'component boundaries', label: 'components update 1', case: 'components', metric: 'update' },
-  { group: 'component boundaries', label: 'components update all 500', case: 'components', metric: 'updateAll' },
+  { group: 'component boundaries', label: 'components update all 1000', case: 'components', metric: 'updateAll' },
   { group: 'component boundaries', label: 'components update 10', case: 'components', metric: 'u10' },
   { group: 'component boundaries', label: 'components update 100', case: 'components', metric: 'u100' },
   { group: 'component boundaries', label: 'props update 1', case: 'props', metric: 'update' },
