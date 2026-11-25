@@ -1,0 +1,95 @@
+{
+  "port": "9613",
+  "route": "/pages/props-1/index",
+  "neutral": "/pages/index/index",
+  "runs": [
+    {
+      "firstRender": 3332,
+      "updateAll": 29.699999928474426
+    },
+    {
+      "firstRender": 3320,
+      "updateAll": 36.10000002384186
+    },
+    {
+      "firstRender": 3319,
+      "updateAll": 30
+    }
+  ]
+}
+{
+  "port": "9613",
+  "route": "/pages/props-2/index",
+  "neutral": "/pages/index/index",
+  "runs": [
+    {
+      "firstRender": 3325,
+      "updateAll": 30.299999952316284
+    },
+    {
+      "firstRender": 3329,
+      "updateAll": 30.800000071525574
+    },
+    {
+      "firstRender": 3365,
+      "updateAll": 32.39999997615814
+    }
+  ]
+}
+{
+  "port": "9613",
+  "route": "/pages/props-4/index",
+  "neutral": "/pages/index/index",
+  "runs": [
+    {
+      "firstRender": 3336,
+      "updateAll": 32.59999990463257
+    },
+    {
+      "firstRender": 3308,
+      "updateAll": 32.39999997615814
+    },
+    {
+      "firstRender": 3344,
+      "updateAll": 31.899999976158142
+    }
+  ]
+}
+{
+  "port": "9613",
+  "route": "/pages/props-8/index",
+  "neutral": "/pages/index/index",
+  "runs": [
+    {
+      "firstRender": 3338,
+      "updateAll": 37.39999997615814
+    },
+    {
+      "firstRender": 3326,
+      "updateAll": 35.89999997615814
+    },
+    {
+      "firstRender": 3343,
+      "updateAll": 36.59999990463257
+    }
+  ]
+}
+{
+  "port": "9613",
+  "route": "/pages/props-16/index",
+  "neutral": "/pages/index/index",
+  "runs": [
+    {
+      "firstRender": 3349,
+      "updateAll": 43.799999952316284
+    },
+    {
+      "firstRender": 3330,
+      "updateAll": 40.10000002384186
+    },
+    {
+      "firstRender": 3327,
+      "updateAll": 44.5
+    }
+  ]
+}

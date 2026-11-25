@@ -1,0 +1,52 @@
+[
+  {
+    "port": "9634",
+    "route": "/pages/bench-props-1/index",
+    "neutral": "/pages/index/index",
+    "runs": [
+      { "firstRender": 3463, "updateAll": 22.6 },
+      { "firstRender": 3359, "updateAll": 18.9 },
+      { "firstRender": 3333, "updateAll": 19.7 }
+    ]
+  },
+  {
+    "port": "9634",
+    "route": "/pages/bench-props-2/index",
+    "neutral": "/pages/index/index",
+    "runs": [
+      { "firstRender": 3363, "updateAll": 26.3 },
+      { "firstRender": 3342, "updateAll": 22.4 },
+      { "firstRender": 3373, "updateAll": 24.2 }
+    ]
+  },
+  {
+    "port": "9634",
+    "route": "/pages/bench-props-4/index",
+    "neutral": "/pages/index/index",
+    "runs": [
+      { "firstRender": 3380, "updateAll": 27.9 },
+      { "firstRender": 3363, "updateAll": 22.8 },
+      { "firstRender": 3358, "updateAll": 23.1 }
+    ]
+  },
+  {
+    "port": "9634",
+    "route": "/pages/bench-props-8/index",
+    "neutral": "/pages/index/index",
+    "runs": [
+      { "firstRender": 3382, "updateAll": 25.6 },
+      { "firstRender": 3379, "updateAll": 34.3 },
+      { "firstRender": 3393, "updateAll": 24.8 }
+    ]
+  },
+  {
+    "port": "9634",
+    "route": "/pages/bench-props-16/index",
+    "neutral": "/pages/index/index",
+    "runs": [
+      { "firstRender": 3530, "updateAll": 52.6 },
+      { "firstRender": 3355, "updateAll": 30.5 },
+      { "firstRender": 3433, "updateAll": 28.7 }
+    ]
+  }
+]

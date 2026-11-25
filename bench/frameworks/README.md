@@ -9,6 +9,33 @@ Vue Mini, Taro and uni-app. It answers two questions:
 This is diagnostic, not a production benchmark. The production benchmark remains
 the same-harness Glaze/native suite in `docs/optimizations.md`.
 
+## Generated charts
+
+![Microbenchmark overview](../../docs/assets/microbench-overview.png)
+
+The overview covers every microbenchmark workload, not only the page-root
+prop fan-out: flat list updates, the 5000-row fine page, component boundaries,
+props/props-object, pure inline rows, scalars, grid and keyed moves. Values are
+medians of three real-tap runs; color is the ratio to native WXML. First render
+is omitted because the minidev route and simulator dominate it.
+
+The second chart focuses on the page-root experiment:
+
+![500 child components: component root, page root, native and uni-app](../../docs/assets/page-runtime-prop-shape.png)
+
+Regenerate both PNGs from the committed raw results:
+
+```bash
+node bench/frameworks/chart.mjs
+# If Chrome/Chromium is not auto-detected:
+CHROME=/path/to/chrome node bench/frameworks/chart.mjs
+```
+
+The script reads `bench/frameworks/results/2026-11-25/*.jsonl` and writes
+`docs/assets/microbench-overview.png` and
+`docs/assets/page-runtime-prop-shape.png`. It needs only Node and a Chrome
+binary; no image library or network access is required at render time.
+
 ## Fixtures
 
 | App | Stack | Build | Routes |
@@ -475,16 +502,15 @@ and the page's own `setData` target (no `--root`):
 
 | Prop-shape | Component root | Page root |
 | --- | ---: | ---: |
-| 1 prop | 60.5 ms | **19.7 ms** |
-| 2 props | 66.5 ms | **24.2 ms** |
-| 4 props | 69.5 ms | **23.1 ms** |
-| 8 props | 78 ms | **25.6 ms** |
-| 16 props | 85 ms | **30.5 ms** |
+| 1 prop | 61.1 ms | **19.7 ms** |
+| 2 props | 66.1 ms | **24.2 ms** |
+| 4 props | 72.3 ms | **23.1 ms** |
+| 8 props | 70.7 ms | **25.6 ms** |
+| 16 props | 81.3 ms | **30.5 ms** |
 
 A separate `bench-component-rows` case (500 stateful children, 8 props) was
-60.1 ms on the component root and 15.6–23.3 ms on the page root.
-
-![500 real child components: component root, page root, native and uni-app](../../docs/assets/page-runtime-prop-shape.svg)
+60.1 ms on the component root and 15.6–23.3 ms on the page root. The generated
+chart is in [Generated charts](#generated-charts) above.
 
 ```bash
 # Page-root pages have no component target; omit --root.

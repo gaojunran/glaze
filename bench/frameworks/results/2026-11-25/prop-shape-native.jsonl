@@ -1,0 +1,95 @@
+{
+  "port": "9612",
+  "route": "/pages/native-props-1/index",
+  "neutral": "/pages/index/index",
+  "runs": [
+    {
+      "firstRender": 3323,
+      "updateAll": 13.300000071525574
+    },
+    {
+      "firstRender": 3289,
+      "updateAll": 14.600000023841858
+    },
+    {
+      "firstRender": 3284,
+      "updateAll": 13.199999928474426
+    }
+  ]
+}
+{
+  "port": "9612",
+  "route": "/pages/native-props-2/index",
+  "neutral": "/pages/index/index",
+  "runs": [
+    {
+      "firstRender": 3294,
+      "updateAll": 16.399999976158142
+    },
+    {
+      "firstRender": 3289,
+      "updateAll": 16.899999976158142
+    },
+    {
+      "firstRender": 3296,
+      "updateAll": 15.699999928474426
+    }
+  ]
+}
+{
+  "port": "9612",
+  "route": "/pages/native-props-4/index",
+  "neutral": "/pages/index/index",
+  "runs": [
+    {
+      "firstRender": 3307,
+      "updateAll": 18
+    },
+    {
+      "firstRender": 3297,
+      "updateAll": 17.90000009536743
+    },
+    {
+      "firstRender": 3298,
+      "updateAll": 17.799999952316284
+    }
+  ]
+}
+{
+  "port": "9612",
+  "route": "/pages/native-props-8/index",
+  "neutral": "/pages/index/index",
+  "runs": [
+    {
+      "firstRender": 3311,
+      "updateAll": 22.90000009536743
+    },
+    {
+      "firstRender": 3302,
+      "updateAll": 22.5
+    },
+    {
+      "firstRender": 3324,
+      "updateAll": 22.799999952316284
+    }
+  ]
+}
+{
+  "port": "9612",
+  "route": "/pages/native-props-16/index",
+  "neutral": "/pages/index/index",
+  "runs": [
+    {
+      "firstRender": 3330,
+      "updateAll": 32.200000047683716
+    },
+    {
+      "firstRender": 3323,
+      "updateAll": 32.5
+    },
+    {
+      "firstRender": 3341,
+      "updateAll": 32
+    }
+  ]
+}

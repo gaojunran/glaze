@@ -5,6 +5,15 @@ component-dense benchmark, the shared runtime module, P0 pure-component
 inlining, binding-effect batching and the structured data-change queue are
 implemented and measured below.
 
+![Microbenchmark overview](assets/microbench-overview.png)
+
+Source: `bench/frameworks/results/2026-11-25`. Each cell is the median of three
+real-tap runs in minidev; color is the ratio to native WXML and first render is
+excluded because route and simulator noise dominate it. The chart covers all
+microbenchmark pages, including the 5000-row list actions, component and prop
+boundaries, pure inline rows, scalars, grid and keyed moves. Generate it with
+`node bench/frameworks/chart.mjs`; no SVG step is involved.
+
 ## Why the current benchmark is not enough
 
 `pages/bench/index` renders a flat `wx:for`:

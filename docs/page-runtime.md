@@ -81,20 +81,20 @@ callback, minidev (not a phone). Values are median (min–max) of three runs:
 
 | Prop-shape | Glaze component root | Glaze page root |
 | --- | ---: | ---: |
-| 1 prop | 60.5 (58–63) ms | **19.7 (18.9–22.6) ms** |
-| 2 props | 66.5 (63–70) ms | **24.2 (22.4–26.3) ms** |
-| 4 props | 69.5 (63–76) ms | **23.1 (22.8–27.9) ms** |
-| 8 props | 78 (67–89) ms | **25.6 (24.8–34.3) ms** |
-| 16 props | 85 (75–95) ms | **30.5 (28.7–52.6) ms** |
+| 1 prop | 61.1 (58.2–63.4) ms | **19.7 (18.9–22.6) ms** |
+| 2 props | 66.1 (63–69.7) ms | **24.2 (22.4–26.3) ms** |
+| 4 props | 72.3 (63.2–76.3) ms | **23.1 (22.8–27.9) ms** |
+| 8 props | 70.7 (66.8–88.7) ms | **25.6 (24.8–34.3) ms** |
+| 16 props | 81.3 (75.1–95.2) ms | **30.5 (28.7–52.6) ms** |
 
-![500 real child components: Glaze component root, page root, native and uni-app](assets/page-runtime-prop-shape.svg)
+![500 real child components: Glaze component root, page root, native and uni-app](assets/page-runtime-prop-shape.png)
 
 The chart also includes the native WXML page and uni-app measured in the same
-precise harness: native stays at 14 / 16.5 / 18 / 22.5 / 32 ms and uni-app at
-33 / 31 / 32.5 / 36.5 / 42 ms for 1 / 2 / 4 / 8 / 16 props. At 16 props the
-component root is 85 ms, the page root 30.5 ms, native 32 ms and uni-app 42 ms;
-the page root removes the component-boundary tax but keeps the per-child work,
-so native is still slightly ahead.
+precise harness: native median is 13.3 / 16.4 / 17.9 / 22.8 / 32.2 ms and
+uni-app is 30 / 30.8 / 32.4 / 36.6 / 43.8 ms for 1 / 2 / 4 / 8 / 16 props. At
+16 props the component root is 81.3 ms, the page root 30.5 ms, native 32.2 ms
+and uni-app 43.8 ms; the page root removes the component-boundary tax but keeps
+the per-child work, so native is still slightly ahead.
 
 A separate `bench-component-rows` case (500 stateful children with 8 props)
 measured 60.1 ms on the component root and 15.6–23.3 ms on the page root in an
