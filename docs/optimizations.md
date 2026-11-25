@@ -846,3 +846,44 @@ instances. A local experiment that forced the list binding to replace the whole
 array instead of emitting field paths did not improve it (776–833 ms). The next
 lever to test is coalescing props into one object property or batching child
 property updates; neither is implemented yet.
+
+
+## List path and page-root transport (2026-11-25)
+
+Three changes target the remaining sub-100 ms cases:
+
+1. **Flat-list materialization.** `projectList` already creates fresh plain rows.
+   When every projected field is primitive, `materialize` now reuses those rows
+   as the payload and keeps only one `snapshotList` baseline. Nested values and
+   the `projectList` fallback keep the old two-snapshot path.
+2. **Nested leaf patches.** `listPatch` descends same-shape plain objects and
+   arrays to the changed leaf (`b0[i].meta.tag`, `b0[i].cells[1].value`). A
+   changed shape, class instance, `__proto__` key or failed descent falls back
+   to one whole-field replacement; partial leaf changes are discarded.
+3. **Page-root path transport.** `defineGlazePage` marks the instance as a page
+   root; `createDataTransport(..., pageRoot)` then uses up to 64
+   `replaceDataOnPath` calls plus one `applyDataUpdates()`. A larger batch uses
+   one `setData` payload. The transport still reports `canSplice: false`.
+
+Measured on minidev (three real taps, `bench/frameworks/run.mjs --precise`):
+
+| Case | Before | After |
+| --- | ---: | ---: |
+| components update 1 (page root) | 7.6–8.1 ms | 3.3–3.7 ms |
+| components update all 500 | 17.2–24.2 ms | 17.5–18.7 ms |
+| props update 1 (page root) | 6.4–8.1 ms | 4.8–5.2 ms |
+| props update all 500 | 39.5–46.9 ms | 38.4–39.2 ms |
+| props-object update 1 | 4.0–4.9 ms | 3.2–3.6 ms |
+| prop-shape 16 props | 30.5 ms | 32.1 ms (30.7–37.0) |
+| grid cell (component root) | 9.8 ms | 7.4–8.0 ms |
+| move deep (page root) | 12.7–17.7 ms | 10.9–11.9 ms |
+
+The page-path rows use `wx.nextTick` as the acknowledgement because
+`replaceDataOnPath` has no callback; the component-root rows use the `setData`
+callback. Values are simulator evidence, not phone frame timing. Commands are
+in `bench/frameworks/README.md`; the committed runs are in
+`bench/frameworks/results/2026-11-25/`.
+
+The large-fan-out threshold matters: below 64 changes the path API removes the
+page-level scheduling cost, while a 500–8,000 path fan-out is cheaper as one
+`setData` payload. The threshold is a measured guard, not a semantic rule.

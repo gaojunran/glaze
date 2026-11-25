@@ -70,10 +70,12 @@ compared the mutated row against itself and produced no patch. `snapshotList`
 now clones each object row deeply, so a direct field mutation and a nested
 field mutation are both visible to `listPatch` and become a field path. A
 single-field edit sends only that field; a row whose majority of projected
-fields changed is sent as one row replacement (see below). A nested object value
-travels whole. Prototype-less data and cycles are handled;
-class instances beyond arrays, dates and regular expressions are copied as plain
-objects, so replace such a row instead of mutating it.
+fields changed is sent as one row replacement (see below). A same-shape nested
+object or array is diffed down to its changed leaf path; a changed shape
+(added/removed key, array length, class instance) travels whole. Prototype-less
+data and cycles are handled; class instances beyond arrays, dates and regular
+expressions are copied as plain objects, so replace such a row instead of
+mutating it.
 
 ### Multi-field row replacement
 
@@ -125,8 +127,21 @@ asserts the source row is untouched.
 
 The same rule now holds for every list update, not only the initial write.
 `materialize` builds a detached payload for `*this` and unkeyed lists too, and
-keeps a second snapshot as the diff baseline. See
+keeps a second snapshot as the diff baseline. When `projectList` produced fresh
+plain rows and every projected field is primitive, the payload can reuse those
+rows and only the baseline is snapshotted; a nested value or a `projectList`
+fallback keeps the two-snapshot path. See
 [`runtime-transport.md`](runtime-transport.md).
+
+### Path transport for page roots
+
+When a page root exposes `replaceDataOnPath` and `applyDataUpdates` but no
+`groupUpdates`/data proxy, the runtime uses a `page-path` transport: up to 64
+changes are scheduled with `replaceDataOnPath` and flushed once with
+`applyDataUpdates()`; a larger batch falls back to one `setData` payload because
+per-path scheduling is not cheaper at fan-out. This transport never advertises
+splice capability, so structural list changes still send the whole `bN` value.
+The grouped and data-group transports remain preferred when available.
 
 ### Loading on and Errored reset
 

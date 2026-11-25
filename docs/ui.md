@@ -148,10 +148,10 @@ Commands and results from the package migration:
 
 ```bash
 cd examples/solid-todo && pnpm build
-# glaze build: 19 pages, 45 components
+# glaze build: 24 pages, 51 components
 
 mise exec -- pnpm -r test
-# shared 2, store 8, runtime 204, compiler 303, build 126 = 643, 0 failed
+# shared 2, store 8, runtime 211, compiler 303, build 126 = 650, 0 failed
 
 mise exec -- pnpm -r --if-present typecheck
 # 7 packages Done (adds @glaze/ui)

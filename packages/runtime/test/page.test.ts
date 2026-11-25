@@ -16,6 +16,45 @@ after(() => {
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
+test('a page root uses the page path transport for binding updates', async () => {
+  let setCount!: (value: number) => void
+  const page = defineGlazePage({
+    data: { b0: null },
+    handlerCount: 0,
+    setup(ctx) {
+      const [count, set] = createSignal(0)
+      setCount = set
+      ctx.bind(0, () => count())
+    },
+  }) as any
+
+  const calls: any[] = []
+  const pathCalls: any[] = []
+  let applied = 0
+  const instance: any = {
+    data: { ...page.data },
+    properties: {},
+    setData(data: any) {
+      calls.push(data)
+    },
+    replaceDataOnPath(path: (string | number)[], value: any) {
+      pathCalls.push([path, value])
+    },
+    applyDataUpdates() {
+      applied += 1
+    },
+  }
+
+  page.onLoad.call(instance, {})
+  page.onReady.call(instance)
+  setCount(1)
+  await tick()
+
+  assert.deepEqual(pathCalls, [[['b0'], 1]])
+  assert.equal(applied, 1)
+  assert.deepEqual(calls, [{ b0: 0 }])
+})
+
 test('a page root registers Page, mounts in onLoad and disposes in onUnload', async () => {
   let setCount!: (value: number) => void
   const page = defineGlazePage({

@@ -106,7 +106,24 @@ async function measure(mp) {
           throw new Error(`no setData target for ${root ?? 'page'}`)
         }
         const original = target.setData
+        const originalReplace = target.replaceDataOnPath
+        const originalApply = target.applyDataUpdates
+        const originalGroup = target.groupUpdates
         const records = []
+        const acknowledge = (record) => {
+          // Path APIs have no callback of their own. `wx.nextTick` runs after the
+          // current data update; fall back to an empty setData when unavailable.
+          const finish = () => {
+            record.ms = performance.now() - record.start
+            records.push(record)
+          }
+          const wxApi = globalThis.wx
+          if (typeof wxApi?.nextTick === 'function') {
+            wxApi.nextTick(finish)
+          } else {
+            original.call(target, {}, finish)
+          }
+        }
         target.setData = function (payload, callback) {
           const record = { start: performance.now() }
           records.push(record)
@@ -115,7 +132,37 @@ async function measure(mp) {
             if (typeof callback === 'function') callback()
           })
         }
-        globalThis[key] = { target, original, records }
+        // Grouped component transports do the work inside groupUpdates, while
+        // page roots flush paths through applyDataUpdates.
+        if (typeof originalGroup === 'function') {
+          target.groupUpdates = function (run) {
+            const record = { start: performance.now() }
+            const result = originalGroup.call(this, () => run())
+            acknowledge(record)
+            return result
+          }
+        }
+        // Page roots apply paths through replaceDataOnPath and a single
+        // applyDataUpdates flush; no setData call would otherwise time them.
+        let pathRecord = null
+        if (typeof originalReplace === 'function') {
+          target.replaceDataOnPath = function (path, value) {
+            pathRecord ??= { start: performance.now() }
+            return originalReplace.call(this, path, value)
+          }
+        }
+        if (typeof originalApply === 'function') {
+          target.applyDataUpdates = function (...args) {
+            const record = pathRecord ?? { start: performance.now() }
+            pathRecord = null
+            try {
+              return originalApply.apply(this, args)
+            } finally {
+              acknowledge(record)
+            }
+          }
+        }
+        globalThis[key] = { target, original, originalReplace, originalApply, originalGroup, records }
       },
       { root: rootSelector, key },
     )
@@ -126,6 +173,9 @@ async function measure(mp) {
       const state = globalThis[key]
       if (!state) return []
       state.target.setData = state.original
+      if (state.originalReplace) state.target.replaceDataOnPath = state.originalReplace
+      if (state.originalApply) state.target.applyDataUpdates = state.originalApply
+      if (state.originalGroup) state.target.groupUpdates = state.originalGroup
       delete globalThis[key]
       return state.records.map((record) => record.ms ?? 0)
     }, { key })

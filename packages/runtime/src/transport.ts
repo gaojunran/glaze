@@ -18,10 +18,11 @@ type TransportComponent = {
     del: number,
     inserts: unknown[],
   ) => void
+  applyDataUpdates?: () => void
   _$dataGroup?: Partial<DataGroup>
 }
 
-export type DataTransportKind = 'data-group' | 'grouped' | 'set-data'
+export type DataTransportKind = 'data-group' | 'grouped' | 'page-path' | 'set-data'
 
 export type DataTransport = {
   /**
@@ -41,6 +42,11 @@ declare const Component: { getDataProxy?: (component: unknown) => Partial<DataGr
 const spliceUnsupported = () =>
   new Error('[glaze] data transport cannot commit a splice; send the whole value instead')
 
+// Path scheduling costs one call per change; for a large fan-out the batched
+// setData payload is cheaper. Keep the page-root path transport for the small
+// updates it clearly wins and fall back to setData for bulk writes.
+const PAGE_PATH_LIMIT = 64
+
 /**
  * Resolve the component's data-update capability once. The `DataGroup` queue is
  * preferred because replace and splice tuples share one template update. When
@@ -49,7 +55,10 @@ const spliceUnsupported = () =>
  * `setData` after the group, so a mixed batch could replace a list right after
  * splicing it; only expose `canSplice` when both path APIs exist.
  */
-export function createDataTransport(component: TransportComponent): DataTransport {
+export function createDataTransport(
+  component: TransportComponent,
+  pageRoot = false,
+): DataTransport {
   const group = dataGroupOf(component)
   if (group) {
     return {
@@ -59,13 +68,24 @@ export function createDataTransport(component: TransportComponent): DataTranspor
     }
   }
   const grouped = typeof component.groupUpdates === 'function'
-  const replace = grouped && typeof component.replaceDataOnPath === 'function'
-  const splice = grouped && typeof component.spliceArrayDataOnPath === 'function'
-  if (replace || splice) {
+  const replace = typeof component.replaceDataOnPath === 'function'
+  const splice = typeof component.spliceArrayDataOnPath === 'function'
+  if (grouped && (replace || splice)) {
     return {
       kind: 'grouped',
       canSplice: replace && splice,
       apply: (changes) => applyGrouped(component, replace, splice, changes),
+    }
+  }
+  // Page roots expose the path APIs without groupUpdates: the page itself is
+  // the update owner, so replace calls are batched by applyDataUpdates instead
+  // of a component group. Keep this below the grouped branch so a component
+  // with a real group keeps the stronger transport.
+  if (pageRoot && replace && typeof component.applyDataUpdates === 'function') {
+    return {
+      kind: 'page-path',
+      canSplice: false,
+      apply: (changes) => applyPagePath(component, changes),
     }
   }
   return {
@@ -135,6 +155,22 @@ function applyGrouped(
       ),
     )
   }
+}
+
+function applyPagePath(component: TransportComponent, changes: readonly DataChange[]): void {
+  if (changes.some((change) => change.splice)) throw spliceUnsupported()
+  if (changes.length > PAGE_PATH_LIMIT) {
+    component.setData(
+      Object.fromEntries(
+        changes.map((change) => [dataKey(change.path), normalizeDataValue(change.value)]),
+      ),
+    )
+    return
+  }
+  for (const change of changes) {
+    component.replaceDataOnPath!(change.path, normalizeDataValue(change.value))
+  }
+  component.applyDataUpdates!()
 }
 
 function applySetData(component: TransportComponent, changes: readonly DataChange[]): void {

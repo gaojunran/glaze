@@ -28,7 +28,7 @@ import {
   reportTransportError,
   SCALAR_BINDING_GROUP,
 } from './data.ts'
-import { diffList, projectList, snapshotList, trackListValue } from './list.ts'
+import { diffList, isFlatList, projectList, snapshotList, trackListValue } from './list.ts'
 import { isContextReader } from './provider.ts'
 import { createNodeRef } from './ref.ts'
 import {
@@ -81,7 +81,7 @@ import type {
 
 export { className, styleName, textValue } from './styles.ts'
 export { withBoundaryContexts, withProvider } from './provider.ts'
-export { diffList, listOps, listPatch, projectList, snapshotList } from './list.ts'
+export { diffList, isFlatList, listOps, listPatch, projectList, snapshotList } from './list.ts'
 export type { GlazeComponentConfig, GlazeContext, GlazeNode } from './types.ts'
 
 /** Mirrors the old `state.active`: the platform has attached the instance. */
@@ -460,7 +460,7 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
   const structuredProps = config.structuredProps === true
   const legacyFramework = config.componentFramework === 'exparser'
   const pageContext = config.pageContext === true || config.pageRoot === true
-  const pageRoot = config.pageRoot === true
+  const pageRoot = pageMode || config.pageRoot === true
   if (
     structuredProps &&
     publicPropertyNames.some((name) => name.toLowerCase() === STRUCTURED_PROP)
@@ -722,9 +722,16 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
       !fields || !key || key === '*this'
         ? value
         : projectList(value, fields.includes(key) ? fields : [...fields, key])
+    const baseline = snapshotList(projected)
+    // `projectList` already creates fresh plain rows. When every projected
+    // field is a primitive, the payload cannot reach the source rows or the
+    // baseline through a nested reference, so one snapshot for the baseline is
+    // enough. Nested values and the projectList fallback keep the two-copy
+    // path because the payload would otherwise share the source graph.
+    const flat = projected !== value && isFlatList(projected)
     return {
-      payload: normalizeDataValue(snapshotList(projected)),
-      baseline: snapshotList(projected),
+      payload: flat ? normalizeDataValue(projected) : normalizeDataValue(snapshotList(projected)),
+      baseline,
     }
   }
 
@@ -994,7 +1001,7 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
     // and a grouped transport without `replaceDataOnPath` can overwrite a
     // splice with a replacement queued after the group; list changes then take
     // the whole-value path instead of being dropped or lost.
-    const transport = createDataTransport(component)
+    const transport = createDataTransport(component, state.pageRoot)
 
     const schedule = (changes: DataChange[]) => {
       if (changes.length === 0) return

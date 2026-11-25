@@ -12,6 +12,7 @@ import {
 } from 'solid-js'
 import {
   defineGlazeComponent,
+  isFlatList,
   listOps,
   listPatch,
   onAppError,
@@ -672,6 +673,38 @@ test('normalizes an undefined list payload to null on mount and update', async (
   assert.equal(instance.calls.at(-1).b0, null)
 })
 
+test('flat projected payload keeps its baseline independent', async () => {
+  let setRows
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    listFields: { 0: ['id', 'title'] },
+    setup(ctx) {
+      const [rows, set] = createSignal([{ id: 1, title: 'one' }])
+      setRows = set
+      ctx.bind(0, () => rows())
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+
+  const payload = instance.calls[0].b0
+  payload[0].title = 'mutated by platform'
+  const callCount = instance.calls.length
+  setRows([{ id: 1, title: 'one' }])
+  await tick()
+
+  assert.equal(instance.calls.length, callCount)
+})
+
+test('isFlatList only accepts plain rows with primitive fields', () => {
+  assert.equal(isFlatList([{ id: 1, title: 'one' }]), true)
+  assert.equal(isFlatList([{ id: 1, meta: {} }]), false)
+  assert.equal(isFlatList([{ id: 1, tags: ['a'] }]), false)
+  assert.equal(isFlatList([{ id: 1, when: new Date() }]), false)
+  assert.equal(isFlatList([1, 2]), false)
+})
+
 test('projects only the fields the compiler recorded for a keyed list', () => {
   const rows = [
     { id: 1, title: 'one', extra: 'x'.repeat(2000) },
@@ -1091,7 +1124,7 @@ test('applies object-valued scalar bindings by replacement', async () => {
   assert.deepEqual(instance.pathCalls, [[['b0'], { name: 'A', nested: { age: 2 } }]])
 })
 
-test('patches a replaced list item object as one field change', async () => {
+test('patches a replaced nested field at its leaf', async () => {
   const second = { id: 2, title: 'two', meta: { tag: 'b' } }
   let setItems
   const def = defineGlazeComponent({
@@ -1114,7 +1147,7 @@ test('patches a replaced list item object as one field change', async () => {
   await tick()
 
   assert.deepEqual(instance.pathCalls, [
-    [['b0', 0, 'meta'], { tag: 'changed' }],
+    [['b0', 0, 'meta', 'tag'], 'changed'],
   ])
 })
 
@@ -1829,7 +1862,7 @@ test('detects a nested field mutated in place on a row object', async () => {
   row.meta.tag = 'b'
   setItems([...initial])
   await tick()
-  assert.deepEqual(instance.pathCalls, [[['b0', 0, 'meta'], { tag: 'b', flags: [1] }]])
+  assert.deepEqual(instance.pathCalls, [[['b0', 0, 'meta', 'tag'], 'b']])
 })
 
 

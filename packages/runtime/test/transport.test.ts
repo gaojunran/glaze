@@ -608,3 +608,71 @@ test('an integration flush keeps a retained row edit and the inserted row', asyn
     { id: 2, title: 'two' },
   ])
 })
+
+
+test('page path transport uses replaceDataOnPath and applyDataUpdates', () => {
+  const replacements = []
+  let applied = 0
+  const component = {
+    setData() {
+      assert.fail('setData must not run when page path APIs exist')
+    },
+    replaceDataOnPath(path, value) {
+      replacements.push([path, value])
+    },
+    applyDataUpdates() {
+      applied += 1
+    },
+  }
+
+  const transport = createDataTransport(component, true)
+  assert.equal(transport.kind, 'page-path')
+  assert.equal(transport.canSplice, false)
+
+  transport.apply([
+    { path: ['b0', 0, 'done'], value: true },
+    { path: ['b1'], value: [{ id: 1 }] },
+  ])
+  assert.deepEqual(replacements, [
+    [['b0', 0, 'done'], true],
+    [['b1'], [{ id: 1 }]],
+  ])
+  assert.equal(applied, 1)
+
+  replacements.length = 0
+  assert.throws(
+    () => transport.apply([{ path: ['b0'], splice: { index: 0, del: 1, inserts: [] } }]),
+    /cannot commit a splice/,
+  )
+  assert.deepEqual(replacements, [])
+  assert.equal(applied, 1)
+})
+
+test('page path transport batches a large fan-out through setData', () => {
+  const calls = []
+  let applied = 0
+  const component = {
+    setData(data) {
+      calls.push(data)
+    },
+    replaceDataOnPath() {
+      assert.fail('a large batch must use one setData payload')
+    },
+    applyDataUpdates() {
+      applied += 1
+    },
+  }
+
+  const transport = createDataTransport(component, true)
+  const changes = Array.from({ length: 65 }, (_, index) => ({
+    path: ['b0', index, 'title'],
+    value: `row-${index}`,
+  }))
+  transport.apply(changes)
+
+  assert.equal(calls.length, 1)
+  assert.equal(Object.keys(calls[0]).length, 65)
+  assert.equal(calls[0]['b0[0].title'], 'row-0')
+  assert.equal(calls[0]['b0[64].title'], 'row-64')
+  assert.equal(applied, 0)
+})

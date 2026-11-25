@@ -83,8 +83,8 @@ root component:
 
 The page root has no component property bridge, so `props` is empty. `refs`,
 bindings, events, async boundaries, `onComponentError`, page visibility, page
-size and app visibility use the same runtime code; only `setData` is called on
-the page instance.
+size and app visibility use the same runtime code; page-root data updates go
+through the page-path transport (or its `setData` bulk fallback).
 
 ## When it is used
 
@@ -113,8 +113,9 @@ component-only hooks are simply absent on a page root.
 
 ## Measured result
 
-500 real child components, `update-all`, real tap, in-appservice `setData`
-callback, minidev (not a phone). Values are median (min–max) of three runs:
+500 real child components, `update-all`, real tap, in-appservice timing
+(`setData` callback, or `wx.nextTick` for page-path batches), minidev (not a
+phone). Values are median (min–max) of three runs:
 
 | Prop-shape | Glaze component root | Glaze page root |
 | --- | ---: | ---: |
@@ -122,14 +123,14 @@ callback, minidev (not a phone). Values are median (min–max) of three runs:
 | 2 props | 66.1 (63–69.7) ms | **24.2 (22.4–26.3) ms** |
 | 4 props | 72.3 (63.2–76.3) ms | **23.1 (22.8–27.9) ms** |
 | 8 props | 70.7 (66.8–88.7) ms | **25.6 (24.8–34.3) ms** |
-| 16 props | 81.3 (75.1–95.2) ms | **30.5 (28.7–52.6) ms** |
+| 16 props | 81.3 (75.1–95.2) ms | **32.1 (30.7–37.0) ms** |
 
 ![500 real child components: Glaze component root, page root, native and uni-app](assets/page-runtime-prop-shape.png)
 
 The chart also includes the native WXML page and uni-app measured in the same
 precise harness: native median is 13.3 / 16.4 / 17.9 / 22.8 / 32.2 ms and
 uni-app is 30 / 30.8 / 32.4 / 36.6 / 43.8 ms for 1 / 2 / 4 / 8 / 16 props. At
-16 props the component root is 81.3 ms, the page root 30.5 ms, native 32.2 ms
+16 props the component root is 81.3 ms, the page root 32.1 ms, native 32.2 ms
 and uni-app 43.8 ms; the page root removes the component-boundary tax but keeps
 the per-child work, so native is still slightly ahead.
 
@@ -180,14 +181,19 @@ measure the route's dominant interaction.
 The one-row page-root numbers are the other side of the same trade-off. A page
 root registers with `Page(page)` in `registerPage`, so its updates go through
 the page-level data path. A component root updates the `<glaze-page>` child,
-which owns the bindings. For a single path the page-level fixed cost wins out:
-`components update 1` is 7.6 ms page root versus 3.4 ms component root, and
-`props-object update 1` is 4.4 versus 3.4 ms. Those are sub-10 ms measurements
-with visible run spread; the 7.6 ms median is not a stable 4 ms penalty. For
-500 children the removed component boundary dominates instead, which is why
-`components update all 500` is 17.4 ms page root versus 60.1 ms component root.
-`props-object update all 500` is 35 ms page root versus 86.1 ms component root
-and 34.4 ms native, so it is tied with native rather than regressed.
+which owns the bindings. The page-path transport now schedules small updates
+through `replaceDataOnPath` + `applyDataUpdates`, so `components update 1` is
+**3.3–3.7 ms** (previously 7.6–8.1 ms), `props update 1` is **4.8–5.2 ms**
+(previously 6.4–8.1 ms). Large fan-outs fall back to one `setData` payload:
+`components update all 500` is **17.5–18.7 ms** (previously 17.2–24.2 ms) and
+`props update all 500` is **38.4–39.2 ms** (previously 39.5–46.9 ms).
+`props-object update all 500` remains in the same 35–53 ms band.
+
+The nested-leaf diff also improves the reactive pages: `grid cell` is
+**7.4–8.0 ms** (previously 9.8 ms) and `move deep` is **10.9–11.9 ms**
+(previously 12.7–17.7 ms). These are minidev, three-run precise numbers from
+`bench/frameworks/run.mjs`; the page-path branch uses `wx.nextTick` as its
+acknowledgement, while the component-root rows use the `setData` callback.
 
 Validate with:
 

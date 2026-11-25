@@ -31,7 +31,7 @@ returns:
 ```ts
 type DataTransport = {
   readonly canSplice: boolean
-  readonly kind: 'data-group' | 'grouped' | 'set-data'
+  readonly kind: 'data-group' | 'grouped' | 'page-path' | 'set-data'
   apply(changes: readonly DataChange[]): void
 }
 ```
@@ -42,7 +42,8 @@ Resolution order and splice capability:
 | --- | --- | --- | --- |
 | 1 | `data-group` | `Component.getDataProxy(component)` or `component._$dataGroup` with `getChanges`/`setChanges`/`applyDataUpdates` | yes |
 | 2 | `grouped` | `groupUpdates` plus `replaceDataOnPath` and/or `spliceArrayDataOnPath` | yes only when both path APIs exist |
-| 3 | `set-data` | plain `setData` | no |
+| 3 | `page-path` | page root with `replaceDataOnPath` + `applyDataUpdates`, without `groupUpdates` | no |
+| 4 | `set-data` | plain `setData` | no |
 
 `canSplice` means "a splice can safely be chosen for this change batch", not
 "the component happens to expose `spliceArrayDataOnPath`". `applyBinding`
@@ -59,6 +60,13 @@ mixed batch (whole-list replacement plus insert) would then lose the splice, so
 `canSplice` stays false there; `apply` can still commit a lone splice, but
 `diffList` chooses the whole-value path for structural changes.
 
+The `page-path` transport is selected only for page roots (the `pageRoot` state
+set by `defineGlazePage`). It schedules up to 64 replaces on the path API and
+flushes once with `applyDataUpdates()`; a larger batch falls back to one
+`setData` payload, because one call per path costs more than a batched payload
+at high fan-out. It never accepts a splice, so a structural list change falls
+back to a whole-value replace.
+
 The data-group path keeps another writer's queued changes and appends the
 runtime's entries in glass-easel's own tuple format
 (`[path, value, undefined, undefined]`, `[path, inserts, index, del]`). All
@@ -73,9 +81,11 @@ methods are called on their original receiver (`group`, or `component`).
   compares against.
 - List binding: the value is projected with the existing `listFields` rule
   (the key is always kept, `*this` is not projected). `payload` and `baseline`
-  are two independent `snapshotList` copies: the platform mutates the payload
-  in place, so it must not alias either the application row or the next diff
-  baseline.
+  are independent `snapshotList` copies when the payload can share a nested
+  reference with the source. If projection produced fresh plain rows and every
+  field is primitive, `payload` reuses those rows and only `baseline` is
+  snapshotted; the platform can mutate the payload without reaching either the
+  source or the baseline.
 - `*this` list: no projection, no patch and no splice (`listPatch`/`listOps`
   return `null` for the whole-list key), but the payload is still a detached
   snapshot.
@@ -95,9 +105,10 @@ AssertionError: Expected "actual" not to be reference-equal to "expected"
 `listFields`; both assert the payload and rows are distinct from the source and
 that mutating the payload leaves the application array unchanged.
 
-Cost: every list update now takes two deep snapshots. Projected lists already
-did that; unkeyed and `*this` lists previously took one, so this is the price of
-the separation between payload and baseline.
+Cost: nested values and the `projectList` fallback still take two deep
+snapshots. A flat projected list takes one baseline snapshot and reuses the
+projected rows as payload; that saves the second deep copy without changing the
+bytes sent to the platform.
 
 ## Flush failures
 
@@ -123,7 +134,10 @@ than a splice based on the uncommitted baseline.
   row falls back to the whole value.
 - `listOps` returns `ListOp | null` (it only ever produced one operation).
 - `listPatch` reuses one `WeakMap` comparison cache per call instead of
-  allocating one per field; cycle protection is unchanged.
+  allocating one per field; a separate recursion stack handles leaf diffs.
+  Same-shape plain objects and arrays are descended to the changed leaf; a
+  changed shape, a class value or `__proto__` key falls back to the whole
+  field. A failed descent discards its partial leaves and emits one field path.
 - `cloneValue` now documents its supported inputs: primitives, arrays, `Date`,
   `RegExp`, plain objects and cycles. Any other object, including `Map`, `Set`
   and `TypedArray`, is copied by enumerable own keys, so a `Map`/`Set` flattens
@@ -137,7 +151,7 @@ work had higher value.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 162, pass 162, fail 0
+# tests 211, pass 211, fail 0
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json, exit 0
 pnpm --filter @glaze/build test

@@ -673,13 +673,13 @@ test('listPatch still detects a shared object pair compared in another field', (
       'b0',
     ),
     [
-      { path: ['b0', 0, 'direct'], value: afterShared },
-      { path: ['b0', 0, 'nested'], value: { inner: afterShared } },
+      { path: ['b0', 0, 'direct', 'value'], value: 2 },
+      { path: ['b0', 0, 'nested', 'inner', 'value'], value: 2 },
     ],
   )
 })
 
-test('listPatches array-valued fields as whole replacements', () => {
+test('listPatches array-valued fields at the changed index', () => {
   assert.deepEqual(
     listPatch(
       [{ id: 1, tags: ['a', 'b'] }],
@@ -687,7 +687,40 @@ test('listPatches array-valued fields as whole replacements', () => {
       'id',
       'b0',
     ),
-    [{ path: ['b0', 0, 'tags'], value: ['a', 'c'] }],
+    [{ path: ['b0', 0, 'tags', 1], value: 'c' }],
+  )
+})
+
+test('listPatch descends into unchanging-shape nested arrays', () => {
+  assert.deepEqual(
+    listPatch(
+      [{ id: 1, cells: [{ id: 0, value: 1 }, { id: 1, value: 2 }] }],
+      [{ id: 1, cells: [{ id: 0, value: 1 }, { id: 1, value: 9 }] }],
+      'id',
+      'b0',
+    ),
+    [{ path: ['b0', 0, 'cells', 1, 'value'], value: 9 }],
+  )
+  assert.deepEqual(
+    listPatch(
+      [{ id: 1, cells: [{ id: 0, value: 1 }] }],
+      [{ id: 1, cells: [{ id: 0, value: 1 }, { id: 1, value: 2 }] }],
+      'id',
+      'b0',
+    ),
+    [{ path: ['b0', 0, 'cells'], value: [{ id: 0, value: 1 }, { id: 1, value: 2 }] }],
+  )
+})
+
+test('listPatch falls back to one field path when a nested shape changes', () => {
+  assert.deepEqual(
+    listPatch(
+      [{ id: 1, meta: { a: 1 } }],
+      [{ id: 1, meta: { a: 2, b: 3 } }],
+      'id',
+      'b0',
+    ),
+    [{ path: ['b0', 0, 'meta'], value: { a: 2, b: 3 } }],
   )
 })
 

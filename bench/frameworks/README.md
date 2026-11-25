@@ -217,9 +217,13 @@ do not subtract those numbers as CPU time.
 
 For sub-100 ms updates use `run.mjs --precise`. It installs a `setData`
 wrapper inside the appservice before tapping the real button, then reports the
-`setData` callback time from that real event. The automator RPC and polling stay
-outside the measured interval. A direct `__glaze.events[...]` call is not a
-substitute: it bypasses the platform event/view flush and undercounts Glaze.
+`setData` callback time from that real event. Page-root `replaceDataOnPath`
+batches have no callback, so the probe wraps that path and waits for
+`wx.nextTick`; the page-root rows therefore include a view-layer acknowledgement
+that the plain `setData` rows get from their callback. A batch larger than 64
+changes falls back to one `setData`, and a direct `__glaze.events[...]` call is
+not a substitute: it bypasses the platform event/view flush and undercounts
+Glaze.
 
 ### Flat 1000-row page
 
@@ -499,7 +503,7 @@ terms; the real gap is about 4× native and 2.5× uni-app. The table's
 
 The page root can run as the platform page instead of a nested `glaze-page`
 component. The same 500 real-child `update-all` case, measured with a real tap
-and the page's own `setData` target (no `--root`):
+and the page's own data object (no `--root`):
 
 | Prop-shape | Component root | Page root |
 | --- | ---: | ---: |
@@ -507,15 +511,15 @@ and the page's own `setData` target (no `--root`):
 | 2 props | 66.1 ms | **24.2 ms** |
 | 4 props | 72.3 ms | **23.1 ms** |
 | 8 props | 70.7 ms | **25.6 ms** |
-| 16 props | 81.3 ms | **30.5 ms** |
+| 16 props | 81.3 ms | **32.1 ms** |
 
 Page root on the other component-heavy fixtures, same precise tap:
 
 | Fixture | Component root | Page root |
 | --- | ---: | ---: |
 | 1000 pure + 1000 stateful rows | 60.1 ms | **20.4–26.2 ms** |
-| 500 props rows, update all | 86.0 ms | **42.9–45.9 ms** |
-| 500 props-object rows, update all | 86.1 ms | **35.0–41.8 ms** |
+| 500 props rows, update all | 86.0 ms | **38.4–39.2 ms** |
+| 500 props-object rows, update all | 86.1 ms | **35.9–52.5 ms** |
 
 For comparison, native WXML is 17.7 ms on the 1000+1000 page, 46.8 ms on
 props and 34.4 ms on props-object. Page root puts Glaze at or below native on
@@ -523,15 +527,14 @@ the props pages; the remaining 1000+1000 gap is the per-child Glaze runtime and
 WXML projection.
 
 Page root is not universal: on `bench-move`, `deep` drops from 18.9 ms
-(component root) to 14.2 ms (page root), but on `bench-fine` the one-row
-`update` rises from 16.3 ms to 27.9 ms. The single-row component page also
-shows the fixed page-level cost: `components update 1` is 7.6 ms page root
-versus 3.4 ms component root, and `props-object update 1` is 4.4 versus
-3.4 ms. These are sub-10 ms cells with run spread; the point is the direction,
-not a stable penalty. `props-object update all 500` is 35 ms page root versus
-86.1 ms component root and 34.4 ms native, so it is tied with native rather
-than regressed. Keep page root opt-in per route and optimize for that route's
-dominant interaction.
+(component root) to 10.9–11.9 ms (page root). The page-path transport now
+schedules small page updates through `replaceDataOnPath` + `applyDataUpdates`:
+`components update 1` is **3.3–3.7 ms** (previously 7.6–8.1 ms) and
+`props-object update 1` is **3.2–3.6 ms** (previously 4.0–4.9 ms). A fan-out
+above 64 changes falls back to one `setData` payload, so `components update all
+500` stays **17.5–18.7 ms** and `props-object update all 500` stays in the
+35–53 ms band. Page root remains opt-in per route; a component root avoids the
+page-level fixed cost for list-heavy pages.
 
 Some fast Glaze cells come from framework semantics rather than a different
 fixture: the compiler projects only fields WXML reads, the list diff uses

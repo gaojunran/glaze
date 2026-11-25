@@ -14,6 +14,33 @@ const isPlainObject = (value: object) => {
   return prototype === Object.prototype || prototype === null
 }
 
+const isPrimitiveDataValue = (value: unknown) =>
+  value === null ||
+  typeof value === 'string' ||
+  typeof value === 'number' ||
+  typeof value === 'boolean' ||
+  typeof value === 'bigint' ||
+  typeof value === 'undefined'
+
+/**
+ * True when `projectList` returned fresh plain rows whose fields carry no
+ * references. Such a payload can share the projected rows: the platform may
+ * mutate it, but the source rows and the separately cloned baseline cannot be
+ * reached through it. Nested values or a projectList fallback keep the old
+ * two-snapshot path.
+ */
+export function isFlatList(value: unknown): boolean {
+  if (!Array.isArray(value)) return false
+  return value.every(
+    (row) =>
+      row !== null &&
+      typeof row === 'object' &&
+      !Array.isArray(row) &&
+      isPlainObject(row) &&
+      Object.keys(row).every((key) => isPrimitiveDataValue((row as Record<string, unknown>)[key])),
+  )
+}
+
 /**
  * Read a list deeply inside a tracking scope.
  *
@@ -221,6 +248,64 @@ export function listOps(previous: unknown, next: unknown, key: string): ListOp |
   }
 }
 
+/**
+ * Walk a changed value and emit the smallest DataChange. Returning false means
+ * the pair is not a same-shape container we can descend into; the caller then
+ * keeps the existing whole-field replacement.
+ */
+const diffValue = (
+  before: unknown,
+  next: unknown,
+  path: (string | number)[],
+  changes: DataChange[],
+  seen: WeakMap<object, WeakSet<object>>,
+): boolean => {
+  if (Object.is(before, next)) return true
+  const beforeObject = before !== null && typeof before === 'object'
+  const nextObject = next !== null && typeof next === 'object'
+  if (!beforeObject || !nextObject) {
+    changes.push({ path, value: next })
+    return true
+  }
+
+  const beforeRecord = before as object
+  const nextRecord = next as object
+  let compared = seen.get(beforeRecord)
+  if (compared?.has(nextRecord)) return false
+  if (!compared) {
+    compared = new WeakSet()
+    seen.set(beforeRecord, compared)
+  }
+  compared.add(nextRecord)
+  try {
+    if (Array.isArray(before) || Array.isArray(next)) {
+      if (!Array.isArray(before) || !Array.isArray(next) || before.length !== next.length) {
+        return false
+      }
+      for (let index = 0; index < before.length; index += 1) {
+        if (!diffValue(before[index], next[index], [...path, index], changes, seen)) return false
+      }
+      return true
+    }
+
+    if (!isPlainObject(before) || !isPlainObject(next)) return false
+    const beforeRecordValue = before as Record<string, unknown>
+    const nextRecordValue = next as Record<string, unknown>
+    const beforeKeys = Object.keys(beforeRecordValue)
+    const nextKeys = Object.keys(nextRecordValue)
+    if (beforeKeys.length !== nextKeys.length) return false
+    for (const key of nextKeys) {
+      if (key === '__proto__' || !Object.hasOwn(beforeRecordValue, key)) return false
+      if (!diffValue(beforeRecordValue[key], nextRecordValue[key], [...path, key], changes, seen)) {
+        return false
+      }
+    }
+    return true
+  } finally {
+    compared.delete(nextRecord)
+  }
+}
+
 /** Internal helper, exported for unit tests. */
 export function listPatch(
   previous: unknown,
@@ -237,6 +322,7 @@ export function listPatch(
   // same structural result on every field and row, and the arrays do not
   // change while this synchronous pass runs.
   const seen = new WeakMap<object, WeakSet<object>>()
+  const diffSeen = new WeakMap<object, WeakSet<object>>()
   for (let index = 0; index < next.length; index += 1) {
     const item = next[index]
     const before = previous[index]
@@ -247,7 +333,12 @@ export function listPatch(
     for (const field of Object.keys(item)) {
       if (equalValue(before[field], item[field], seen)) continue
       if (!(field in before)) return null
-      changed.push({ path: [binding, index, field], value: item[field] })
+      const fieldChanges: DataChange[] = []
+      if (diffValue(before[field], item[field], [binding, index, field], fieldChanges, diffSeen)) {
+        changed.push(...fieldChanges)
+      } else {
+        changed.push({ path: [binding, index, field], value: item[field] })
+      }
     }
     for (const field of Object.keys(before)) {
       if (!(field in item)) return null
