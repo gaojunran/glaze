@@ -1,10 +1,16 @@
 # Page runtime (`pageRuntime: "page"`)
 
-By default a Glaze page is a native `Page` whose WXML contains one
+By default a Glaze page is a page entry whose WXML contains one
 `<glaze-page>` custom component. The page root component owns the Solid root and
 projects its bindings through `Component.setData`. This is safe for every page,
 including page events and page context, but it puts the whole page content one
 component level below the page.
+
+One nuance matters on glass-easel: a page that has `usingComponents` (which
+Glaze always generates) is itself opened as a page-level component by the base
+library, not through the legacy `Page.setData` path. The comparison is therefore
+**one glass-easel component versus two**, not "Page versus Component". See
+[Why removing one level helps](#why-removing-one-level-helps) below.
 
 `pageRuntime: "page"` removes that level for every eligible page. Use
 `{ pages: [route, ...] }` to opt in per route; the listed pages run directly and
@@ -19,6 +25,37 @@ const config: GlazeConfig = {
 ```
 
 The option is opt-in. The default remains `"component"`.
+
+## Why removing one level helps
+
+This is what the base library actually does for a page on glass-easel:
+
+- `wxapplib`'s `openNewPage` sets
+  `customComponentMode = isRouteUsingComponents(route) || componentFramework === 'glass-easel'`
+  and calls `ComponentPage.create(...)` instead of the legacy `Page.create(...)`
+  (`app-service-engine/src/page/page_manager/pageLifeTime/openNewPage.js`).
+- `ComponentPage.create` gets the page instance from
+  `adapterPage.addView(route)` and returns its method caller
+  (`app-service-engine/src/page/component_page.ts`).
+- `WebviewAdapterPage.addView` creates and attaches a root
+  `glass-easel` component (`glass-easel-adapter/src/render/webview.ts`).
+- `ComponentBuilder.pageDefinition` marks the component with `isPage = true`
+  for page style scope, but still builds a normal component definition
+  (`glass-easel-adapter/src/builder/component_builder.ts`).
+- The legacy `Page.setData` in `app-service-engine/src/page/page.js` deep-copies
+  and forwards to `__wxComponentInst__.setData`; it is not the glass-easel page
+  update path.
+
+So a component-root page is: page-level component → `<glaze-page>` child
+component → 500 child components. A page-root page is: page-level component →
+500 child components. The second component level adds a separate shadow root
+and one more component boundary for every page update. `isPage` does not switch
+the data update implementation; it only changes page style scope.
+
+This explains why `pageRuntime` is competitive with uni-app's page-level
+component shape and why it is not universal: a page whose dominant work is a
+single field update over a 5000-row list can still be faster with the component
+wrapper, as the measured `fine update` result shows.
 
 ## What changes
 

@@ -527,12 +527,14 @@ Page root is not universal: on `bench-move`, `deep` drops from 18.9 ms
 `update` rises from 16.3 ms to 27.9 ms. Keep it opt-in per route and optimize
 for that route's dominant interaction.
 
-Some Glaze cells are faster than native for a concrete fixture reason: the
-native `fine` insert/delete handlers resend all 5000 rows including the unused
-2 KB `extra` field, and the native `no-op` maps every row and sends the whole
-array; Glaze projects the fields WXML reads and short-circuits an unchanged
-list. Those are implementation comparisons, not a claim that Glaze is
-generally faster than a hand-optimized native page.
+Some fast Glaze cells come from framework semantics rather than a different
+fixture: the compiler projects only fields WXML reads, the list diff uses
+splices, and an unchanged list is short-circuited. Those are valid advantages
+for the default idiom used here. They are not an upper bound for a
+hand-optimized native page: the native `fine` insert/delete handlers resend all
+5000 rows including the unused 2 KB `extra` field, and native `no-op` resends
+the whole array. Treat the chart as Glaze's default idiom against an idiomatic
+native page, not as a general framework ranking.
 
 ```bash
 # Page-root pages have no component target; omit --root.

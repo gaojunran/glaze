@@ -14,6 +14,7 @@ const config: GlazeConfig = {
       'pages/bench-component-rows-pure/index',
       'pages/bench-components/index',
       'pages/bench-move/index',
+      'pages/bench-edges/index',
     ],
   },
   source: 'src',

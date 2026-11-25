@@ -15,10 +15,13 @@ all microbenchmark pages, including the 5000-row list actions, component and
 prop boundaries, pure inline rows, scalars, grid and keyed moves. Generate it
 with `node bench/frameworks/chart.mjs`; no SVG step is involved.
 
-Some Glaze wins are fixture-specific: native `fine` insert/delete resend all
-5000 rows including the unused 2 KB `extra` field, and native `no-op` resends
-the whole array; Glaze projects only rendered fields and short-circuits an
-unchanged list. Treat those cells as implementation comparisons rather than a
+Some Glaze wins are framework semantics rather than a different fixture: the
+compiler projects only fields WXML reads, list updates use splices, and an
+unchanged list is short-circuited. Those are valid advantages for the default
+idiom used here, but not an upper bound for a hand-optimized native page. The
+native `fine` insert/delete handlers resend all 5000 rows including the unused
+2 KB `extra` field, and native `no-op` resends the whole array; the chart
+compares Glaze's default idiom with an idiomatic native implementation, not a
 general framework ranking.
 
 ## Why the current benchmark is not enough
