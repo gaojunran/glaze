@@ -97,9 +97,10 @@ The overview covers every microbenchmark workload (flat/fine list actions,
 component and prop boundaries, pure inline rows, scalars, grid and keyed
 moves), not only the page-root prop-shape case. Each cell is the median of
 three real-tap runs; color is the ratio to native WXML. Rows marked `†` use
-Glaze's page root; the other Glaze rows use the component root. First render is
-omitted because minidev routing and simulator noise dominate it. The raw results
-and the `bench/frameworks/chart.mjs` renderer are in the repository.
+Glaze's page root; the other Glaze rows use the component root. A crown marks
+the fastest median in each row. First render is omitted because minidev routing
+and simulator noise dominate it. The raw results and the
+`bench/frameworks/chart.mjs` renderer are in the repository.
 
 Some Glaze wins are framework semantics rather than a different fixture: the
 compiler projects only fields WXML reads, list updates use splices, and an
@@ -109,6 +110,11 @@ native `fine` insert/delete handlers resend all 5000 rows including the unused
 2 KB `extra` field, and native `no-op` resends the whole array; the chart
 compares Glaze's default idiom with an idiomatic native implementation, not a
 general framework ranking.
+
+Taken together, across these workloads Glaze's default idiom is at or below
+native WXML in several cases. On this evidence it may be a **faster-than-native
+web framework**, though the result is simulator-only and workload-specific, not
+a universal claim against a hand-tuned native page.
 
 These are **same-harness** numbers: Glaze versus a hand-written
 WXML/WXSS/JS page, measured in the minidev simulator with the automator. They

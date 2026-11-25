@@ -174,15 +174,19 @@ const overviewHtml = () => {
   })
   const nativeValues = Object.fromEntries(metrics.map((row) => [row.label, row.values.native]))
   const groupStarts = new Set(metrics.map((row) => row.group))
+  const crown = '<svg class="crown" viewBox="0 0 16 14" aria-hidden="true"><path d="M1 4.2 5 6.4 8 1l3 5.4 4-2.2-1.7 7.3H2.7L1 4.2Z" fill="#b45309"/><path d="M2.8 12.8h10.4" stroke="#b45309" stroke-width="1.2" stroke-linecap="round"/></svg>'
   const rows = metrics
     .map((row, index, list) => {
       const previous = list[index - 1]
       const groupClass = !previous || previous.group !== row.group ? 'group-start' : ''
+      const fastest = Object.entries(row.values)
+        .filter(([, value]) => value != null)
+        .reduce((best, entry) => (best == null || entry[1] < best[1] ? entry : best), null)?.[0]
       const cells = sources
         .map(([key, label]) => {
           const value = row.values[key]
           const ratio = value != null && nativeValues[row.label] ? value / nativeValues[row.label] : null
-          return `<td style="background:${shadeFor(ratio)}" class="mono" title="${htmlEscape(label)}: ${format(value)} ms${ratio ? ` (${ratio.toFixed(1)}× native)` : ''}">${format(value)}</td>`
+          return `<td style="background:${shadeFor(ratio)}" class="mono" title="${htmlEscape(label)}: ${format(value)} ms${ratio ? ` (${ratio.toFixed(1)}× native)` : ''}${key === fastest ? ' · fastest' : ''}">${key === fastest ? crown : ''}${format(value)}</td>`
         })
         .join('')
       return `<tr class="${groupClass}"><th scope="row">${htmlEscape(row.label)}${row.pageRoot ? ' †' : ''}</th>${cells}</tr>`
@@ -205,6 +209,7 @@ const overviewHtml = () => {
     .group-key { display:inline-flex; align-items:center; gap:6px; color:#374151; }
     .group-key i { width:6px; height:6px; border-radius:50%; background:#9ca3af; display:inline-block; }
     .group-key em { font-style:normal; color:#9ca3af; }
+    .crown { width:12px; height:12px; margin-right:4px; vertical-align:-1px; }
     table { border-collapse:separate; border-spacing:0; width:100%; font-size:12px; }
     thead th { padding:8px 10px; text-align:right; color:#6b7280; font-size:11px; font-weight:600; white-space:nowrap; }
     thead th:first-child { text-align:left; width:27%; }
@@ -231,7 +236,7 @@ const overviewHtml = () => {
       <thead><tr><th>Workload</th>${sources.map(([, label]) => `<th>${htmlEscape(label)}</th>`).join('')}</tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <div class="foot"><span>Source: bench/frameworks/results/2026-11-25 · values are medians; not browser wall clock. First render is omitted because the minidev route/simulator noise dominates it.</span><span>† Glaze page root; other Glaze rows use the component root. Native and Glaze use the same fixture shape; Vue Mini and Taro are not precise-probed.</span></div>
+    <div class="foot"><span>Source: bench/frameworks/results/2026-11-25 · values are medians; not browser wall clock. First render is omitted because the minidev route/simulator noise dominates it.</span><span>† Glaze page root; other Glaze rows use the component root. Crown = fastest median in the row. Native and Glaze use the same fixture shape; Vue Mini and Taro are not precise-probed.</span></div>
   </body></html>`
 }
 

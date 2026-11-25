@@ -553,7 +553,8 @@ NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
 
 This is simulator evidence. It removes the component-boundary overhead for the
 configured pages; list-heavy pages can keep the component root because
-`pageRuntime` is opt-in per route. See [Page runtime](../../docs/page-runtime.md).
+`pageRuntime` is opt-in per route. The overview table marks the fastest median
+in each row with a crown. See [Page runtime](../../docs/page-runtime.md).
 
 > The default 500-child table above used `--root '#app'` on a component root.
 > A page-root page has no component under `#app`, so `selectComponent('#app')`

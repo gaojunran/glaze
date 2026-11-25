@@ -91,14 +91,18 @@ minidev 模拟器中通过 automator 测量。它们包含页面路由和 automa
 总览覆盖全部微基准 workload（flat/fine 列表操作、组件与 prop 边界、纯内联行、
 scalars、grid、keyed move），不只是页面根 prop-shape 场景。每个单元格是三次
 真实 tap 的中位数，颜色表示相对原生 WXML 的倍数；标记 `†` 的行使用 Glaze
-page root，其余 Glaze 行使用 component root。首屏因为 minidev 路由和模拟器噪声
-占比过大而未放入。原始结果与 `bench/frameworks/chart.mjs` 渲染脚本都在仓库里。
+page root，其余 Glaze 行使用 component root。每一行最快的中位数会用一个皇冠图标标出。首屏因为 minidev 路由和模拟器噪声占比过大而未放入。原始结果与
+`bench/frameworks/chart.mjs` 渲染脚本都在仓库里。
 
 部分 Glaze 快于 native 的单元格是框架语义带来的真实优势：编译器只投影 WXML
 读取的字段、列表使用 splice、未变化的列表会被短路。这些在当前的默认写法下
 是有效的，但不代表手工优化后的 native 上限。native `fine` 的 insert/delete
 会重发全部 5000 行（包含未使用的 2 KB `extra`），native `no-op` 也会重发整表；
 图表比较的是 Glaze 默认写法与一种惯用 native 写法，不是通用框架排名。
+
+综合来看，在这些 workload 中 Glaze 的默认写法在多个场景达到或低于原生
+WXML。基于这组证据，可以说 Glaze **可能是一个比原生 WXML 更快的框架**；
+但这是模拟器数据、且依赖具体负载，不是对所有手写优化 native 页面的通用结论。
 
 扁平 1000 行列表（三轮，`minidev` 0.18.0，基础库 3.17.3，headless
 Chromium 1248）：
