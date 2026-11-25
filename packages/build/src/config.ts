@@ -27,6 +27,8 @@ export type GlazeStaticEntry =
   | string
   | { from: string; to?: string; subpackage?: string }
 
+export type GlazePageRuntime = 'component' | 'page' | { pages: string[] }
+
 export type GlazeConfig = {
   source: string
   output: string
@@ -37,6 +39,7 @@ export type GlazeConfig = {
   pageConfig?: Record<string, Record<string, unknown>>
   clean?: boolean
   runtime?: GlazeRuntimeConfig
+  pageRuntime?: GlazePageRuntime
   css?: GlazeCssConfig
 }
 
@@ -46,6 +49,7 @@ export const DEFAULT_CONFIG: GlazeConfig = {
   pages: {},
   staticPages: [],
   subpackages: [],
+  pageRuntime: 'component',
 }
 
 export const CONFIG_FILES = ['glaze.config.mts', 'glaze.config.ts', 'glaze.config.mjs'] as const

@@ -10,7 +10,7 @@ test('counter renders and updates through the compiled bindings', async (miniPro
   await expect(app).toMatchText('.title', 'Glaze + Solid')
   const logo = await app.$('.asset-logo')
   const assetUrl = await logo.attribute('src')
-  if (!/^\/components\/glaze-counter\/assets\/logo-[A-Z0-9]+\.png$/.test(assetUrl)) {
+  if (!/^\/(?:components\/glaze-counter|pages\/index)\/assets\/logo-[A-Z0-9]+\.png$/.test(assetUrl)) {
     throw new Error(`unexpected asset url: ${assetUrl}`)
   }
   const image = await miniProgram.callWxMethod('getImageInfo', { src: assetUrl })

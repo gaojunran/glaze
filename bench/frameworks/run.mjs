@@ -100,7 +100,8 @@ async function measure(mp) {
     await mp.evaluate(
       ({ root, key }) => {
         const current = getCurrentPages()[getCurrentPages().length - 1]
-        const target = root ? current.selectComponent(root) : current
+        const selected = root ? current.selectComponent(root) : null
+        const target = selected && typeof selected.setData === 'function' ? selected : current
         if (!target || typeof target.setData !== 'function') {
           throw new Error(`no setData target for ${root ?? 'page'}`)
         }

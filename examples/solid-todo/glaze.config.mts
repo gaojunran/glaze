@@ -1,6 +1,19 @@
 import type { GlazeConfig } from "@glaze/build"
 
 const config: GlazeConfig = {
+  pageRuntime: {
+    pages: [
+      'pages/bench-props/index',
+      'pages/bench-props-object/index',
+      'pages/bench-props-1/index',
+      'pages/bench-props-2/index',
+      'pages/bench-props-4/index',
+      'pages/bench-props-8/index',
+      'pages/bench-props-16/index',
+      'pages/bench-component-rows/index',
+      'pages/bench-component-rows-pure/index',
+    ],
+  },
   source: 'src',
   output: 'miniprogram',
   pages: {

@@ -317,6 +317,7 @@ async function buildProjectInternal(
     static: config.static,
     staticPages: config.staticPages,
     componentFramework: componentFramework ?? 'glass-easel',
+    pageRuntime: config.pageRuntime ?? 'component',
   })}`
   if (cacheTag !== compileCacheTag) {
     compileCache.clear()
@@ -501,6 +502,31 @@ async function buildProjectInternal(
     return names
   }
 
+  const pageRuntime = config.pageRuntime ?? 'component'
+  const pageRuntimePages =
+    pageRuntime === 'component'
+      ? new Set<string>()
+      : pageRuntime === 'page'
+        ? null
+        : new Set(pageRuntime.pages.map((route) => normalizeRoute(route)))
+  const pageRuntimeEnabled = (route: string) =>
+    pageRuntime === 'page' || pageRuntimePages?.has(normalizeRoute(route)) === true
+  if (pageRuntimePages) {
+    for (const route of pageRuntimePages) {
+      if (!routes.has(route)) throw new Error(`pageRuntime route "${route}" does not match any page`)
+    }
+  }
+  const directPageFiles = new Set(
+    pageEntries
+      .filter(
+        (entry) =>
+          pageRuntimeEnabled(entry.route) &&
+          pageEventsFor(entry.file).size === 0 &&
+          !pageContextFiles.has(entry.file),
+      )
+      .map((entry) => entry.file),
+  )
+
   // A page may only reach components in its own package, plus (for a normal
   // subpackage) components in the main package. An independent subpackage
   // cannot depend on anything outside itself, and the main package cannot
@@ -582,6 +608,7 @@ async function buildProjectInternal(
   }
   const projectPathOf = (file) => normalizeSourcePath(path.relative(project, file))
   for (const file of used) {
+    if (directPageFiles.has(file)) continue
     const owner = ownerOf(file)
     const target = `${owner ? `${owner.root}/` : ''}components/${names.get(file)}/index`
     for (const extension of ['wxml', 'json', 'wxss', 'js']) {
@@ -763,6 +790,7 @@ async function buildProjectInternal(
     }
 
     for (const file of used) {
+      if (directPageFiles.has(file)) continue
       const { result } = compiled.get(file)
       const owner = ownerOf(file)
       const group = groupFor(owner)
@@ -876,6 +904,131 @@ async function buildProjectInternal(
       }
     }
 
+    const directPageEntries = pageEntries.filter((entry) =>
+      directPageFiles.has(entry.file) && !staticRoutes.has(entry.route),
+    )
+    for (const entry of directPageEntries) {
+      const { route, file, owner } = entry
+      const { result } = compiled.get(file)
+      const pageDir = path.join(stagingDir, path.dirname(route))
+      const pageName = path.basename(route)
+      const outName = names.get(file)
+      await mkdir(pageDir, { recursive: true })
+      const pageWxml = resolveWxmlAssets(result, pageDir)
+      const hasRootId = /^\s*<view\b[^>]*\bid=/.test(pageWxml)
+      await writeFile(
+        path.join(pageDir, `${pageName}.wxml`),
+        hasRootId
+          ? `<view id="app">${pageWxml}</view>`
+          : /^\s*<view\b/.test(pageWxml)
+            ? pageWxml.replace(/^(\s*<view)(?![^>]*\bid=)/, '$1 id="app"')
+            : `<view id="app">${pageWxml}</view>`,
+      )
+
+      const usingComponents = {}
+      for (const component of result.components) {
+        const tag = kebabCase(component.name)
+        if (usingComponents[tag]) {
+          throw new Error(`Duplicate component tag "${tag}" in ${file}`)
+        }
+        const child = resolveComponentFile(component.fromFile ?? file, component.source)
+        if (!child) {
+          throw new Error(`Cannot resolve component "${component.name}" from ${file}`)
+        }
+        usingComponents[tag] = outputFor(ownerOf(child), child, names.get(child))
+      }
+      const pageConfig = pageConfigForRoute.get(route) ?? {}
+      await writeFile(
+        path.join(pageDir, `${pageName}.json`),
+        `${JSON.stringify(
+          {
+            ...pageConfig,
+            usingComponents: {
+              ...((pageConfig.usingComponents as Record<string, string> | undefined) ?? {}),
+              ...usingComponents,
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      )
+
+      const inlineStyles = []
+      for (const inline of result.inlineComponents) {
+        const child = inline.file ?? resolveComponentFile(file, inline.source)
+        if (!child) throw new Error(`Cannot resolve inline component "${inline.name}" from ${file}`)
+        inlineStyles.push(await readStyle(child))
+      }
+      const ownStyle = await readStyle(file)
+      const styleParts = [
+        rewriteWxssUrls(ownStyle.file, ownStyle.content, pageDir, stagingDir, assets),
+        ...inlineStyles.map((style) =>
+          rewriteWxssUrls(style.file, style.content, pageDir, stagingDir, assets),
+        ),
+      ]
+      const styleText = styleParts.join('\n')
+      assertPortableWxss(ownStyle.file, styleText, { allowRelative: true })
+      await writeFile(path.join(pageDir, `${pageName}.wxss`), styleText)
+
+      const group = groupFor(owner)
+      const pageJs = path.join(pageDir, `${pageName}.js`)
+      const pageSource = result.js.replace(/defineGlazeComponent/g, 'defineGlazePage')
+      const bundle = await esbuild({
+        stdin: {
+          contents: pageSource,
+          resolveDir: path.dirname(file),
+          sourcefile: `${outName}.tsx`,
+          loader: 'tsx',
+        },
+        bundle: true,
+        format: 'cjs',
+        platform: 'browser',
+        conditions: ['browser'],
+        target: 'es2020',
+        write: false,
+        metafile: true,
+        outfile: pageJs,
+        assetNames: 'assets/[name]-[hash]',
+        publicPath: `${owner ? `/${owner.root}` : ''}/${path.dirname(route)}/`,
+        nodePaths: [
+          path.join(project, 'node_modules'),
+          path.join(packageRoot, 'node_modules'),
+          path.join(repoRoot, 'node_modules'),
+        ],
+        loader: {
+          '.tsx': 'tsx',
+          '.ts': 'ts',
+          '.png': 'file',
+          '.jpg': 'file',
+          '.jpeg': 'file',
+          '.gif': 'file',
+          '.webp': 'file',
+          '.svg': 'file',
+          '.woff': 'file',
+          '.woff2': 'file',
+          '.ttf': 'file',
+          '.otf': 'file',
+          '.eot': 'file',
+          '.mp3': 'file',
+          '.mp4': 'file',
+        },
+        plugins: [
+          sharedRuntimePlugin(sharedSpecifierFor(pageDir, group.sharedPath)),
+          dedupeSolidPlugin,
+        ],
+        minify: true,
+        logLevel: 'warning',
+      })
+      const pageOutput = bundle.outputFiles.find((output) => output.path === pageJs)
+      if (!pageOutput) throw new Error(`Page bundle did not produce index.js: ${file}`)
+      await writeFile(pageJs, pageOutput.text)
+      for (const output of bundle.outputFiles) {
+        if (output.path === pageJs) continue
+        await mkdir(path.dirname(output.path), { recursive: true })
+        await writeFile(output.path, output.contents)
+      }
+    }
+
     const sharedGroups = new Map()
     for (const group of componentGroups.values()) {
       let shared = sharedGroups.get(group.sharedPath)
@@ -885,6 +1038,12 @@ async function buildProjectInternal(
       }
       shared.js.push(...[...group.js.keys()].map((file) => compiled.get(file).result.js))
       for (const input of group.inputs) shared.inputs.add(input)
+    }
+    for (const entry of pageEntries) {
+      if (!directPageFiles.has(entry.file)) continue
+      const group = groupFor(ownerOf(entry.file))
+      const shared = sharedGroups.get(group.sharedPath)
+      if (shared) shared.js.push(compiled.get(entry.file).result.js.replace(/defineGlazeComponent/g, 'defineGlazePage'))
     }
     for (const [sharedPath, shared] of sharedGroups) {
       const sharedTexts = [...shared.js]
@@ -909,7 +1068,7 @@ async function buildProjectInternal(
 
     for (const entry of pageEntries) {
       const { route, file, owner } = entry
-      if (staticRoutes.has(route)) continue
+      if (staticRoutes.has(route) || directPageFiles.has(file)) continue
       const pageEvents = pageEventsFor(file)
       const pageContext = pageContextFiles.has(file)
       const outName = names.get(file)

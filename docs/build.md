@@ -55,6 +55,7 @@ export default config
 | `staticPages` | routes already present in `static` and kept in `app.json` |
 | `subpackages` | subpackage roots, their page maps, and optional `independent: true` |
 | `pageConfig` | per-route page JSON merged into the generated page config |
+| `pageRuntime` | `"component"` (default), `"page"`, or `{ pages: [...] }`; see [Page runtime](page-runtime.md) |
 | `clean` | replace the previous output after a successful build; defaults to `true` |
 | `runtime.bindingGroupSize` | scalar bindings per effect; a positive integer, default `8`, `1` disables grouping |
 | `css.tailwind.input` | optional Tailwind 4 stylesheet; enables the Tailwind stage |

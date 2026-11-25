@@ -72,8 +72,8 @@ glass-easel 组件，不替换平台渲染器。也可以通过可选的兼容�
 - UI：`@glaze/ui` 把 UI SDK 组件（button、toggle、switch、field、input、
   dialog、checkbox、radio、tabs、collapsible）移植为原生 WXML 组件，
   包含非受控变体与仅触屏的 dialog；
-- 验证：641 个单元测试（shared 2、store 8、runtime 203、compiler 303、
-  build 125）、glass-easel 渲染测试和 12 个 minidev e2e 用例。
+- 验证：643 个单元测试（shared 2、store 8、runtime 204、compiler 303、
+  build 126）、glass-easel 渲染测试和 12 个 minidev e2e 用例。
 
 已知限制记录在 [编译器](docs/compiler.md)、[Store](docs/store.md)、
 [UI SDK 移植](docs/ui.md)、[构建](docs/build.md) 和 [优化](docs/optimizations.md) 中。编译器与运行时的结构重构记录在
@@ -164,6 +164,7 @@ Chromium 1248）：
 - [源码布局](docs/source-layout.md)
 - [编译器](docs/compiler.md)
 - [运行时边界行为](docs/runtime.md)
+- [页面运行时](docs/page-runtime.md)
 - [Store](docs/store.md)
 - [UI SDK 移植](docs/ui.md)
 - [实现计划](docs/plan.md)

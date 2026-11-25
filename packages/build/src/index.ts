@@ -12,6 +12,7 @@ export { loadConfig } from './config.ts'
 export type {
   GlazeConfig,
   GlazeCssConfig,
+  GlazePageRuntime,
   GlazeTailwindConfig,
   GlazeSubpackage,
   GlazeStaticEntry,

@@ -91,8 +91,12 @@ export async function applyTailwind(
   try {
     const componentDirs = [
       path.join(stagingDir, 'components'),
+      path.join(stagingDir, 'pages'),
       ...(config.subpackages ?? []).map((entry) =>
         path.join(stagingDir, normalizeSubpackageRoot(entry.root), 'components'),
+      ),
+      ...(config.subpackages ?? []).map((entry) =>
+        path.join(stagingDir, normalizeSubpackageRoot(entry.root), 'pages'),
       ),
     ]
     const wxmlFiles = (

@@ -463,9 +463,38 @@ the list patch sends only changed field paths; Vue Mini's whole-array watcher is
 flat at ~124–133 ms even for one row; Taro grows with the number of changed
 rows. The 500-child column is automator wall clock and is not a CPU measurement.
 The precise tap gives Glaze **56–65 ms**, Native **13–14 ms** and uni-app
-**22–28 ms**, so the earlier “~3× native” reading was too small in relative
+**22–28 ms**, so the earlier "~3× native" reading was too small in relative
 terms; the real gap is about 4× native and 2.5× uni-app. The table's
 1/10/100-child columns remain useful only as a coarse check.
+
+### Page root (`pageRuntime: "page"`, 2026-11-25)
+
+The page root can run as the platform page instead of a nested `glaze-page`
+component. The same 500 real-child `update-all` case, measured with a real tap
+and the page's own `setData` target (no `--root`):
+
+| Shape | Component root | Page root |
+| --- | ---: | ---: |
+| 500 stateful children, 8 props | 60.1 ms | **15.6–23.3 ms** |
+| 500 children, 1 prop | 61.1 ms | **19.4–19.8 ms** |
+| 500 children, 16 props | 81.3 ms | **30.2–30.8 ms** |
+
+```bash
+# Page-root pages have no component target; omit --root.
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
+  --port 9633 --route /pages/bench-props-16/index --neutral /pages/index/index \
+  --count 500 --row '.row-card' --first-text '.row-title' \
+  --last-text '#last' --tick '#last' --warm '#update-all' \
+  --update-all '#update-all' --skip-reverse --runs 3 --precise
+```
+
+This is simulator evidence. It removes the component-boundary overhead for the
+configured pages; list-heavy pages can keep the component root because
+`pageRuntime` is opt-in per route. See [Page runtime](../../docs/page-runtime.md).
+
+> The default 500-child table above used `--root '#app'` on a component root.
+> A page-root page has no component under `#app`, so `selectComponent('#app')`
+> does not select a component; measure it without `--root`.
 
 ### Prop-shape, mixed and move microbenchmarks (2026-11-24)
 

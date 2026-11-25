@@ -63,6 +63,7 @@ import {
   type LifecycleState,
 } from './lifecycle.ts'
 declare const Component: (options: Record<string, unknown>) => unknown
+declare const Page: (options: Record<string, unknown>) => unknown
 
 import type { PageContextValue } from '@glaze/shared'
 import type {
@@ -407,6 +408,51 @@ const bindingIndexOf = (change: DataChange): number | null => {
 }
 
 export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
+  return createGlazeDefinition(config, false)
+}
+
+/**
+ * Page roots run as the platform page itself instead of a nested component.
+ * The component definition is reused unchanged; this adapter only maps its
+ * lifetime callbacks onto Page lifecycle methods.
+ */
+export function defineGlazePage(config: GlazeComponentConfig): unknown {
+  return createGlazeDefinition(config, true)
+}
+
+function registerPage(definition: any): unknown {
+  const page: any = { data: definition.data }
+  page.onLoad = function onLoad(this: any, query: Record<string, unknown>) {
+    // Page roots have no component property bridge; setup reads no props. The
+    // empty object keeps the shared created() path from touching undefined.
+    this.properties = Object.create(null)
+    this.__glazePageQuery = query ?? {}
+    definition.lifetimes.created.call(this)
+  }
+  page.onReady = function onReady(this: any) {
+    // A page is attached for its whole lifetime. Run the normal attach path
+    // after the first render, but keep the deferred-context ready path too.
+    definition.lifetimes.attached.call(this)
+    definition.lifetimes.ready?.call(this)
+  }
+  page.onShow = function onShow(this: any) {
+    definition.pageLifetimes.show.call(this)
+  }
+  page.onHide = function onHide(this: any) {
+    definition.pageLifetimes.hide.call(this)
+  }
+  page.onResize = function onResize(this: any, event: unknown) {
+    definition.pageLifetimes.resize.call(this, event)
+  }
+  page.onUnload = function onUnload(this: any) {
+    definition.lifetimes.beforeDetach?.call(this)
+    definition.lifetimes.detached.call(this)
+  }
+  Object.assign(page, definition.methods)
+  return Page(page)
+}
+
+function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean): unknown {
   validateConfig(config)
   const publicPropertyNames = (config.properties ?? []).filter(
     (name) => name.toLowerCase() !== PAGE_PROP,
@@ -1211,7 +1257,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
     if (seeded) flush()
   }
 
-  return Component({
+  const definition = {
     data: config.data ?? {},
     properties,
     observers,
@@ -1460,5 +1506,7 @@ export function defineGlazeComponent(config: GlazeComponentConfig): unknown {
       },
     },
     methods,
-  })
+  }
+  if (!pageMode) return Component(definition)
+  return registerPage(definition)
 }

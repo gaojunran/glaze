@@ -186,6 +186,40 @@ export default function App() {
   assert.match(runtime, /onBeforeDetach/)
 })
 
+test('pageRuntime page emits the page root instead of a wrapper component', async () => {
+  const project = await createProject({
+    config: {
+      source: 'src',
+      output: 'miniprogram',
+      pageRuntime: 'page',
+      pages: { 'pages/home/index': 'App.tsx' },
+    },
+    files: {
+      'src/App.tsx': `export default function App() {
+  return <view class="page"><text class="title">Page</text></view>
+}
+`,
+    },
+  })
+  await Promise.all(appShell(project))
+
+  const result = await buildProject(project)
+  assert.deepEqual(result.pages, ['pages/home/index'])
+
+  const pageWxml = await readFile(path.join(project, 'miniprogram/pages/home/index.wxml'), 'utf8')
+  assert.match(pageWxml, /^<view id="app"/)
+  assert.doesNotMatch(pageWxml, /<glaze-page/)
+
+  const pageJson = JSON.parse(
+    await readFile(path.join(project, 'miniprogram/pages/home/index.json'), 'utf8'),
+  )
+  assert.equal(pageJson.usingComponents['glaze-page'], undefined)
+
+  const pageScript = await readFile(path.join(project, 'miniprogram/pages/home/index.js'), 'utf8')
+  assert.match(pageScript, /defineGlazePage/)
+  assert.equal(await exists(path.join(project, 'miniprogram/components/glaze-app')), false)
+})
+
 test('builds a page, its inlined child and a page wrapper', async () => {
   const project = await createProject({
     config: {

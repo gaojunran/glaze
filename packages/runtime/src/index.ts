@@ -1,5 +1,6 @@
 export {
   defineGlazeComponent,
+  defineGlazePage,
   onAppError,
   onAppHide,
   onAppShow,

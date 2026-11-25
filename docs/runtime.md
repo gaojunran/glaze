@@ -282,6 +282,11 @@ Projects that set `componentFramework: "exparser"` in `app.json` use the same
 mapping with one timing change: the root is created at `attached`, after the
 legacy parent has assigned props. See [Legacy exparser](exparser.md).
 
+With `pageRuntime: "page"`, the page itself is the root component. The same
+`created` / `attached` / `detached` paths run from `onLoad` / `onReady` /
+`onUnload`; pages with page context or page events keep the default wrapper.
+See [Page runtime](page-runtime.md).
+
 ### Page context channel
 
 When a page or any component uses `usePageOptions`, `usePageEvent` or
