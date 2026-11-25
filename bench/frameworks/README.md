@@ -16,8 +16,9 @@ the same-harness Glaze/native suite in `docs/optimizations.md`.
 The overview covers every microbenchmark workload, not only the page-root
 prop fan-out: flat list updates, the 5000-row fine page, component boundaries,
 props/props-object, pure inline rows, scalars, grid and keyed moves. Values are
-medians of three real-tap runs; color is the ratio to native WXML. First render
-is omitted because the minidev route and simulator dominate it.
+medians of three real-tap runs; color is the ratio to native WXML. Rows marked
+`†` use Glaze's page root; the other Glaze rows use the component root. First
+render is omitted because the minidev route and simulator dominate it.
 
 The second chart focuses on the page-root experiment:
 

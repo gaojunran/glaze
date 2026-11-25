@@ -90,9 +90,9 @@ minidev 模拟器中通过 automator 测量。它们包含页面路由和 automa
 
 总览覆盖全部微基准 workload（flat/fine 列表操作、组件与 prop 边界、纯内联行、
 scalars、grid、keyed move），不只是页面根 prop-shape 场景。每个单元格是三次
-真实 tap 的中位数，颜色表示相对原生 WXML 的倍数；首屏因为 minidev 路由和
-模拟器噪声占比过大而未放入。原始结果与 `bench/frameworks/chart.mjs` 渲染脚本
-都在仓库里。
+真实 tap 的中位数，颜色表示相对原生 WXML 的倍数；标记 `†` 的行使用 Glaze
+page root，其余 Glaze 行使用 component root。首屏因为 minidev 路由和模拟器噪声
+占比过大而未放入。原始结果与 `bench/frameworks/chart.mjs` 渲染脚本都在仓库里。
 
 扁平 1000 行列表（三轮，`minidev` 0.18.0，基础库 3.17.3，headless
 Chromium 1248）：

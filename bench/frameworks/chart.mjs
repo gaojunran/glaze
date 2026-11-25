@@ -85,6 +85,12 @@ const suite = Object.fromEntries(
   }),
 )
 
+// Rows measured with the page root. They replace the component-root value in
+// the Glaze column only; the table note marks the affected rows with a dagger.
+const pageRootBulk = Object.fromEntries(
+  readJsonRecords('page-root-bulk-cases.jsonl').map((row) => [row.label, row.runs]),
+)
+
 const overviewRows = [
   { group: 'flat · 1000 rows', label: 'update title', case: 'flat', metric: 'update' },
   { group: 'flat · 1000 rows', label: 'bump counter', case: 'flat', metric: 'bump' },
@@ -105,7 +111,7 @@ const overviewRows = [
   { group: 'fine · 5000 rows', label: 'no-op write', case: 'fine', metric: 'noop' },
   { group: 'fine · 5000 rows', label: 'reverse 5000', case: 'fine', metric: 'reverse' },
   { group: 'component boundaries', label: 'components update 1', case: 'components', metric: 'update' },
-  { group: 'component boundaries', label: 'components update all 1000', case: 'components', metric: 'updateAll' },
+  { group: 'component boundaries', label: 'components update all 500', case: 'components', metric: 'updateAll' },
   { group: 'component boundaries', label: 'components update 10', case: 'components', metric: 'u10' },
   { group: 'component boundaries', label: 'components update 100', case: 'components', metric: 'u100' },
   { group: 'component boundaries', label: 'props update 1', case: 'props', metric: 'update' },
@@ -151,12 +157,21 @@ const pageCss = `
 `
 
 const overviewHtml = () => {
-  const metrics = overviewRows.map((row) => ({
-    ...row,
-    values: Object.fromEntries(
-      Object.entries(suite).map(([key, value]) => [key, median(caseValues(value.rows, row.case, row.metric))]),
-    ),
-  }))
+  const metrics = overviewRows.map((row) => {
+    const pageRoot = pageRootBulk[row.label]
+    return {
+      ...row,
+      pageRoot: pageRoot != null,
+      values: Object.fromEntries(
+        Object.entries(suite).map(([key, value]) => [
+          key,
+          key === 'glaze' && pageRoot
+            ? median(pageRoot)
+            : median(caseValues(value.rows, row.case, row.metric)),
+        ]),
+      ),
+    }
+  })
   const nativeValues = Object.fromEntries(metrics.map((row) => [row.label, row.values.native]))
   const groupStarts = new Set(metrics.map((row) => row.group))
   const rows = metrics
@@ -170,7 +185,7 @@ const overviewHtml = () => {
           return `<td style="background:${shadeFor(ratio)}" class="mono" title="${htmlEscape(label)}: ${format(value)} ms${ratio ? ` (${ratio.toFixed(1)}× native)` : ''}">${format(value)}</td>`
         })
         .join('')
-      return `<tr class="${groupClass}"><th scope="row">${htmlEscape(row.label)}</th>${cells}</tr>`
+      return `<tr class="${groupClass}"><th scope="row">${htmlEscape(row.label)}${row.pageRoot ? ' †' : ''}</th>${cells}</tr>`
     })
     .join('')
   const groupRows = [...groupStarts]
@@ -216,7 +231,7 @@ const overviewHtml = () => {
       <thead><tr><th>Workload</th>${sources.map(([, label]) => `<th>${htmlEscape(label)}</th>`).join('')}</tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <div class="foot"><span>Source: bench/frameworks/results/2026-11-25 · values are medians; not browser wall clock. First render is omitted because the minidev route/simulator noise dominates it.</span><span>Native and Glaze use the same fixture shape; Vue Mini and Taro are not precise-probed.</span></div>
+    <div class="foot"><span>Source: bench/frameworks/results/2026-11-25 · values are medians; not browser wall clock. First render is omitted because the minidev route/simulator noise dominates it.</span><span>† Glaze page root; other Glaze rows use the component root. Native and Glaze use the same fixture shape; Vue Mini and Taro are not precise-probed.</span></div>
   </body></html>`
 }
 

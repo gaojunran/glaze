@@ -96,9 +96,10 @@ compiler/runtime structural refactor is recorded in
 The overview covers every microbenchmark workload (flat/fine list actions,
 component and prop boundaries, pure inline rows, scalars, grid and keyed
 moves), not only the page-root prop-shape case. Each cell is the median of
-three real-tap runs; color is the ratio to native WXML. First render is omitted
-because minidev routing and simulator noise dominate it. The raw results and
-the `bench/frameworks/chart.mjs` renderer are in the repository.
+three real-tap runs; color is the ratio to native WXML. Rows marked `†` use
+Glaze's page root; the other Glaze rows use the component root. First render is
+omitted because minidev routing and simulator noise dominate it. The raw results
+and the `bench/frameworks/chart.mjs` renderer are in the repository.
 
 These are **same-harness** numbers: Glaze versus a hand-written
 WXML/WXSS/JS page, measured in the minidev simulator with the automator. They
