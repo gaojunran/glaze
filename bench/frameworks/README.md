@@ -473,11 +473,18 @@ The page root can run as the platform page instead of a nested `glaze-page`
 component. The same 500 real-child `update-all` case, measured with a real tap
 and the page's own `setData` target (no `--root`):
 
-| Shape | Component root | Page root |
+| Prop-shape | Component root | Page root |
 | --- | ---: | ---: |
-| 500 stateful children, 8 props | 60.1 ms | **15.6–23.3 ms** |
-| 500 children, 1 prop | 61.1 ms | **19.4–19.8 ms** |
-| 500 children, 16 props | 81.3 ms | **30.2–30.8 ms** |
+| 1 prop | 60.5 ms | **19.7 ms** |
+| 2 props | 66.5 ms | **24.2 ms** |
+| 4 props | 69.5 ms | **23.1 ms** |
+| 8 props | 78 ms | **25.6 ms** |
+| 16 props | 85 ms | **30.5 ms** |
+
+A separate `bench-component-rows` case (500 stateful children, 8 props) was
+60.1 ms on the component root and 15.6–23.3 ms on the page root.
+
+![500 real child components: component root, page root, native and uni-app](../../docs/assets/page-runtime-prop-shape.svg)
 
 ```bash
 # Page-root pages have no component target; omit --root.
