@@ -523,9 +523,16 @@ the props pages; the remaining 1000+1000 gap is the per-child Glaze runtime and
 WXML projection.
 
 Page root is not universal: on `bench-move`, `deep` drops from 18.9 ms
-(component root) to 12.1 ms (page root), but on `bench-fine` the one-row
+(component root) to 14.2 ms (page root), but on `bench-fine` the one-row
 `update` rises from 16.3 ms to 27.9 ms. Keep it opt-in per route and optimize
 for that route's dominant interaction.
+
+Some Glaze cells are faster than native for a concrete fixture reason: the
+native `fine` insert/delete handlers resend all 5000 rows including the unused
+2 KB `extra` field, and the native `no-op` maps every row and sends the whole
+array; Glaze projects the fields WXML reads and short-circuits an unchanged
+list. Those are implementation comparisons, not a claim that Glaze is
+generally faster than a hand-optimized native page.
 
 ```bash
 # Page-root pages have no component target; omit --root.

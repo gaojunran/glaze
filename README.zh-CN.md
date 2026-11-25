@@ -94,6 +94,11 @@ scalars、grid、keyed move），不只是页面根 prop-shape 场景。每个�
 page root，其余 Glaze 行使用 component root。首屏因为 minidev 路由和模拟器噪声
 占比过大而未放入。原始结果与 `bench/frameworks/chart.mjs` 渲染脚本都在仓库里。
 
+部分 Glaze 快于 native 的单元格有明确的 fixture 原因：native `fine` 的
+insert/delete 会重发全部 5000 行（包含未被 WXML 使用的 2 KB `extra` 字段），
+native `no-op` 也会重发整表；Glaze 只投影 WXML 读取的字段并短路未变化的列表。
+这些是两套实现的对比，不代表 Glaze 普遍快于手工优化的 native 页面。
+
 扁平 1000 行列表（三轮，`minidev` 0.18.0，基础库 3.17.3，headless
 Chromium 1248）：
 

@@ -98,7 +98,9 @@ the per-child work, so native is still slightly ahead.
 
 A separate `bench-component-rows` case (500 stateful children with 8 props)
 measured 60.1 ms on the component root and 15.6–23.3 ms on the page root in an
-earlier run.
+earlier run. In the current 500-row run, `update 100` is 14.1 ms on the
+component root and 5.5 ms on the page root; native is 5.3 ms, so this case is
+already at the native floor once the page root is selected.
 
 Page root also applies to the other component-heavy fixtures:
 
@@ -124,7 +126,7 @@ pages:
 
 | Case | Component root | Page root | Native |
 | --- | ---: | ---: | ---: |
-| move deep, 2000 rows | 18.9 ms | **12.1 (11.6–13.0) ms** | 13.1 ms |
+| move deep, 2000 rows | 18.9 ms | **14.2 (12.7–17.7) ms** | 13.1–14.2 ms |
 | fine update 1 row, 5000 rows | 16.3 ms | 27.9 (20.1–28.9) ms | 16.6 ms |
 | fine toggle 1 row | 17.1 ms | 19–24 ms | 14.7 ms |
 | fine insert 1 row | 27.1 ms | 24.9–38 ms | 55.9 ms |

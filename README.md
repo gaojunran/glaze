@@ -101,6 +101,12 @@ Glaze's page root; the other Glaze rows use the component root. First render is
 omitted because minidev routing and simulator noise dominate it. The raw results
 and the `bench/frameworks/chart.mjs` renderer are in the repository.
 
+Some Glaze wins are fixture-specific: the native `fine` insert/delete handlers
+resend all 5000 rows including the unused 2 KB `extra` field, and native
+`no-op` resends the whole array; Glaze projects the fields WXML reads and
+short-circuits unchanged lists. These cells compare these two implementations,
+not a generally optimized native baseline.
+
 These are **same-harness** numbers: Glaze versus a hand-written
 WXML/WXSS/JS page, measured in the minidev simulator with the automator. They
 include page routing and automator round-trips, so they compare the two pages
