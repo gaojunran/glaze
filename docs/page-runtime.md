@@ -116,6 +116,25 @@ This is simulator evidence. The same-page native comparison (`Page` vs
 `Component`) is also simulator-only; real-device confirmation is still needed
 before making this the default.
 
+### Page root is not universal
+
+A page with component-dense updates is not the same as a list-heavy page. The
+same precise tap measured page root against component root on the move/fine
+pages:
+
+| Case | Component root | Page root | Native |
+| --- | ---: | ---: | ---: |
+| move deep, 2000 rows | 18.9 ms | **12.1 (11.6–13.0) ms** | 13.1 ms |
+| fine update 1 row, 5000 rows | 16.3 ms | 27.9 (20.1–28.9) ms | 16.6 ms |
+| fine toggle 1 row | 17.1 ms | 19–24 ms | 14.7 ms |
+| fine insert 1 row | 27.1 ms | 24.9–38 ms | 55.9 ms |
+| fine delete 1 row | 22.3 ms | 21.4–23.4 ms | 46.2 ms |
+
+So page root removes the wrapper cost when the update is a bounded number of
+child property writes, but it is the wrong default for a page whose main cost
+is a field update over a 5000-row list. Keep page root opt-in per route and
+measure the route's dominant interaction.
+
 Validate with:
 
 ```bash

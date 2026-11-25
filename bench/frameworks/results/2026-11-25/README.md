@@ -14,6 +14,7 @@ for the median. The data is committed so the docs chart does not depend on
 | `microbench-vue-mini.jsonl` | Vue Mini |
 | `microbench-taro.jsonl` | Taro |
 | `page-root-component-cases.jsonl` | Page root results for components, props and props-object |
+| `page-root-list-cases.jsonl` | Page root results for the move and fine list pages |
 | `prop-shape-glaze-component.jsonl` | Glaze component root, 500 child prop-shape pages |
 | `prop-shape-glaze-page.jsonl` | Glaze page root, 500 child prop-shape pages |
 | `prop-shape-native.jsonl` | Native WXML prop-shape pages |

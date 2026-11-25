@@ -521,6 +521,11 @@ props and 34.4 ms on props-object. Page root puts Glaze at or below native on
 the props pages; the remaining 1000+1000 gap is the per-child Glaze runtime and
 WXML projection.
 
+Page root is not universal: on `bench-move`, `deep` drops from 18.9 ms
+(component root) to 12.1 ms (page root), but on `bench-fine` the one-row
+`update` rises from 16.3 ms to 27.9 ms. Keep it opt-in per route and optimize
+for that route's dominant interaction.
+
 ```bash
 # Page-root pages have no component target; omit --root.
 NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \

@@ -1,0 +1,22 @@
+[
+  {
+    "port": "9636",
+    "route": "/pages/bench-move/index",
+    "neutral": "/pages/index/index",
+    "runs": [
+      { "firstRender": 3844, "deep": 13 },
+      { "firstRender": 3835, "deep": 11.6 },
+      { "firstRender": 3759, "deep": 12.1 }
+    ]
+  },
+  {
+    "port": "9637",
+    "route": "/pages/bench-fine/index",
+    "neutral": "/pages/index/index",
+    "runs": [
+      { "firstRender": 4471, "update": 27.9, "toggle": 19, "insert": 26.4, "delete": 21.4 },
+      { "firstRender": 4467, "update": 28.9, "toggle": 20.9, "insert": 38, "delete": 23.4 },
+      { "firstRender": 4563, "update": 20.1, "toggle": 24, "insert": 24.9, "delete": 21.9 }
+    ]
+  }
+]
