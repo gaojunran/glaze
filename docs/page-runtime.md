@@ -164,6 +164,9 @@ pages:
 | Case | Component root | Page root | Native |
 | --- | ---: | ---: | ---: |
 | move deep, 2000 rows | 18.9 ms | **14.2 (12.7–17.7) ms** | 13.1–14.2 ms |
+| components update 1 | 3.4 ms | 7.6 (4.7–8.1) ms | 3.0 ms |
+| props-object update 1 | 3.4 ms | 4.4 (4.0–4.9) ms | 3.4 ms |
+| props-object update all 500 | 86.1 ms | **35.0 (34.2–66.2) ms** | 34.4 ms |
 | fine update 1 row, 5000 rows | 16.3 ms | 27.9 (20.1–28.9) ms | 16.6 ms |
 | fine toggle 1 row | 17.1 ms | 19–24 ms | 14.7 ms |
 | fine insert 1 row | 27.1 ms | 24.9–38 ms | 55.9 ms |
@@ -173,6 +176,18 @@ So page root removes the wrapper cost when the update is a bounded number of
 child property writes, but it is the wrong default for a page whose main cost
 is a field update over a 5000-row list. Keep page root opt-in per route and
 measure the route's dominant interaction.
+
+The one-row page-root numbers are the other side of the same trade-off. A page
+root registers with `Page(page)` in `registerPage`, so its updates go through
+the page-level data path. A component root updates the `<glaze-page>` child,
+which owns the bindings. For a single path the page-level fixed cost wins out:
+`components update 1` is 7.6 ms page root versus 3.4 ms component root, and
+`props-object update 1` is 4.4 versus 3.4 ms. Those are sub-10 ms measurements
+with visible run spread; the 7.6 ms median is not a stable 4 ms penalty. For
+500 children the removed component boundary dominates instead, which is why
+`components update all 500` is 17.4 ms page root versus 60.1 ms component root.
+`props-object update all 500` is 35 ms page root versus 86.1 ms component root
+and 34.4 ms native, so it is tied with native rather than regressed.
 
 Validate with:
 

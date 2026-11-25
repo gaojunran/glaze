@@ -524,8 +524,14 @@ WXML projection.
 
 Page root is not universal: on `bench-move`, `deep` drops from 18.9 ms
 (component root) to 14.2 ms (page root), but on `bench-fine` the one-row
-`update` rises from 16.3 ms to 27.9 ms. Keep it opt-in per route and optimize
-for that route's dominant interaction.
+`update` rises from 16.3 ms to 27.9 ms. The single-row component page also
+shows the fixed page-level cost: `components update 1` is 7.6 ms page root
+versus 3.4 ms component root, and `props-object update 1` is 4.4 versus
+3.4 ms. These are sub-10 ms cells with run spread; the point is the direction,
+not a stable penalty. `props-object update all 500` is 35 ms page root versus
+86.1 ms component root and 34.4 ms native, so it is tied with native rather
+than regressed. Keep page root opt-in per route and optimize for that route's
+dominant interaction.
 
 Some fast Glaze cells come from framework semantics rather than a different
 fixture: the compiler projects only fields WXML reads, the list diff uses
