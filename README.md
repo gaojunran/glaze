@@ -80,7 +80,7 @@ Working spike, not a production framework. It covers:
 - UI: `@glaze/ui` ports UI SDK primitives (button, toggle, switch, field,
   input, dialog, checkbox, radio, tabs, collapsible) as native WXML
   components, including uncontrolled variants and a touch-only dialog;
-- validation: 725 unit tests (shared 2, store 8, runtime 265, compiler 324,
+- validation: 726 unit tests (shared 2, store 8, runtime 266, compiler 324,
   build 126), glass-easel rendering tests and 13 minidev e2e cases.
 
 Known limits are documented in [Compiler](docs/compiler.md),

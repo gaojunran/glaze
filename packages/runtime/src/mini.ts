@@ -313,6 +313,12 @@ const requireSetupContext = (hook: string): GlazeContext => {
 export const usePageVisible = (): (() => boolean) =>
   requireSetupContext('usePageVisible').pageVisible
 
+/** Commit the next pending data batch from inside a component body. */
+export const useCommit = (): (() => Promise<void>) => {
+  const ctx = requireSetupContext('useCommit')
+  return () => ctx.commit()
+}
+
 /** Reactive page size for the component currently being set up. */
 export const usePageSize = (): (() => PageSize | null) =>
   requireSetupContext('usePageSize').pageSize

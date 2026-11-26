@@ -585,8 +585,10 @@ are in `bench/frameworks/results/2026-11-26/frame-overhead.json` and
 ### Waiting for a platform data commit
 
 `ctx.commit()` returns a promise that resolves after the next pending data batch
-has been handed to the platform transport. It is the explicit boundary between
-Solid state and the mini-program `data` object:
+has been handed to the platform transport. Inside TSX, `useCommit()` returns the
+same function; `ctx` itself is the compiler-generated setup parameter and is not
+part of the component authoring API. It is the explicit boundary between Solid
+state and the mini-program `data` object:
 
 - a signal write first runs its Solid effect, which queues binding changes;
 - `commit()` waits for that queue plus the scheduler in use (microtask, or the
@@ -609,6 +611,23 @@ truth, not `data`. `commit()` is for the places where a platform API or native
 component requires the data object, for example a page share payload assembled
 from generated data or a native interop probe. Normal events, derived values
 and child props should read signals, memo accessors or `props`.
+
+```tsx
+import { useCommit } from '@glaze/runtime'
+
+function ShareButton() {
+  const commit = useCommit()
+  const [title, setTitle] = createSignal('initial')
+
+  const publish = async () => {
+    setTitle('updated')
+    await commit()
+    // A platform API that reads the committed data object can run here.
+  }
+
+  return <button onClick={publish}>{title()}</button>
+}
+```
 
 ### Config validation
 
@@ -674,7 +693,7 @@ not promised.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 265, pass 265, fail 0 (includes frame scheduler and boundary tests)
+# tests 266, pass 266, fail 0 (includes frame scheduler and boundary tests)
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json (no output)
 pnpm --filter @glaze/build test

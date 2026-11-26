@@ -23,6 +23,7 @@ import {
   onComponentError,
   onUnhandledRejection,
   projectList,
+  useCommit,
   useLaunchOptions,
   usePageSize,
   usePageVisible,
@@ -1844,6 +1845,29 @@ test('ctx.commit resolves after the pending batch reaches setData', async () => 
 
   assert.equal(instance.calls.length, before + 1)
   assert.equal(instance.calls.at(-1).b0, 'new')
+})
+
+test('useCommit exposes ctx.commit to a component body', async () => {
+  let setValue
+  let commit
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    setup(ctx) {
+      const [value, set] = createSignal('a')
+      setValue = set
+      commit = useCommit()
+      ctx.bind(0, () => value())
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  const before = instance.calls.length
+
+  setValue('b')
+  await commit()
+  assert.equal(instance.calls.length, before + 1)
+  assert.equal(instance.calls.at(-1).b0, 'b')
 })
 
 test('ctx.commit coalesces several writes into one batch', async () => {

@@ -10,6 +10,7 @@ export {
   onPageEvent,
   onUnhandledRejection,
   useAppVisible,
+  useCommit,
   useLaunchOptions,
   usePageEvent,
   usePageOptions,
