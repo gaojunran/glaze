@@ -88,6 +88,8 @@ export type GlazeContext = {
     loadingBoundary?: number | null,
     errorBoundary?: number | null,
   ): void
+  /** Resolve after the next pending data batch has been committed. */
+  commit(): Promise<void>
   event(index: number, fn: GlazeEventHandler): void
   ref(
     index: number,
@@ -180,6 +182,12 @@ export type InstanceState = {
     { gated(boundary: number): boolean; hidden(boundary: number): boolean }
   >
   pending: DataChange[]
+  /** Waiters for the next transport commit; settled after apply or failure. */
+  commitWaiters: Array<{ resolve: () => void; reject: (error: unknown) => void }>
+  /** Set by the attach path; absent when no component can commit. */
+  requestCommit: (() => Promise<void>) | null
+  /** True while transport.apply is running; new commit waiters wait for it. */
+  flushInProgress: boolean
   /** Content writes held while a boundary shows its fallback. */
   held: Map<number, unknown>
   statusVersion: [() => number, (value: number) => void]

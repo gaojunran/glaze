@@ -124,6 +124,37 @@ test('Glaze keeps the old view until its commit, while direct setData is synchro
   assert.deepEqual(glaze.data, direct.data)
 })
 
+test('ctx.commit applies the data before a settle window would', async () => {
+  let setValue
+  let commit
+  const { glaze, direct } = pair(
+    '<text id="value">{{b0}}</text>',
+    {
+      data: { b0: null },
+      setup(ctx) {
+        const [value, set] = createSignal('old')
+        setValue = set
+        commit = () => ctx.commit()
+        ctx.bind(0, () => value())
+      },
+    },
+    { b0: 'old' },
+  )
+  await settle()
+
+  setValue('new')
+  direct.setData({ b0: 'new' })
+  await commit()
+  assert.deepEqual(glaze.data, direct.data)
+  assert.equal(glaze.data.b0, 'new')
+
+  await settle()
+  assert.equal(
+    textContentOf(glaze.getShadowRoot()!.querySelector('#value')),
+    textContentOf(direct.getShadowRoot()!.querySelector('#value')),
+  )
+})
+
 test('keyed list patches and splices keep the same rendered order as direct setData', async () => {
   let setRows
   const { glaze, direct } = pair(

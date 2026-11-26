@@ -582,6 +582,34 @@ are in `bench/frameworks/results/2026-11-26/frame-overhead.json` and
 
 ![Frame-token cost](assets/frame-commit-overhead.png)
 
+### Waiting for a platform data commit
+
+`ctx.commit()` returns a promise that resolves after the next pending data batch
+has been handed to the platform transport. It is the explicit boundary between
+Solid state and the mini-program `data` object:
+
+- a signal write first runs its Solid effect, which queues binding changes;
+- `commit()` waits for that queue plus the scheduler in use (microtask, or the
+  view frame for a component with an async boundary);
+- it resolves after `transport.apply` succeeds, so a following `this.data`,
+  `selectComponent().data` or native-property read sees the committed values;
+  selector queries and node operations still depend on the platform's view-side
+  update, which commit does not wait for;
+- it rejects when the component detaches before the batch commits, when the
+  transport throws, or when it is called without an attached component;
+- with no pending changes it resolves immediately after one microtask.
+
+The promise means "data committed", not "paint complete". Direct
+mini-program `setData` also stops at the appservice data object; the view
+layer still updates through the platform's own bridge. `ctx.commit()` removes
+the Glaze-specific scheduling gap, not the platform's rendering latency.
+
+Application code still should treat Solid signals and stores as the source of
+truth, not `data`. `commit()` is for the places where a platform API or native
+component requires the data object, for example a page share payload assembled
+from generated data or a native interop probe. Normal events, derived values
+and child props should read signals, memo accessors or `props`.
+
 ### Config validation
 
 `defineGlazeComponent` validates the generated config before it builds any
@@ -646,7 +674,7 @@ not promised.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 257, pass 257, fail 0 (includes frame scheduler and boundary tests)
+# tests 265, pass 265, fail 0 (includes frame scheduler and boundary tests)
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json (no output)
 pnpm --filter @glaze/build test

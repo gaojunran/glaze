@@ -991,6 +991,57 @@ test('uses the frame token on a component with a boundary', async () => {
   }
 })
 
+test('ctx.commit waits for the view frame on a boundary component', async () => {
+  const holder = globalThis as unknown as { wx?: unknown }
+  const originalWx = holder.wx
+  holder.wx = {}
+  try {
+    let setCount
+    let commit
+    const def = defineGlazeComponent({
+      boundaries: [
+        { id: 0, kind: 'loading', parent: null, region: 'content', content: [0], children: [], keepPrevious: true },
+      ],
+      data: { b0: null },
+      setup(ctx) {
+        const [count, set] = createSignal(0)
+        setCount = set
+        commit = () => ctx.commit()
+        ctx.bind(0, () => count())
+      },
+    })
+
+    const instance = createInstance(def)
+    const frames = []
+    instance.setData = (data, callback) => {
+      instance.calls.push(data)
+      if (Object.keys(data).length === 0) frames.push(callback)
+    }
+    def.lifetimes.attached.call(instance)
+    const dataCalls = () => instance.calls.filter((data) => Object.keys(data).length > 0)
+    const before = dataCalls().length
+
+    setCount(1)
+    let settled = false
+    const pending = commit().then(() => {
+      settled = true
+    })
+    await tick()
+    assert.equal(settled, false)
+    assert.equal(dataCalls().length, before)
+    assert.ok(frames.length > 0)
+
+    for (const frame of frames) frame()
+    await pending
+    assert.equal(settled, true)
+    assert.equal(dataCalls().length, before + 1)
+    assert.deepEqual(dataCalls().at(-1), { b0: 1 })
+  } finally {
+    if (originalWx === undefined) delete holder.wx
+    else holder.wx = originalWx
+  }
+})
+
 test('a flush queued before detach does not call setData', async () => {
   let setCount
   const def = defineGlazeComponent({
@@ -1769,6 +1820,138 @@ test('clears pending when a boundary binding fails instead of resolving', async 
   await tick()
   assert.equal(merged().b2, true)
   assert.equal(merged().b1, false)
+})
+
+test('ctx.commit resolves after the pending batch reaches setData', async () => {
+  let setValue
+  let commit
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    setup(ctx) {
+      const [value, set] = createSignal('old')
+      setValue = set
+      commit = () => ctx.commit()
+      ctx.bind(0, () => value())
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  const before = instance.calls.length
+
+  setValue('new')
+  await commit()
+
+  assert.equal(instance.calls.length, before + 1)
+  assert.equal(instance.calls.at(-1).b0, 'new')
+})
+
+test('ctx.commit coalesces several writes into one batch', async () => {
+  let setA
+  let setB
+  let commit
+  const def = defineGlazeComponent({
+    data: { b0: null, b1: null },
+    setup(ctx) {
+      const [a, set] = createSignal(0)
+      const [b, setOther] = createSignal(0)
+      setA = set
+      setB = setOther
+      commit = () => ctx.commit()
+      ctx.bind(0, () => a())
+      ctx.bind(1, () => b())
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  const before = instance.calls.length
+
+  setA(1)
+  setB(2)
+  await commit()
+
+  assert.equal(instance.calls.length, before + 1)
+  assert.equal(instance.calls.at(-1).b0, 1)
+  assert.equal(instance.calls.at(-1).b1, 2)
+})
+
+test('ctx.commit resolves immediately when nothing is pending', async () => {
+  let commit
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    setup(ctx) {
+      commit = () => ctx.commit()
+      ctx.bind(0, () => 1)
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  const before = instance.calls.length
+
+  await commit()
+  assert.equal(instance.calls.length, before)
+})
+
+test('ctx.commit rejects when the transport commit fails', async () => {
+  let setValue
+  let commit
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    setup(ctx) {
+      const [value, set] = createSignal('a')
+      setValue = set
+      commit = () => ctx.commit()
+      ctx.bind(0, () => value())
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+
+  instance.setData = () => {
+    throw new Error('transport boom')
+  }
+  setValue('b')
+  await assert.rejects(commit(), /transport boom/)
+})
+
+test('ctx.commit rejects when the component detaches before the batch commits', async () => {
+  let setValue
+  let commit
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    setup(ctx) {
+      const [value, set] = createSignal('a')
+      setValue = set
+      commit = () => ctx.commit()
+      ctx.bind(0, () => value())
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+
+  setValue('b')
+  const pending = commit()
+  def.lifetimes.detached.call(instance)
+  await assert.rejects(pending, /detached before commit/)
+})
+
+test('ctx.commit rejects outside an attached component', async () => {
+  let commit
+  const def = defineGlazeComponent({
+    data: {},
+    setup(ctx) {
+      commit = () => ctx.commit()
+    },
+  })
+  const instance = createInstance(def)
+  await assert.rejects(commit(), /requires an attached component/)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  await commit()
 })
 
 test('shares a memo between bindings and ignores unrelated signals', async () => {

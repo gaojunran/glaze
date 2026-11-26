@@ -151,7 +151,7 @@ cd examples/solid-todo && pnpm build
 # glaze build: 24 pages, 51 components
 
 mise exec -- pnpm -r test
-# shared 2, store 8, runtime 257, compiler 324, build 126 = 717, 0 failed
+# shared 2, store 8, runtime 265, compiler 324, build 126 = 725, 0 failed
 
 mise exec -- pnpm -r --if-present typecheck
 # 7 packages Done (shared, store, ui, runtime, compiler, build, vite-plugin)

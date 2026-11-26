@@ -784,6 +784,9 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
             errorBoundary,
           })
         },
+        commit: () =>
+          state.requestCommit?.() ??
+          Promise.reject(new Error('[glaze] ctx.commit() requires an attached component')),
         event(index, fn) {
           state.events[index] = fn
         },
@@ -1098,9 +1101,16 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
       allowSetData: !legacyFramework && frameCommit,
     })
 
-    const schedule = (changes: DataChange[]) => {
-      if (changes.length === 0) return
-      for (const change of changes) state.pending.push(change)
+    const settleCommitWaiters = (error?: unknown) => {
+      const waiters = state.commitWaiters
+      state.commitWaiters = []
+      for (const waiter of waiters) {
+        if (error === undefined) waiter.resolve()
+        else waiter.reject(error)
+      }
+    }
+
+    const requestFlush = () => {
       if (state.flushScheduled) return
       state.flushScheduled = true
       const epoch = state.flushEpoch
@@ -1111,9 +1121,18 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
         state.flushScheduled = false
         const pending = state.pending
         state.pending = []
-        if (!platformAttached(state.lifecycle) || pending.length === 0) return
+        if (!platformAttached(state.lifecycle) || pending.length === 0) {
+          settleCommitWaiters(
+            platformAttached(state.lifecycle)
+              ? undefined
+              : new Error('[glaze] component detached before commit'),
+          )
+          return
+        }
+        state.flushInProgress = true
         try {
           transport.apply(pending)
+          settleCommitWaiters()
         } catch (error) {
           // `binding.previous` was advanced when this batch was scheduled, but
           // the platform never received it. Invalidate every baseline in the
@@ -1125,11 +1144,45 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
             const binding = state.core.bindings[index]
             if (binding) binding.previous = INVALID_BASELINE
           }
+          settleCommitWaiters(error)
           notifyComponentError(state, error)
           reportTransportError(error)
+        } finally {
+          state.flushInProgress = false
         }
       }
       scheduleFrame(flush)
+    }
+
+    const schedule = (changes: DataChange[]) => {
+      if (changes.length === 0) return
+      for (const change of changes) state.pending.push(change)
+      requestFlush()
+    }
+
+    state.requestCommit = () => {
+      if (!platformAttached(state.lifecycle)) {
+        return Promise.reject(new Error('[glaze] ctx.commit() requires an attached component'))
+      }
+      return new Promise<void>((resolve, reject) => {
+        // Let the current Solid flush run first: a signal write schedules the
+        // binding effect in a microtask, so checking `pending` synchronously
+        // would resolve before the change exists.
+        queueMicrotask(() => {
+          if (!platformAttached(state.lifecycle)) {
+            reject(new Error('[glaze] component detached before commit'))
+            return
+          }
+          if (state.pending.length === 0 && !state.flushScheduled && !state.flushInProgress) {
+            resolve()
+            return
+          }
+          state.commitWaiters.push({ resolve, reject })
+          if (state.pending.length > 0 && !state.flushScheduled && !state.flushInProgress) {
+            requestFlush()
+          }
+        })
+      })
     }
 
     const applyBinding = (index: number, value: unknown, force = false) => {
@@ -1438,6 +1491,9 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
           refs: [],
           revealByBoundary: new Map(),
           pending: [],
+          commitWaiters: [],
+          requestCommit: null,
+          flushInProgress: false,
           held: new Map(),
           statusVersion: createSignal(0),
           asyncStatus: config.asyncStatus,
@@ -1631,6 +1687,14 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
         // rebuild the disposed root instead of seeing a dead instance.
         state.lifecycle = detachLifecycle(state.lifecycle)
         state.pending = []
+        {
+          const waiters = state.commitWaiters
+          state.commitWaiters = []
+          const error = new Error('[glaze] component detached before commit')
+          for (const waiter of waiters) waiter.reject(error)
+        }
+        state.requestCommit = null
+        state.flushInProgress = false
         state.held.clear()
         state.flushScheduled = false
         state.flushEpoch += 1
