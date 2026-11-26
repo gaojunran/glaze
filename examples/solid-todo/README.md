@@ -46,7 +46,8 @@ Pages:
 - `pages/reactive/index` — `createStore` nested objects/arrays, `createMemo`, object signals and keyed `For`;
 - `pages/tailwind/index` — Tailwind 4 utilities compiled into `app.wxss` (see `src/tailwind.css`);
 - `pages/context/index` — imported context across a component boundary;
-- `pages/async/index` — async `Loading` / `Errored` boundaries;
+- `pages/async/index` — async `Loading` / `Errored` boundaries and a `Reveal`
+  group with a collapsed tail;
 - `pages/ui/index` — `vercel-labs/ui` port from `@glaze/ui`: button, toggle,
   switch, field, input, dialog, checkbox, radio, tabs and collapsible;
 - `pkg/pages/sub/index` — independent subpackage page with its own `glaze-runtime`;

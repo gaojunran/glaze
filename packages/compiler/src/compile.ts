@@ -276,6 +276,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     nextAsyncBoundary: 0,
     currentLoadingBoundary: null,
     currentErrorBoundary: null,
+    currentRevealGroup: null,
     asyncStatus: [],
     listProjectionBlocked: new Set<number>(),
     namedSlots: new Set<string>(),

@@ -55,8 +55,8 @@ glass-easel 组件，不替换平台渲染器。也可以通过可选的兼容�
 可工作的 spike，不是生产框架。已覆盖：
 
 - Solid 2 控制流：`For`（全部 keyed 模式、`fallback`、嵌套）、`Show`
-  （含回调与 `fallback`）、`Switch`/`Match`、`Repeat`、解构、静态 spread、
-  `class`/`style` 辅助函数；
+  （含回调与 `fallback`）、`Switch`/`Match`、`Repeat`、`Reveal`、解构、
+  静态 spread、`class`/`style` 辅助函数；
 - 组件：props、默认与具名 slot、自定义事件（含 `catch`/`capture`/`mut-bind`）、
   递归内联保护、跨组件边界的 context（对象值保持响应式）、ref 测量、节点查询、
   focus/blur 与属性访问；
@@ -72,8 +72,8 @@ glass-easel 组件，不替换平台渲染器。也可以通过可选的兼容�
 - UI：`@glaze/ui` 把 UI SDK 组件（button、toggle、switch、field、input、
   dialog、checkbox、radio、tabs、collapsible）移植为原生 WXML 组件，
   包含非受控变体与仅触屏的 dialog；
-- 验证：666 个单元测试（shared 2、store 8、runtime 212、compiler 318、
-  build 126）、glass-easel 渲染测试和 12 个 minidev e2e 用例。
+- 验证：677 个单元测试（shared 2、store 8、runtime 218、compiler 323、
+  build 126）、glass-easel 渲染测试和 13 个 minidev e2e 用例。
 
 已知限制记录在 [编译器](docs/compiler.md)、[Store](docs/store.md)、
 [UI SDK 移植](docs/ui.md)、[构建](docs/build.md) 和 [优化](docs/optimizations.md) 中。编译器与运行时的结构重构记录在

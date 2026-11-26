@@ -209,6 +209,32 @@ const profile = createMemo(async () => {
 - Error objects crossing into WXML are normalized to `{ name, message }`.
   `error()` in an `Errored` fallback reads that normalized value.
 
+### Reveal
+
+`Reveal` coordinates a group of sibling `Loading` boundaries:
+
+```tsx
+<Reveal order="sequential" collapsed>
+  <Loading fallback={<text>header loading</text>}>
+    <text>{header()}</text>
+  </Loading>
+  <Loading fallback={<text>body loading</text>}>
+    <text>{body()}</text>
+  </Loading>
+</Reveal>
+```
+
+- `order` is `sequential` (default), `together` or `natural`; `collapsed`
+  hides the slots behind a sequential frontier instead of showing their
+  fallbacks.
+- `order` and `collapsed` may be static or reactive expressions; changing
+  either updates the group without remounting.
+- Only `Loading` boundaries that are direct children of the `Reveal` are
+  slots. A `Loading` inside another boundary, a component, or a loop is not
+  coordinated by the outer group.
+- Nested `Reveal` groups and `Reveal` inside a loop are compile errors.
+- A slot that has delivered content stays released through a refetch.
+
 ### Loading on
 
 `on` re-arms a loading boundary when a dependency changes:

@@ -1,6 +1,14 @@
-import { createMemo, createSignal, Errored, For, Loading } from 'solid-js'
+import { createMemo, createSignal, Errored, For, Loading, Reveal } from 'solid-js'
 import { createRequest } from '@glaze/runtime'
 import AsyncRow from './AsyncRow'
+
+const makeGate = () => {
+  let open!: () => void
+  const promise = new Promise<void>((resolve) => {
+    open = resolve
+  })
+  return { promise, open }
+}
 
 export default function AsyncPage() {
   const later = createMemo(async () => {
@@ -11,6 +19,8 @@ export default function AsyncPage() {
     throw new Error('boom')
   })
   const [flakyAttempt, setFlakyAttempt] = createSignal(0)
+  const revealGateA = makeGate()
+  const revealGateB = makeGate()
   const rows = createMemo(() => [
     { id: 1, title: 'row-a', delay: 40 },
     { id: 2, title: 'row-b', delay: 80 },
@@ -21,6 +31,14 @@ export default function AsyncPage() {
     const id = profileId()
     await new Promise((resolve) => setTimeout(resolve, 300))
     return `user-${id}`
+  })
+  const revealFirst = createMemo(async () => {
+    await revealGateA.promise
+    return 'reveal-a'
+  })
+  const revealSecond = createMemo(async () => {
+    await revealGateB.promise
+    return 'reveal-b'
   })
   const ping = createRequest(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -60,6 +78,20 @@ export default function AsyncPage() {
       </Loading>
       <button class="refetch" onClick={() => setProfileId(2)}>
         refetch
+      </button>
+      <Reveal collapsed>
+        <Loading fallback={<text class="reveal-a-loading">a loading</text>}>
+          <text class="reveal-a">{revealFirst()}</text>
+        </Loading>
+        <Loading fallback={<text class="reveal-b-loading">b loading</text>}>
+          <text class="reveal-b">{revealSecond()}</text>
+        </Loading>
+      </Reveal>
+      <button class="reveal-a-resolve" onClick={() => revealGateA.open()}>
+        resolve a
+      </button>
+      <button class="reveal-b-resolve" onClick={() => revealGateB.open()}>
+        resolve b
       </button>
       <text class="request-state">{ping.data() ?? 'request-pending'}</text>
       <Errored

@@ -134,6 +134,76 @@ export function compileShowCallback(ctx, scope, when, keyed, fn, fallback) {
   return `${thenNode}${elseNode}`
 }
 
+const REVEAL_ORDERS = new Set(['sequential', 'together', 'natural'])
+
+/**
+ * `<Reveal>` owns the Loading boundaries created directly inside it. The
+ * compiler records those boundary ids and creates one runtime coordinator;
+ * each Loading then projects `gated`/`hidden` through its fallback and
+ * content conditions. Nested Reveal groups and Reveal inside a loop are
+ * rejected for now: both need a per-row or composite slot identity that the
+ * WXML projection does not have yet.
+ */
+export function compileReveal(node, ctx, scope) {
+  if (scope) {
+    throw new Error(
+      '<Reveal> inside a loop is not supported; move the Reveal group into a component',
+    )
+  }
+  if (ctx.currentRevealGroup) {
+    throw new Error('<Reveal> cannot be nested inside another <Reveal>')
+  }
+
+  const orderAttr = getAttribute(node, 'order')
+  const orderValue = orderAttr ? getExpression(orderAttr) : t.stringLiteral('sequential')
+  if (!orderValue) {
+    throw new Error('<Reveal> order must be a string literal or an expression')
+  }
+  if (t.isStringLiteral(orderValue) && !REVEAL_ORDERS.has(orderValue.value)) {
+    throw new Error('<Reveal> order must be one of: sequential, together, natural')
+  }
+  if (containsJsx(orderValue) || t.isJSXElement(orderValue) || t.isJSXFragment(orderValue)) {
+    throw new Error('<Reveal> order must be a JS expression, not JSX')
+  }
+  ctx.notePropReads(orderValue)
+
+  const collapsedAttr = getAttribute(node, 'collapsed')
+  const collapsedValue = collapsedAttr ? getExpression(collapsedAttr) : t.booleanLiteral(false)
+  if (!collapsedValue) {
+    throw new Error('<Reveal> collapsed must be a boolean or an expression')
+  }
+  if (containsJsx(collapsedValue) || t.isJSXElement(collapsedValue) || t.isJSXFragment(collapsedValue)) {
+    throw new Error('<Reveal> collapsed must be a JS expression, not JSX')
+  }
+  ctx.notePropReads(collapsedValue)
+
+  const group = {
+    slots: [] as number[],
+  }
+  const previous = ctx.currentRevealGroup
+  ctx.currentRevealGroup = group
+  let children: string
+  try {
+    children = compileChildren(node.children, ctx, scope)
+  } finally {
+    ctx.currentRevealGroup = previous
+  }
+
+  ctx.addSetupStatement(
+    t.expressionStatement(
+      t.callExpression(
+        t.memberExpression(t.identifier('ctx'), t.identifier('revealGroup')),
+        [
+          t.arrowFunctionExpression([], orderValue),
+          t.arrowFunctionExpression([], collapsedValue),
+          t.arrayExpression(group.slots.map((slot) => t.numericLiteral(slot))),
+        ],
+      ),
+    ),
+  )
+  return children
+}
+
 export function compileAsyncBoundary(node, ctx, scope, kind) {
   if (scope) {
     throw new Error(
@@ -171,8 +241,10 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
 
   const outerLoading = ctx.currentLoadingBoundary
   const outerError = ctx.currentErrorBoundary
+  const revealGroup = ctx.currentRevealGroup
   const boundary = ctx.nextAsyncBoundary
   ctx.nextAsyncBoundary += 1
+  if (kind === 'Loading' && revealGroup) revealGroup.slots.push(boundary)
   if (on) {
     ctx.addEffectCode(`ctx.loadingOn(${boundary}, () => (${codeOf(on)}))`, on)
   }
@@ -195,64 +267,72 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
   }
 
   let fallbackContent = ''
-  if (fallback && isFunctionFallback) {
-    const param = fallback.params[0]
-    if (!param || !t.isIdentifier(param)) {
-      throw new Error('<Errored> fallback must take an error accessor')
-    }
-    const resetParam = fallback.params[1]
-    if (resetParam && !t.isIdentifier(resetParam)) {
-      throw new Error('<Errored> reset parameter must be an identifier')
-    }
-    const resetName = resetParam && t.isIdentifier(resetParam) ? resetParam.name : null
-    const resetAlias = resetName ? `__glazeReset${boundary}` : null
-    const renamed =
-      resetName && resetAlias
-        ? renameIdentifiers(fallback, resetName, resetAlias)
-        : fallback
-    if (resetAlias) {
-      ctx.addSetupStatement(
-        t.variableDeclaration('const', [
-          t.variableDeclarator(
-            t.identifier(resetAlias),
-            t.arrowFunctionExpression(
-              [],
-              t.callExpression(
-                t.memberExpression(t.identifier('ctx'), t.identifier('reset')),
-                [t.numericLiteral(boundary)],
+  // A fallback is not a slot of the enclosing Reveal: its Loading boundaries
+  // belong to the fallback's own subtree.
+  const fallbackReveal = ctx.currentRevealGroup
+  ctx.currentRevealGroup = null
+  try {
+    if (fallback && isFunctionFallback) {
+      const param = fallback.params[0]
+      if (!param || !t.isIdentifier(param)) {
+        throw new Error('<Errored> fallback must take an error accessor')
+      }
+      const resetParam = fallback.params[1]
+      if (resetParam && !t.isIdentifier(resetParam)) {
+        throw new Error('<Errored> reset parameter must be an identifier')
+      }
+      const resetName = resetParam && t.isIdentifier(resetParam) ? resetParam.name : null
+      const resetAlias = resetName ? `__glazeReset${boundary}` : null
+      const renamed =
+        resetName && resetAlias
+          ? renameIdentifiers(fallback, resetName, resetAlias)
+          : fallback
+      if (resetAlias) {
+        ctx.addSetupStatement(
+          t.variableDeclaration('const', [
+            t.variableDeclarator(
+              t.identifier(resetAlias),
+              t.arrowFunctionExpression(
+                [],
+                t.callExpression(
+                  t.memberExpression(t.identifier('ctx'), t.identifier('reset')),
+                  [t.numericLiteral(boundary)],
+                ),
               ),
             ),
-          ),
-        ]),
-      )
+          ]),
+        )
+      }
+      const callback = callbackBody(renamed, '<Errored>', [
+        param.name,
+        ...(resetAlias ? [resetAlias] : []),
+      ])
+      assertScopeName(param.name, '<Errored>')
+      if (!t.isJSXElement(callback.jsx) && !t.isJSXFragment(callback.jsx)) {
+        throw new Error('<Errored> fallback function must return JSX')
+      }
+      const values = ctx.addBindingCode(`ctx.errorArray(${boundary})`)
+      const errorScope = makeCallbackScope({
+        item: param.name,
+        index: '__glazeErrorIndex',
+        source: bindingKey(values),
+        jsSource: `ctx.errorArray(${boundary})`,
+        parent: null,
+        itemAccessor: true,
+        indexAccessor: false,
+        aliases: callback.aliases,
+        listBinding: null,
+      })
+      fallbackContent = `<block wx:for="{{${bindingKey(values)}}}" wx:for-item="${param.name}" wx:for-index="__glazeErrorIndex" wx:key="${LIST_KEY_WHOLE}">${compileNode(callback.jsx, ctx, errorScope)}</block>`
+    } else if (fallback) {
+      // The fallback and the boundary's own condition belong to the enclosing
+      // boundary; only the children are governed by this one. That lets nested
+      // Loading boundaries show their own fallback without outer pending state
+      // hiding the inner one.
+      fallbackContent = compileNode(fallback, ctx, scope)
     }
-    const callback = callbackBody(renamed, '<Errored>', [
-      param.name,
-      ...(resetAlias ? [resetAlias] : []),
-    ])
-    assertScopeName(param.name, '<Errored>')
-    if (!t.isJSXElement(callback.jsx) && !t.isJSXFragment(callback.jsx)) {
-      throw new Error('<Errored> fallback function must return JSX')
-    }
-    const values = ctx.addBindingCode(`ctx.errorArray(${boundary})`)
-    const errorScope = makeCallbackScope({
-      item: param.name,
-      index: '__glazeErrorIndex',
-      source: bindingKey(values),
-      jsSource: `ctx.errorArray(${boundary})`,
-      parent: null,
-      itemAccessor: true,
-      indexAccessor: false,
-      aliases: callback.aliases,
-      listBinding: null,
-    })
-    fallbackContent = `<block wx:for="{{${bindingKey(values)}}}" wx:for-item="${param.name}" wx:for-index="__glazeErrorIndex" wx:key="${LIST_KEY_WHOLE}">${compileNode(callback.jsx, ctx, errorScope)}</block>`
-  } else if (fallback) {
-    // The fallback and the boundary's own condition belong to the enclosing
-    // boundary; only the children are governed by this one. That lets nested
-    // Loading boundaries show their own fallback without outer pending state
-    // hiding the inner one.
-    fallbackContent = compileNode(fallback, ctx, scope)
+  } finally {
+    ctx.currentRevealGroup = fallbackReveal
   }
   const index = ctx.addBindingCode(
     kind === 'Loading' ? `ctx.loading(${boundary})` : `ctx.errored(${boundary})`,
@@ -272,10 +352,37 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
   // receives the state its inner counterpart does not handle.
   if (kind === 'Loading') ctx.currentLoadingBoundary = boundary
   else ctx.currentErrorBoundary = boundary
-  const children = compileChildren(node.children, ctx, scope)
-  const pendingContent = pending ? compileNode(pending, ctx, scope) : ''
-  ctx.currentLoadingBoundary = outerLoading
-  ctx.currentErrorBoundary = outerError
+  // A boundary clears the reveal context for its content: only Loading
+  // boundaries created directly under <Reveal> are slots, not ones nested in
+  // another boundary or in an error fallback.
+  const savedReveal = ctx.currentRevealGroup
+  ctx.currentRevealGroup = null
+  let children: string
+  let pendingContent: string
+  try {
+    children = compileChildren(node.children, ctx, scope)
+    pendingContent = pending ? compileNode(pending, ctx, scope) : ''
+  } finally {
+    ctx.currentRevealGroup = savedReveal
+    ctx.currentLoadingBoundary = outerLoading
+    ctx.currentErrorBoundary = outerError
+  }
+
+  let gatedIndex: number | null = null
+  let hiddenIndex: number | null = null
+  if (kind === 'Loading' && revealGroup) {
+    // These conditions are plain bindings, not governed by the boundary that
+    // owns the Loading: the group decides them.
+    ctx.currentLoadingBoundary = null
+    ctx.currentErrorBoundary = null
+    try {
+      gatedIndex = ctx.addBindingCode(`ctx.revealGated(${boundary})`)
+      hiddenIndex = ctx.addBindingCode(`ctx.revealHidden(${boundary})`)
+    } finally {
+      ctx.currentLoadingBoundary = outerLoading
+      ctx.currentErrorBoundary = outerError
+    }
+  }
 
   if (kind === 'Errored') {
     const condition = bindingKey(index)
@@ -287,16 +394,26 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
   const loaded = loadedIndex != null ? bindingKey(loadedIndex) : null
   const initial = loaded ? `${loading} && !${loaded}` : loading
   const content = loaded ? `!${loading} || ${loaded}` : `!${loading}`
-  const pendingCondition = pending ? (loaded ? `${loading} && ${loaded}` : loading) : null
+  const basePending = pending ? (loaded ? `${loading} && ${loaded}` : loading) : null
+  const gate = gatedIndex != null ? bindingKey(gatedIndex) : null
+  const hide = hiddenIndex != null ? bindingKey(hiddenIndex) : null
+  const fallbackCondition =
+    gate && hide ? `!${hide} && (${gate} || (${initial}))` : initial
+  const contentCondition =
+    gate && hide ? `!${hide} && !${gate} && (${content})` : content
+  const pendingCondition =
+    basePending && gate && hide
+      ? `!${hide} && !${gate} && (${basePending})`
+      : basePending
   const pendingBlock =
     pending && pendingCondition
       ? `<block wx:if="{{${pendingCondition}}}">${pendingContent}</block>`
       : ''
 
   if (!fallback) {
-    return `${pendingBlock}<block wx:if="{{${content}}}">${children}</block>`
+    return `${pendingBlock}<block wx:if="{{${contentCondition}}}">${children}</block>`
   }
-  return `${pendingBlock}<block wx:if="{{${initial}}}">${fallbackContent}</block><block wx:if="{{${content}}}">${children}</block>`
+  return `${pendingBlock}<block wx:if="{{${fallbackCondition}}}">${fallbackContent}</block><block wx:if="{{${contentCondition}}}">${children}</block>`
 }
 
 export function compileShow(node, ctx, scope) {

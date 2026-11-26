@@ -462,6 +462,30 @@ non-positive `bindingGroupSize`, a negative `handlerCount`, malformed
 or kinds. These are all cases where the old runtime would silently build the
 wrong signal set or skip a generated feature.
 
+## Reveal coordination
+
+`<Reveal>` is compiled into a runtime group and a list of direct `Loading`
+boundary ids. Setup calls `ctx.revealGroup(order, collapsed, slots)` before any
+binding is registered; `order` and `collapsed` are accessors, so reactive
+values re-derive the group.
+
+`packages/runtime/src/reveal.ts` keeps a `createMemo` per group that reads the
+boundary signals through `settledOf` and `loadingOf`, plus the order and
+collapsed accessors. A slot is ready when it
+has delivered a first value or has nothing pending. The memo returns
+`{ gated, hidden }` per slot; the compiler creates one ordinary binding for
+`ctx.revealGated(boundary)` and one for `ctx.revealHidden(boundary)` per slot.
+The WXML `Loading` conditions combine those bindings with the existing
+`loading`/`hasValue` conditions.
+
+This is intentionally not a Solid boundary-output clone. Solid's controller
+forces state directly on boundary outputs, holds the previous frame, and
+graduates slots as their content is shown. Glaze has no boundary output object;
+it projects the same order through data bindings and therefore inherits the
+mini-program transport's commit timing. The user-visible semantics are the
+same for `sequential` / `together` / `natural`, frontier fallback, and
+collapsed tails; frame-level hold is not promised.
+
 ## Trade-offs
 
 - Logging no longer reads a component-wide flag. `config.errorBoundary` is
@@ -482,12 +506,12 @@ wrong signal set or skip a generated feature.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 200, pass 200, fail 0
+# tests 218, pass 218, fail 0
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json (no output)
 pnpm --filter @glaze/build test
-# tests 122, pass 122, fail 0
+# tests 126, pass 126, fail 0
 cd examples/solid-todo && pnpm build
-# glaze build: 17 pages, 32 components
-# minidev e2e: 10 cases, 10 passed (the context case scrolls and asserts the root sees the page event)
+# glaze build: 24 pages, 51 components
+# minidev e2e: 13 cases, 13 passed (the context case scrolls and asserts the root sees the page event)
 ```

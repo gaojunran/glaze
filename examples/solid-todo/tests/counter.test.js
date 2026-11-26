@@ -297,6 +297,26 @@ test('async Loading and Errored boundaries render fallbacks and resolved values'
   await expect(app).toMatchText('.request-state', 'request-done')
 })
 
+test('Reveal coordinates sibling Loading slots and hides a collapsed tail', async (miniProgram) => {
+  await miniProgram.reLaunch('/pages/async/index')
+  const page = await miniProgram.currentPage()
+  await page.waitFor(400)
+  const app = await page.$('#app')
+  if (!app) throw new Error('glaze-root not found')
+
+  await expect(app).toMatchText('.reveal-a-loading', 'a loading')
+  if (await app.$('.reveal-b-loading')) {
+    throw new Error('collapsed tail fallback rendered before the frontier resolved')
+  }
+
+  await (await app.$('.reveal-a-resolve')).tap()
+  await expect(app).toMatchText('.reveal-a', 'reveal-a')
+  await expect(app).toMatchText('.reveal-b-loading', 'b loading')
+
+  await (await app.$('.reveal-b-resolve')).tap()
+  await expect(app).toMatchText('.reveal-b', 'reveal-b')
+})
+
 test('independent subpackage loads its own runtime and updates state', async (miniProgram) => {
   await miniProgram.reLaunch('/pkg/pages/sub/index')
   const page = await miniProgram.currentPage()

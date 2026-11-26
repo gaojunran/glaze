@@ -100,6 +100,13 @@ export type GlazeContext = {
   loading(boundary: number): boolean
   /** True once every binding under the boundary has delivered a first value. */
   hasValue(boundary: number): boolean
+  revealGroup(
+    order: () => 'sequential' | 'together' | 'natural',
+    collapsed: () => boolean,
+    slots: number[],
+  ): void
+  revealGated(boundary: number): boolean
+  revealHidden(boundary: number): boolean
   errored(boundary: number): boolean
   error(boundary: number): unknown
   errorArray(boundary: number): unknown[]
@@ -157,6 +164,10 @@ export type InstanceState = {
     id: string
     fn: ((node: unknown) => void) | Array<(node: unknown) => void>
   }[]
+  revealByBoundary: Map<
+    number,
+    { gated(boundary: number): boolean; hidden(boundary: number): boolean }
+  >
   pending: DataChange[]
   statusVersion: [() => number, (value: number) => void]
   applyStatus: ((index: number, value: unknown) => void) | null

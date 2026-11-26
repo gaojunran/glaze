@@ -28,6 +28,7 @@ import {
   compileConditional,
   compileFor,
   compileRepeat,
+  compileReveal,
   compileShow,
   compileSwitch,
 } from './control.ts'
@@ -167,9 +168,7 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
   }
   const importedFrom = ctx.imports.get(name)
   if (name === 'Reveal' && importedFrom === 'solid-js') {
-    throw new Error(
-      '<Reveal> is not supported: mini-program WXML cannot order independently rendered <Loading> siblings; nest them or use separate sections',
-    )
+    return wrapDirectives(compileReveal(node, ctx, scope), extraAttrs)
   }
   if ((name === 'Dynamic' || name === 'Portal') && (importedFrom === '@solidjs/web' || importedFrom === 'solid-js/web')) {
     throw new Error(

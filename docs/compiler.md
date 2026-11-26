@@ -697,6 +697,41 @@ Remaining async work, deliberately left for a later pass:
 - Async computations that read `props` after `await` get a
   `GLAZE_UNTRACKED_READ_AFTER_AWAIT` build warning.
 
+### Reveal groups
+
+`<Reveal>` compiles to one runtime group plus two hidden bindings per direct
+`Loading` slot: `ctx.revealGated(boundary)` and `ctx.revealHidden(boundary)`.
+The group owns no DOM and no boundary output; it derives the slot states from
+the same `loading` and `settled` signals the `Loading` fallback already uses.
+`sequential` releases a ready slot, makes the first unready slot the frontier
+(showing its fallback), and gates the rest; `collapsed` renders the tail as
+nothing instead of its fallback. `together` gates every owned slot until all
+are ready and then releases them at once. `natural` releases each slot on its
+own.
+
+The generated WXML keeps the ordinary `Loading` conditions but adds the group
+conditions (`bH` and `bG` stand for the generated hidden/gated bindings):
+
+```xml
+<block wx:if="{{!bHidden && (bGated || bLoading)}}">fallback</block>
+<block wx:if="{{!bHidden && !bGated && bContent}}">content</block>
+```
+
+Because `gated`/`hidden` are ordinary bindings, they go through the same
+status/data transport batch as the Loading condition; there is no second frame
+where content appears before the group gates it. A slot that has delivered a
+first value stays released through a refetch, matching Solid's graduated slots.
+A slot that has never delivered a value is gated again if it starts pending.
+
+Direct-slot rule: a `Loading` nested in another `Loading`, an `Errored`, a
+component boundary, or a loop is not a slot of the outer group. Nested
+`Reveal` and `Reveal` inside a loop are compile errors. A `Loading` inside a
+plain `Show`/`Switch` branch remains a direct slot; when the branch is off the
+slot state is simply released because nothing is pending. `order` and
+`collapsed` accept static or reactive expressions; the group re-derives its
+slot states when either changes, so no remount is required. An unrecognized
+order string falls back to `sequential`.
+
 ### Refs
 
 `ref` on a native element generates a stable id and a node query:
@@ -1086,7 +1121,7 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
 7. **Unsupported JSX is a compile error instead of silently emitting an
    attribute or child the WXML view ignores.** The main categories:
    - `.map`, dynamic components (`Dynamic`), render props and function
-     children, `Portal`, `Transition`, `Reveal`, and the removed Solid 1 tags
+     children, `Portal`, `Transition`, and the removed Solid 1 tags
      (`Index`, `Suspense`, `ErrorBoundary`);
    - local component declarations are inlined only when they do not close over
      module-level state and can be rebuilt as a tiny module; otherwise move the
@@ -1102,9 +1137,8 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
    JSX spread only accepts an object literal; spreading `props` is rejected
    because attributes must be known at compile time. Destructuring supports
    objects, arrays, nested patterns and aliases; rest elements and defaults are
-   rejected. `<Reveal>` is rejected because WXML cannot order independently
-   rendered `<Loading>` siblings; nest the boundaries or render separate
-   sections instead.
+   rejected. `<Reveal>` is not rejected; its boundary-slot ordering is
+   documented in the async section above.
 8. **`For` keyed functions** must return a single field (`(item) => item.id`);
    nested keys are rejected. `keyed={false}` intentionally omits `wx:key`, so
    the simulator prints a performance warning.
@@ -1116,7 +1150,16 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
 11. **Async boundaries** (`Loading` / `Errored`) support nesting, `Loading on`
     and an `Errored` reset function, but not inside a loop; boundary parent/child
     aggregation is not implemented.
-12. **Svelte** has no compiler yet.
+12. **`Reveal`** coordinates `Loading` boundaries created directly under it.
+    `order` and `collapsed` may be static or reactive expressions; an invalid
+    string falls back to `sequential`. Nested `Reveal` groups, `Reveal` inside a
+    loop, and `Loading` boundaries inside a loop under a `Reveal` are rejected. A
+    `Loading` inside a component boundary, a slot, or another control-flow
+    boundary is not a slot of the outer group; move the group so those Loading
+    boundaries are direct children. The runtime marks a slot ready when it has
+    delivered a first value or has nothing pending; it does not reproduce Solid's
+    held-frame timing.
+13. **Svelte** has no compiler yet.
 
 
 ## Boundary fixes from the Solid / glass-easel review
@@ -1268,5 +1311,5 @@ The 2026-11-24 structural refactor kept generated output identical. A golden
 corpus of every `examples/solid-todo` component plus every literal source in
 the compiler tests (871 compilation variants) produced
 byte-identical WXML/JS/config before and after; `pnpm --filter @glaze/compiler
-test` (289 tests), `pnpm --filter @glaze/compiler typecheck` and `pnpm
---filter @glaze/build test` (120 tests) pass.
+test` (323 tests), `pnpm --filter @glaze/compiler typecheck` and `pnpm
+--filter @glaze/build test` (126 tests) pass.

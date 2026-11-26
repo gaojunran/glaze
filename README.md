@@ -61,7 +61,7 @@ substrate, **Glaze** is what runs on it.
 Working spike, not a production framework. It covers:
 
 - Solid 2 control flow: `For` (all keyed modes, `fallback`, nested), `Show`
-  (including callbacks and `fallback`), `Switch`/`Match`, `Repeat`,
+  (including callbacks and `fallback`), `Switch`/`Match`, `Repeat`, `Reveal`,
   destructuring, static spread, `class`/`style` helpers;
 - components: props, default and named slots, custom events (including
   `catch`/`capture`/`mut-bind`), recursive inlining protection, context across
@@ -80,8 +80,8 @@ Working spike, not a production framework. It covers:
 - UI: `@glaze/ui` ports UI SDK primitives (button, toggle, switch, field,
   input, dialog, checkbox, radio, tabs, collapsible) as native WXML
   components, including uncontrolled variants and a touch-only dialog;
-- validation: 666 unit tests (shared 2, store 8, runtime 212, compiler 318,
-  build 126), glass-easel rendering tests and 12 minidev e2e cases.
+- validation: 677 unit tests (shared 2, store 8, runtime 218, compiler 323,
+  build 126), glass-easel rendering tests and 13 minidev e2e cases.
 
 Known limits are documented in [Compiler](docs/compiler.md),
 [Store](docs/store.md), [UI SDK port](docs/ui.md), [Build](docs/build.md)

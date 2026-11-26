@@ -135,6 +135,10 @@ export type EmitOptions = {
   pageRoot?: boolean
   componentFramework?: 'exparser'
 }
+export type RevealGroupEntry = {
+  slots: number[]
+}
+
 export type CompilerContext = {
   bindings: BindingEntry[]
   events: EventEntry[]
@@ -167,6 +171,7 @@ export type CompilerContext = {
   nextAsyncBoundary: number
   currentLoadingBoundary: number | null
   currentErrorBoundary: number | null
+  currentRevealGroup: RevealGroupEntry | null
   asyncStatus: AsyncStatusEntry[]
   listProjectionBlocked: Set<number>
   namedSlots: Set<string>

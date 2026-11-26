@@ -31,6 +31,7 @@ import {
 import { diffList, isFlatList, projectList, snapshotList, trackListValue } from './list.ts'
 import { isContextReader } from './provider.ts'
 import { createNodeRef } from './ref.ts'
+import { createRevealGroup } from './reveal.ts'
 import {
   clearBoundaryContent,
   clearError,
@@ -746,6 +747,7 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
   const mount = (component: any, state: InstanceState) => {
     resetBindingStates(state.core.bindings)
     state.effectsInstalled = false
+    state.revealByBoundary.clear()
     clearBoundaryContent(state.boundaries)
     state.events.length = 0
     state.refs.length = 0
@@ -792,6 +794,12 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
         },
         loading: (boundary) => loadingOf(state.boundaries, boundary),
         hasValue: (boundary) => settledOf(state.boundaries, boundary),
+        revealGroup(order, collapsed, slots) {
+          const group = createRevealGroup(state.boundaries, slots, order, collapsed)
+          for (const slot of slots) state.revealByBoundary.set(slot, group)
+        },
+        revealGated: (boundary) => state.revealByBoundary.get(boundary)?.gated(boundary) ?? false,
+        revealHidden: (boundary) => state.revealByBoundary.get(boundary)?.hidden(boundary) ?? false,
         errored: (boundary) => erroredOf(state.boundaries, boundary),
         error: (boundary) => errorValueOf(state.boundaries, boundary),
         errorArray: (boundary) => errorArrayOf(state.boundaries, boundary),
@@ -1282,6 +1290,7 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
           lifecycle: initialLifecycle(deferredContext),
           events: [],
           refs: [],
+          revealByBoundary: new Map(),
           pending: [],
           statusVersion: createSignal(0),
           asyncStatus: config.asyncStatus,

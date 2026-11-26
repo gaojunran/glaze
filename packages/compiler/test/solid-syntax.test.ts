@@ -85,17 +85,15 @@ test('rejects function children', () => {
   )
 })
 
-test('rejects Reveal with a reason', () => {
-  assert.throws(
-    () =>
-      compileComponent(`
-        import { Reveal } from 'solid-js'
-        export default function Page() {
-          return <Reveal><text>a</text></Reveal>
-        }
-      `),
-    /<Reveal> is not supported/,
-  )
+test('compiles a Reveal without Loading slots as its children', () => {
+  const result = compileComponent(`
+    import { Reveal } from 'solid-js'
+    export default function Page() {
+      return <Reveal><text>a</text></Reveal>
+    }
+  `)
+  assert.match(result.js, /ctx\.revealGroup\(\(\) => "sequential", \(\) => false, \[\]\)/)
+  assert.match(result.wxml, /<text>a<\/text>/)
 })
 
 test('rejects the children() helper', () => {
@@ -180,6 +178,116 @@ test('keeps a local stateful component as a boundary inside a loop', () => {
         { inline: true },
       ),
     /Local component <Row> is not supported/,
+  )
+})
+
+test('compiles Reveal into one runtime group and gated Loading conditions', () => {
+  const result = compileComponent(`
+    import { Reveal, Loading } from 'solid-js'
+    export default function Page(props) {
+      return (
+        <Reveal collapsed>
+          <Loading fallback={<text>A</text>}><text>{props.a}</text></Loading>
+          <Loading fallback={<text>B</text>}><text>{props.b}</text></Loading>
+        </Reveal>
+      )
+    }
+  `)
+  assert.match(result.js, /ctx\.revealGroup\(\(\) => "sequential", \(\) => true, \[0, 1\]\)/)
+  assert.match(result.js, /ctx\.revealGated\(0\)/)
+  assert.match(result.js, /ctx\.revealHidden\(1\)/)
+  assert.match(result.wxml, /\!b3 && \(b2 \|\| \(b0 && !b1\)\)/)
+  assert.match(result.wxml, /\!b3 && !b2 && \(!b0 \|\| b1\)/)
+})
+
+test('compiles static and reactive Reveal order and collapsed', () => {
+  const result = compileComponent(`
+    import { Reveal, Loading } from 'solid-js'
+    export default function Page() {
+      return (
+        <Reveal order="together">
+          <Loading fallback={<text>A</text>}><text>A</text></Loading>
+        </Reveal>
+      )
+    }
+  `)
+  assert.match(result.js, /ctx\.revealGroup\(\(\) => "together", \(\) => false, \[0\]\)/)
+
+  const dynamic = compileComponent(`
+    import { Reveal } from 'solid-js'
+    export default function Page(props) {
+      return <Reveal order={props.order} collapsed={props.collapsed}><text>A</text></Reveal>
+    }
+  `)
+  assert.match(dynamic.js, /ctx\.revealGroup\(\(\) => props\.order, \(\) => props\.collapsed, \[\]\)/)
+  assert.throws(
+    () =>
+      compileComponent(`
+        import { Reveal } from 'solid-js'
+        export default function Page() {
+          return <Reveal order="sideways"><text>A</text></Reveal>
+        }
+      `),
+    /<Reveal> order must be one of: sequential, together, natural/,
+  )
+})
+
+test('rejects nested Reveal and Reveal inside a loop', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        import { Reveal } from 'solid-js'
+        export default function Page() {
+          return <Reveal><Reveal><text>A</text></Reveal></Reveal>
+        }
+      `),
+    /<Reveal> cannot be nested inside another <Reveal>/,
+  )
+  assert.throws(
+    () =>
+      compileComponent(`
+        import { For, Reveal } from 'solid-js'
+        export default function Page(props) {
+          return <For each={props.items}>{() => <Reveal><text>A</text></Reveal>}</For>
+        }
+      `),
+    /<Reveal> inside a loop is not supported/,
+  )
+})
+
+test('Reveal does not treat a Loading in a fallback as a slot', () => {
+  const result = compileComponent(`
+    import { Loading, Reveal } from 'solid-js'
+    export default function Page(props) {
+      return (
+        <Reveal>
+          <Loading fallback={<Loading fallback={<text>inner</text>}><text>{props.a}</text></Loading>}>
+            <text>{props.b}</text>
+          </Loading>
+        </Reveal>
+      )
+    }
+  `)
+  assert.match(result.js, /ctx\.revealGroup\(\(\) => "sequential", \(\) => false, \[0\]\)/)
+  assert.match(result.js, /ctx\.revealGated\(0\)/)
+})
+
+test('rejects a Loading inside a loop under Reveal', () => {
+  assert.throws(
+    () =>
+      compileComponent(`
+        import { For, Loading, Reveal } from 'solid-js'
+        export default function Page(props) {
+          return (
+            <Reveal>
+              <For each={props.items}>
+                {(item) => <Loading fallback={<text>x</text>}><text>{item}</text></Loading>}
+              </For>
+            </Reveal>
+          )
+        }
+      `),
+    /<Loading> inside a loop is not supported/,
   )
 })
 
