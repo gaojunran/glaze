@@ -699,6 +699,6 @@ pnpm --filter @glaze/runtime typecheck
 pnpm --filter @glaze/build test
 # tests 126, pass 126, fail 0
 cd examples/solid-todo && pnpm build
-# glaze build: 24 pages, 51 components
-# minidev e2e: 13 cases, 13 passed (the context case scrolls and asserts the root sees the page event)
+# glaze build: 25 pages, 52 components
+# minidev e2e: 14 cases, 14 passed (the context case scrolls and asserts the root sees the page event)
 ```

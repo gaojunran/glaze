@@ -73,7 +73,7 @@ glass-easel 组件，不替换平台渲染器。也可以通过可选的兼容�
   dialog、checkbox、radio、tabs、collapsible）移植为原生 WXML 组件，
   包含非受控变体与仅触屏的 dialog；
 - 验证：726 个单元测试（shared 2、store 8、runtime 266、compiler 324、
-  build 126）、glass-easel 渲染测试和 13 个 minidev e2e 用例。
+  build 126）、glass-easel 渲染测试和 14 个 minidev e2e 用例。
 
 已知限制记录在 [编译器](docs/compiler.md)、[Store](docs/store.md)、
 [UI SDK 移植](docs/ui.md)、[构建](docs/build.md) 和 [优化](docs/optimizations.md) 中。编译器与运行时的结构重构记录在

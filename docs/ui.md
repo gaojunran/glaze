@@ -148,7 +148,7 @@ Commands and results from the package migration:
 
 ```bash
 cd examples/solid-todo && pnpm build
-# glaze build: 24 pages, 51 components
+# glaze build: 25 pages, 52 components
 
 mise exec -- pnpm -r test
 # shared 2, store 8, runtime 266, compiler 324, build 126 = 726, 0 failed
@@ -161,7 +161,7 @@ target/debug/minidev test \
   --project ~/Projects/glaze/examples/solid-todo \
   --browser ~/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell \
   --spec tests/ui.test.js
-# 1 case, 1 passed (13 cases total with the existing suite)
+# 1 case, 1 passed (14 cases total with the existing suite)
 ```
 
 `tests/ui.test.js` covers:

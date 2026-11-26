@@ -1,0 +1,8 @@
+.control-flows {
+  padding: 20rpx;
+}
+
+.control-flows text {
+  display: block;
+  padding: 4rpx 0;
+}

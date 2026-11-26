@@ -81,7 +81,7 @@ Working spike, not a production framework. It covers:
   input, dialog, checkbox, radio, tabs, collapsible) as native WXML
   components, including uncontrolled variants and a touch-only dialog;
 - validation: 726 unit tests (shared 2, store 8, runtime 266, compiler 324,
-  build 126), glass-easel rendering tests and 13 minidev e2e cases.
+  build 126), glass-easel rendering tests and 14 minidev e2e cases.
 
 Known limits are documented in [Compiler](docs/compiler.md),
 [Store](docs/store.md), [UI SDK port](docs/ui.md), [Build](docs/build.md)

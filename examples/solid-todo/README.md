@@ -48,6 +48,8 @@ Pages:
 - `pages/context/index` — imported context across a component boundary;
 - `pages/async/index` — async `Loading` / `Errored` boundaries and a `Reveal`
   group with a collapsed tail;
+- `pages/control/index` — dynamic `For` modes, `Show` callbacks and keyed
+  `Match` updates;
 - `pages/ui/index` — `vercel-labs/ui` port from `@glaze/ui`: button, toggle,
   switch, field, input, dialog, checkbox, radio, tabs and collapsible;
 - `pkg/pages/sub/index` — independent subpackage page with its own `glaze-runtime`;

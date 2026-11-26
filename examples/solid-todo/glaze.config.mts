@@ -43,6 +43,7 @@ const config: GlazeConfig = {
     'pages/async/index': 'AsyncPage.tsx',
     'pages/store/index': 'StorePage.tsx',
     'pages/ui/index': 'UiPage.tsx',
+    'pages/control/index': 'ControlFlows.tsx',
   },
   subpackages: [
     { root: 'pkg', pages: { 'pages/sub/index': 'pkg/PkgPage.tsx' }, independent: true },
