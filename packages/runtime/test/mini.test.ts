@@ -919,6 +919,76 @@ test('coalesces updates into one view-frame commit when the host exposes a backe
   assert.deepEqual(instance.calls.at(-1), { b0: 2, b1: 3 })
 })
 
+test('keeps a component root without a boundary on microtask commits', async () => {
+  let setCount
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    setup(ctx) {
+      const [count, set] = createSignal(0)
+      setCount = set
+      ctx.bind(0, () => count())
+    },
+  })
+
+  const instance = createInstance(def)
+  const frames = []
+  instance.setData = (data, callback) => {
+    instance.calls.push(data)
+    if (Object.keys(data).length === 0) frames.push(callback)
+  }
+  def.lifetimes.attached.call(instance)
+  const before = instance.calls.length
+
+  setCount(1)
+  await tick()
+  assert.equal(frames.length, 0)
+  assert.equal(instance.calls.length, before + 1)
+  assert.deepEqual(instance.calls.at(-1), { b0: 1 })
+})
+
+test('uses the frame token on a component with a boundary', async () => {
+  const holder = globalThis as unknown as { wx?: unknown }
+  const originalWx = holder.wx
+  holder.wx = {}
+  try {
+    let setCount
+    const def = defineGlazeComponent({
+      boundaries: [
+        { id: 0, kind: 'loading', parent: null, region: 'content', content: [0], children: [], keepPrevious: true },
+      ],
+      data: { b0: null },
+      setup(ctx) {
+        const [count, set] = createSignal(0)
+        setCount = set
+        ctx.bind(0, () => count())
+      },
+    })
+
+    const instance = createInstance(def)
+    const frames = []
+    instance.setData = (data, callback) => {
+      instance.calls.push(data)
+      if (Object.keys(data).length === 0) frames.push(callback)
+    }
+    def.lifetimes.attached.call(instance)
+    const dataCalls = () => instance.calls.filter((data) => Object.keys(data).length > 0)
+    const before = dataCalls().length
+
+    setCount(1)
+    await tick()
+    assert.ok(frames.length > 0)
+    assert.equal(dataCalls().length, before)
+
+    for (const frame of frames) frame()
+    await tick()
+    assert.equal(dataCalls().length, before + 1)
+    assert.deepEqual(dataCalls().at(-1), { b0: 1 })
+  } finally {
+    if (originalWx === undefined) delete holder.wx
+    else holder.wx = originalWx
+  }
+})
+
 test('a flush queued before detach does not call setData', async () => {
   let setCount
   const def = defineGlazeComponent({
@@ -1476,6 +1546,42 @@ test('tracks nested async boundaries separately', async () => {
   await tick()
   assert.equal(instance.calls.at(-1).b1, true)
   assert.equal(instance.calls.at(-1).b3, true)
+})
+
+test('holds content writes while a Loading boundary shows its fallback', async () => {
+  let setReady
+  let setValue
+  const def = defineGlazeComponent({
+    asyncStatus: [{ index: 2, kind: 'loading', boundary: 0 }],
+    boundaries: [
+      { id: 0, kind: 'loading', parent: null, region: 'content', content: [0, 1], children: [], keepPrevious: true },
+    ],
+    data: { b0: null, b1: null, b2: null },
+    setup(ctx) {
+      const [ready, setR] = createSignal(false)
+      const [value, setV] = createSignal(0)
+      setReady = setR
+      setValue = setV
+      ctx.bind(0, () => value(), 0)
+      ctx.bind(1, () => {
+        if (!ready()) throw new NotReadyError()
+        return 'ok'
+      }, 0)
+      ctx.bind(2, () => ctx.loading(0))
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+
+  assert.equal(instance.__glaze?.boundaryTree.get(0)?.fallback(), true)
+  setValue(1)
+  await tick()
+  assert.notEqual(instance.calls.at(-1)?.b0, 1)
+
+  setReady(true)
+  await tick()
+  assert.equal(instance.calls.at(-1)?.b0, 1)
 })
 
 test('builds a real loading boundary from the descriptor tree', async () => {

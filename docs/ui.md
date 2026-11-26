@@ -151,7 +151,7 @@ cd examples/solid-todo && pnpm build
 # glaze build: 24 pages, 51 components
 
 mise exec -- pnpm -r test
-# shared 2, store 8, runtime 228, compiler 324, build 126 = 688, 0 failed
+# shared 2, store 8, runtime 231, compiler 324, build 126 = 691, 0 failed
 
 mise exec -- pnpm -r --if-present typecheck
 # 8 packages Done (adds @glaze/ui)
@@ -161,7 +161,7 @@ target/debug/minidev test \
   --project ~/Projects/glaze/examples/solid-todo \
   --browser ~/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell \
   --spec tests/ui.test.js
-# 1 case, 1 passed (12 cases total with the existing suite)
+# 1 case, 1 passed (13 cases total with the existing suite)
 ```
 
 `tests/ui.test.js` covers:

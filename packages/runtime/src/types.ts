@@ -180,6 +180,8 @@ export type InstanceState = {
     { gated(boundary: number): boolean; hidden(boundary: number): boolean }
   >
   pending: DataChange[]
+  /** Content writes held while a boundary shows its fallback. */
+  held: Map<number, unknown>
   statusVersion: [() => number, (value: number) => void]
   applyStatus: ((index: number, value: unknown) => void) | null
   flushScheduled: boolean

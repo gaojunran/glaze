@@ -8,6 +8,7 @@
 // The script only needs Node and a Chrome/Chromium binary. It writes:
 //   docs/assets/microbench-overview.png
 //   docs/assets/page-runtime-prop-shape.png
+//   docs/assets/frame-commit-overhead.png
 //
 // The source data is under bench/frameworks/results/. The PNGs are committed
 // so the docs render without a browser or a network connection.
@@ -326,6 +327,66 @@ const propShapeHtml = () => {
   </body></html>`
 }
 
+
+const frameOverheadHtml = () => {
+  const source = JSON.parse(
+    readFileSync(path.join(here, 'results/2026-11-26/frame-overhead.json'), 'utf8'),
+  )
+  const series = source.cases.map((item) => ({
+    label: item.label,
+    data: median(item.data),
+    frame: median(item.frame ?? []),
+    after: median(item.after ?? []),
+  }))
+  const max = Math.max(
+    ...series.flatMap((item) => [(item.data ?? 0) + (item.frame ?? 0), item.after ?? 0]),
+    1,
+  )
+  const width = (value) => `${Math.max(0, (value / max) * 100)}%`
+  const rows = series
+    .map((item) => {
+      const total = (item.data ?? 0) + (item.frame ?? 0)
+      return `<div class="case">
+        <div class="label">${htmlEscape(item.label)}</div>
+        <div class="track">
+          <div class="bar data" style="width:${width(item.data ?? 0)}"><span>${format(item.data)}</span></div>
+          <div class="bar frame" style="width:${width(item.frame ?? 0)}"><span>${item.frame ? format(item.frame) : '0'}</span></div>
+          <div class="bar after" style="width:${width(item.after ?? 0)}"><span>${format(item.after)}</span></div>
+        </div>
+        <div class="total">${format(total)} → ${format(item.after)} ms</div>
+      </div>`
+    })
+    .join('')
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${pageCss}
+    body { padding: 38px 46px 32px; }
+    h1 { font-size: 26px; }
+    .sub { margin-top: 8px; font-size: 13px; }
+    .chart { margin-top: 24px; }
+    .case { display:grid; grid-template-columns: 220px 1fr 116px; gap: 16px; align-items:center; margin: 13px 0; }
+    .label { font-size: 12px; color:#374151; text-align:right; }
+    .track { height: 48px; display:flex; flex-direction:column; justify-content:center; gap:3px; border-left:1px solid #e5e7eb; padding-left:9px; }
+    .bar { height: 13px; min-width: 2px; border-radius: 2px; position:relative; }
+    .bar span { position:absolute; right:6px; top:-1px; font-size:10px; color:#fff; white-space:nowrap; }
+    .bar.data { background:#2563eb; }
+    .bar.frame { background:#f59e0b; }
+    .bar.frame span { color:#78350f; }
+    .bar.after { background:#10b981; }
+    .total { font-size:12px; color:#111827; font-variant-numeric:tabular-nums; }
+    .keys { display:flex; gap:18px; margin: 16px 0 0 236px; font-size:11px; color:#4b5563; }
+    .key { display:inline-flex; align-items:center; gap:6px; }
+    .key i { width:10px; height:10px; border-radius:2px; display:inline-block; }
+    .note { margin-top:20px; padding:10px 13px; background:#fff7ed; color:#9a3412; font-size:11px; line-height:1.5; border-radius:6px; }
+    .foot { margin-top:12px; font-size:10px; color:#9ca3af; line-height:1.45; }
+  </style></head><body>
+    <h1>Frame-token cost</h1>
+    <p class="sub muted">Empty <span class="mono">setData({})</span> frame wait, and the same action after pages without a boundary return to microtask commits</p>
+    <div class="chart">${rows}</div>
+    <div class="keys"><span class="key"><i style="background:#2563eb"></i>data before</span><span class="key"><i style="background:#f59e0b"></i>frame token</span><span class="key"><i style="background:#10b981"></i>data after</span></div>
+    <div class="note">${htmlEscape(source.note)}</div>
+    <div class="foot">Median of three real-tap runs · minidev simulator · source: bench/frameworks/results/2026-11-26/frame-overhead.json · ${htmlEscape(source.date)}</div>
+  </body></html>`
+}
+
 const chromeCandidates = () => {
   const explicit = process.env.CHROME
   if (explicit) return [explicit]
@@ -391,6 +452,7 @@ const main = () => {
   const chrome = findChrome()
   render(overviewHtml(), 'microbench-overview.png', 1180, 1240, chrome)
   render(propShapeHtml(), 'page-runtime-prop-shape.png', 960, 540, chrome)
+  render(frameOverheadHtml(), 'frame-commit-overhead.png', 960, 540, chrome)
 }
 
 main()

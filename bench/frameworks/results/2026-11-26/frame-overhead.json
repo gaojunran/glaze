@@ -1,0 +1,82 @@
+{
+  "date": "2026-11-26",
+  "note": "Pre-gating: data commit plus the empty setData frame token. After: the same action on a page root without an async boundary, which now stays on the microtask path. Components with async boundaries keep the token.",
+  "cases": [
+    {
+      "label": "components update all 500",
+      "route": "/pages/bench-component-rows/index",
+      "data": [
+        23.5,
+        16.299999952316284,
+        16.399999856948853
+      ],
+      "frame": [
+        3.0999999046325684,
+        3.0999999046325684,
+        2.799999952316284
+      ],
+      "after": [
+        17.59999990463257,
+        18.09999990463257,
+        19.399999856948853
+      ]
+    },
+    {
+      "label": "props update all 500",
+      "route": "/pages/bench-props/index",
+      "data": [
+        45.200000047683716,
+        38.299999952316284,
+        37.799999952316284
+      ],
+      "frame": [
+        5.5,
+        5.3999998569488525,
+        5.700000047683716
+      ],
+      "after": [
+        41.799999952316284,
+        85,
+        46.5
+      ]
+    },
+    {
+      "label": "prop-shape 16 props",
+      "route": "/pages/bench-props-16/index",
+      "data": [
+        36.59999990463257,
+        37.700000047683716,
+        34.5
+      ],
+      "frame": [
+        8.799999952316284,
+        14.5,
+        9.5
+      ],
+      "after": [
+        43.40000009536743,
+        31.59999990463257,
+        31.299999952316284
+      ]
+    },
+    {
+      "label": "fine update 1 row",
+      "route": "/pages/bench-fine/index",
+      "data": [
+        16.799999952316284,
+        18.5,
+        16.40000009536743
+      ],
+      "frame": [
+        21.09999990463257,
+        21.90000009536743,
+        20.799999952316284
+      ],
+      "after": [
+        42,
+        17.899999856948853,
+        16.200000047683716
+      ]
+    }
+  ]
+}

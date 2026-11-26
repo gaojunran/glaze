@@ -24,7 +24,17 @@ The second chart focuses on the page-root experiment:
 
 ![500 child components: component root, page root, native and uni-app](../../docs/assets/page-runtime-prop-shape.png)
 
-Regenerate both PNGs from the committed raw results:
+The overview's Glaze rows were measured before the 2026-11-26 frame-aligned
+commit scheduler; the frame-token chart is the current overhead measurement for
+the affected page-root and boundary cases.
+
+The third chart measures the empty `setData` frame token introduced by the
+frame-aligned commit scheduler, and the same actions after pages without a
+boundary return to microtask commits:
+
+![Frame-token cost](../../docs/assets/frame-commit-overhead.png)
+
+Regenerate the PNGs from the committed raw results:
 
 ```bash
 node bench/frameworks/chart.mjs
@@ -32,10 +42,12 @@ node bench/frameworks/chart.mjs
 CHROME=/path/to/chrome node bench/frameworks/chart.mjs
 ```
 
-The script reads `bench/frameworks/results/2026-11-25/*.jsonl` and writes
-`docs/assets/microbench-overview.png` and
-`docs/assets/page-runtime-prop-shape.png`. It needs only Node and a Chrome
-binary; no image library or network access is required at render time.
+The script reads `bench/frameworks/results/2026-11-25/*.jsonl` for the overview
+and prop-shape charts, and `bench/frameworks/results/2026-11-26/frame-overhead.json`
+for the frame-token chart. It writes `docs/assets/microbench-overview.png`,
+`docs/assets/page-runtime-prop-shape.png` and
+`docs/assets/frame-commit-overhead.png`. It needs only Node and a Chrome binary;
+no image library or network access is required at render time.
 
 ## Fixtures
 
@@ -224,6 +236,35 @@ that the plain `setData` rows get from their callback. A batch larger than 64
 changes falls back to one `setData`, and a direct `__glaze.events[...]` call is
 not a substitute: it bypasses the platform event/view flush and undercounts
 Glaze.
+
+### Frame-token measurement (2026-11-26)
+
+`run.mjs --precise` classifies an empty `setData({}, callback)` as `frame` and
+other data calls as `data`; each result now has a `frame` map keyed by the
+action label. The data value excludes the token, so it remains comparable to
+the pre-scheduler numbers.
+
+| Case | data before | frame token | before total | after (no boundary) |
+| --- | ---: | ---: | ---: | ---: |
+| components update all 500 | 16.4 ms | 3.1 ms | 19.5 ms | 18.1 ms |
+| props update all 500 | 38.3 ms | 5.5 ms | 43.8 ms | 46.5 ms |
+| prop-shape 16 props | 36.6 ms | 9.5 ms | 46.1 ms | 31.6 ms |
+| fine update 1 row | 16.8 ms | 21.1 ms | 37.9 ms | 17.9 ms |
+
+Values are medians of three real-tap runs on the same simulator. After the
+measurement, pages and components without an async boundary returned to
+microtask commits; only components with a boundary keep the frame token. The
+`props` after-run is within noise of its before total.
+
+```bash
+# The JSON result now has a separate `frame` map per action.
+NODE_PATH=~/Playground/minibuild/sdk node bench/frameworks/run.mjs \
+  --port 9453 --route /pages/bench-props-16/index \
+  --neutral /pages/index/index --count 500 --row '.row-card' \
+  --first-text '.row-title' --last-text '#last' --tick '#last' \
+  --warm '#update-all' --update-all '#update-all' --skip-reverse \
+  --runs 3 --precise
+```
 
 ### Flat 1000-row page
 

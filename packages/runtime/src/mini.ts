@@ -1089,11 +1089,14 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
     // splice with a replacement queued after the group; list changes then take
     // the whole-value path instead of being dropped or lost.
     const transport = createDataTransport(component, state.pageRoot)
-    // Glass-easel can report the view-side animation frame; coalescing there
-    // keeps fallback/content and status/data in the same commit window. Hosts
-    // without that backend (exparser, a page object, tests) stay on a
-    // microtask and keep the old immediate behavior.
-    const scheduleFrame = createFrameScheduler(component, { allowSetData: !legacyFramework })
+    // Frame-aligned commits matter when a boundary mixes status and content.
+    // A page root or a component root without a boundary keeps the microtask
+    // path: the frame token measured ~3–21 ms depending on the page, and there
+    // is no fallback/content pair to keep in one view frame.
+    const frameCommit = (config.boundaries?.length ?? 0) > 0
+    const scheduleFrame = createFrameScheduler(component, {
+      allowSetData: !legacyFramework && frameCommit,
+    })
 
     const schedule = (changes: DataChange[]) => {
       if (changes.length === 0) return
@@ -1129,7 +1132,7 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
       scheduleFrame(flush)
     }
 
-    const applyBinding = (index: number, value: unknown) => {
+    const applyBinding = (index: number, value: unknown, force = false) => {
       const binding = state.core.bindings[index]
       if (!binding) return
       if (binding.loadingBoundary != null || binding.errorBoundary != null) binding.settled = true
@@ -1142,6 +1145,19 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
         applyAsyncStatus(state, loadingBoundary, 'settled', true)
       }
       clearAsync(state, index)
+      const holdBoundary = binding.loadingBoundary ?? binding.errorBoundary
+      if (
+        !force &&
+        holdBoundary != null &&
+        binding.previous !== undefined &&
+        state.boundaryTree.get(holdBoundary)?.fallback()
+      ) {
+        // The boundary shows its fallback, so this content is not on screen.
+        // Keep the last visible value and release the write when the boundary
+        // returns to content; this is the data-level held frame.
+        state.held.set(index, value)
+        return
+      }
       const key = listBindings[index]
       // Scalar bindings in one effect group are recomputed together. Skip the
       // unchanged ones so one signal write only produces its own data path,
@@ -1154,6 +1170,19 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
         : null
       schedule(changes ?? [{ path: [name], value: payload }])
       binding.previous = baseline
+    }
+
+    const flushHeld = (boundary: number) => {
+      for (const [index, value] of [...state.held]) {
+        const binding = state.core.bindings[index]
+        if (
+          binding?.loadingBoundary === boundary ||
+          binding?.errorBoundary === boundary
+        ) {
+          state.held.delete(index)
+          applyBinding(index, value, true)
+        }
+      }
     }
 
     // Status conditions are projected through the same `applyBinding` queue as
@@ -1191,6 +1220,7 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
               })
             setLoading(state.boundaries, boundary, pending)
             applyAsyncStatus(state, boundary, 'loading', pending)
+            if (!fallback) flushHeld(boundary)
           },
           {
             effect() {},
@@ -1214,6 +1244,7 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
               'error',
               fallback || state.boundaries.consumers.has(descriptor.id),
             )
+            if (!fallback) flushHeld(descriptor.id)
           },
           {
             effect() {},
@@ -1227,9 +1258,9 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
 
     // `Loading on` is a dependency trigger: on a change after mount, show the
     // fallback again if anything under this boundary is still pending. Solid
-    // holds a frame for the new content; Glaze has no held frame, so a change
-    // with nothing pending does nothing (the status effect will show it when a
-    // pending read starts).
+    // holds a frame for the new content; Glaze holds content writes while the
+    // fallback is visible, so a change with nothing pending does nothing (the
+    // status effect will show it when a pending read starts).
     runWithOwner(state.owner, () => {
       for (const [boundary, fn] of state.boundaries.loadingOn) {
         let first = true
@@ -1407,6 +1438,7 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
           refs: [],
           revealByBoundary: new Map(),
           pending: [],
+          held: new Map(),
           statusVersion: createSignal(0),
           asyncStatus: config.asyncStatus,
           applyStatus: null,
@@ -1599,6 +1631,7 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
         // rebuild the disposed root instead of seeing a dead instance.
         state.lifecycle = detachLifecycle(state.lifecycle)
         state.pending = []
+        state.held.clear()
         state.flushScheduled = false
         state.flushEpoch += 1
         // Match the old detached behavior: event and ref callbacks stop until

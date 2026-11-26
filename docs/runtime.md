@@ -148,8 +148,9 @@ The grouped and data-group transports remain preferred when available.
 `ctx.loadingOn(boundary, read)` creates a runtime effect for the `on`
 dependency. After the first run, a change calls `armLoading`, which marks the
 boundary pending only if a binding under that boundary is actually pending. The
-retained content stays visible; there is no held frame, so an `on` change with
-nothing pending does not fabricate a spinner.
+retained content stays visible; content writes are held while the fallback is
+shown, but there is no render-effect frame, so an `on` change with nothing
+pending does not fabricate a spinner.
 
 `ctx.reset(boundary)` clears the boundary's pending and error maps, writes the
 status signals, then bumps a per-boundary reset signal. Every binding memo reads
@@ -198,10 +199,12 @@ transport batch. The WXML conditions are unchanged, and the tree adds no DOM or
 second render path.
 
 This is not a full boundary-output projection. The fallback and content are
-still WXML branches in the same data object; there is no held frame, no
-transition, and no per-boundary effect attach/detach. A boundary in another
-mini-program component has its own Solid root, and a boundary inside a loop has
-no per-row owner.
+still WXML branches in the same data object; there is no transition or
+per-boundary effect attach/detach. Content writes are held while the fallback
+is visible and released when the boundary returns to content, which is a
+data-level held frame rather than Solid's render-effect frame. A boundary in
+another mini-program component has its own Solid root, and a boundary inside a
+loop has no per-row owner.
 
 For a list, each row needs its own instance-level boundary. Render a row
 component from `<For>` and put its async memo plus `Loading`/`Errored` inside
@@ -494,6 +497,13 @@ as one batch. Status and data therefore land in the same commit window, and the
 old view values stay visible until the frame callback instead of being replaced
 in an earlier microtask.
 
+The scheduler is enabled only when the component has an async boundary, where
+status and content share one commit window. A page root or a list-heavy
+component root without a boundary keeps the microtask path: the frame token
+measured 3–21 ms depending on the page, which is worse than the
+intermediate-state risk it removes when there is no fallback/content pair to
+protect.
+
 The scheduler falls back to a microtask when the host is an exparser component
 or exposes neither a backend nor a `setData` callback. The fallback is
 deliberate: the callback is an adapter-internal hook, not a public
@@ -504,6 +514,25 @@ It cannot keep WXML branch nodes alive, make several component roots commit
 atomically, or give `startTransition`/`latest` their timing. It only removes
 multiple `setData` commits from one frame and gives `keepPrevious` a cleaner
 `old view -> next frame` boundary.
+
+Measured cost of the empty `setData` frame token (three real-tap runs, median;
+minidev simulator, not a phone):
+
+| Case | data before | frame token | before total | after (no boundary) |
+| --- | ---: | ---: | ---: | ---: |
+| components update all 500 | 16.4 ms | 3.1 ms | 19.5 ms | 18.1 ms |
+| props update all 500 | 38.3 ms | 5.5 ms | 43.8 ms | 46.5 ms |
+| prop-shape 16 props | 36.6 ms | 9.5 ms | 46.1 ms | 31.6 ms |
+| fine update 1 row | 16.8 ms | 21.1 ms | 37.9 ms | 17.9 ms |
+
+The `props` after-run is within run noise of the before total; the other three
+cases lose the token without a data regression. The 5000-row fine page was the
+clearest case: its ~21 ms token was removed by the same gating. Only components
+with async boundaries still pay for the frame. The raw runs and chart script
+are in `bench/frameworks/results/2026-11-26/frame-overhead.json` and
+`bench/frameworks/chart.mjs`.
+
+![Frame-token cost](assets/frame-commit-overhead.png)
 
 ### Config validation
 
@@ -569,7 +598,7 @@ not promised.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 228, pass 228, fail 0 (includes frame scheduler and boundary tests)
+# tests 231, pass 231, fail 0 (includes frame scheduler and boundary tests)
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json (no output)
 pnpm --filter @glaze/build test

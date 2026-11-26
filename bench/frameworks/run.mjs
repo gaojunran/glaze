@@ -94,6 +94,8 @@ async function measure(mp) {
 
   const firstRender = Date.now() - started
   const controls = rootSelector ? root : page
+  const frameResults = {}
+  let preciseFrame = 0
   const preciseTap = async (selector, waitForResult, label) => {
     const button = await waitFor(selector, () => controls.$(selector))
     const key = `__glazeBench${Date.now()}${Math.random().toString(36).slice(2)}`
@@ -125,7 +127,9 @@ async function measure(mp) {
           }
         }
         target.setData = function (payload, callback) {
-          const record = { start: performance.now() }
+          const isFrameToken =
+            payload !== null && typeof payload === 'object' && Object.keys(payload).length === 0
+          const record = { start: performance.now(), kind: isFrameToken ? 'frame' : 'data' }
           records.push(record)
           return original.call(this, payload, () => {
             record.ms = performance.now() - record.start
@@ -177,12 +181,18 @@ async function measure(mp) {
       if (state.originalApply) state.target.applyDataUpdates = state.originalApply
       if (state.originalGroup) state.target.groupUpdates = state.originalGroup
       delete globalThis[key]
-      return state.records.map((record) => record.ms ?? 0)
+      return state.records.map((record) => ({ ms: record.ms ?? 0, kind: record.kind ?? 'data' }))
     }, { key })
-    return times.length > 0 ? times.reduce((sum, value) => sum + value, 0) : Date.now() - started
+    const dataTimes = times.filter((record) => record.kind === 'data').map((record) => record.ms)
+    preciseFrame = times.filter((record) => record.kind === 'frame').reduce((sum, record) => sum + record.ms, 0)
+    return dataTimes.length > 0 ? dataTimes.reduce((sum, value) => sum + value, 0) : Date.now() - started
   }
   const tap = async (selector, waitForResult, label) => {
-    if (precise) return preciseTap(selector, waitForResult, label)
+    if (precise) {
+      const value = await preciseTap(selector, waitForResult, label)
+      frameResults[label] = preciseFrame
+      return value
+    }
     const button = await waitFor(selector, () => controls.$(selector))
     const started = Date.now()
     await button.tap()
@@ -281,7 +291,7 @@ async function measure(mp) {
     reverseMs = Date.now() - reverseStarted
   }
 
-  return { firstRender, bump, update, updateAll, toggle, insert, delete: deleteRow, reverse: reverseMs, ...actionResults }
+  return { firstRender, bump, update, updateAll, toggle, insert, delete: deleteRow, reverse: reverseMs, ...actionResults, ...(precise ? { frame: frameResults } : {}) }
 }
 
 const mp = await automator.connect(`ws://127.0.0.1:${port}/automator`)
