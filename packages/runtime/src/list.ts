@@ -7,6 +7,17 @@ export type ListOp = { index: number; del: number; inserts: unknown[] }
 const keyOf = (item: unknown, key: string) =>
   (item as Record<string, unknown> | null | undefined)?.[key]
 
+/** Duplicate or missing keys make a keyed patch/splice ambiguous. */
+const hasAmbiguousKeys = (items: unknown[], key: string): boolean => {
+  const seen = new Set<unknown>()
+  for (const item of items) {
+    const value = keyOf(item, key)
+    if (value === undefined || seen.has(value)) return true
+    seen.add(value)
+  }
+  return false
+}
+
 const isObjectItem = (item: unknown) => item !== null && typeof item === 'object'
 
 const isPlainObject = (value: object) => {
@@ -212,6 +223,7 @@ export function listOps(previous: unknown, next: unknown, key: string): ListOp |
   if (previous.some((item) => !isObjectItem(item)) || next.some((item) => !isObjectItem(item))) {
     return null
   }
+  if (hasAmbiguousKeys(previous, key) || hasAmbiguousKeys(next, key)) return null
 
   let prefix = 0
   while (
@@ -316,6 +328,7 @@ export function listPatch(
   if (!Array.isArray(previous) || !Array.isArray(next)) return null
   if (key === LIST_KEY_WHOLE) return null
   if (previous.length !== next.length) return null
+  if (hasAmbiguousKeys(previous, key) || hasAmbiguousKeys(next, key)) return null
 
   const patch: DataChange[] = []
   // One comparison cache for the whole call: a pair compared once yields the

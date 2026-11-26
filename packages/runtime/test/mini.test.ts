@@ -12,6 +12,7 @@ import {
 } from 'solid-js'
 import {
   defineGlazeComponent,
+  diffList,
   isFlatList,
   listOps,
   listPatch,
@@ -1911,6 +1912,34 @@ test('bindings sharing an error source update one Errored entry', async () => {
   await tick()
   assert.equal(merged().b2, 1)
   assert.equal(merged().b4, 'second')
+})
+
+test('duplicate or missing list keys fall back to the whole list', () => {
+  const duplicate = [
+    { id: 1, title: 'a' },
+    { id: 1, title: 'b' },
+  ]
+  const duplicateNext = [
+    { id: 1, title: 'a' },
+    { id: 1, title: 'c' },
+  ]
+  assert.equal(listOps(duplicate, duplicateNext, 'id'), null)
+  assert.equal(listPatch(duplicate, duplicateNext, 'id', 'b0'), null)
+  assert.equal(diffList(duplicate, duplicateNext, 'id', 'b0', true), null)
+
+  const missing = [{ title: 'a' }, { title: 'b' }]
+  assert.equal(listOps(missing, [{ title: 'a' }, { title: 'c' }], 'id'), null)
+  assert.equal(listPatch(missing, [{ title: 'a' }, { title: 'c' }], 'id', 'b0'), null)
+  assert.equal(listPatch([{ title: 'a' }], [{ title: 'b' }], 'id', 'b0'), null)
+})
+
+test('a changed key becomes a remove and insert, not a field patch', () => {
+  const before = [{ id: 1, title: 'one' }]
+  const next = [{ id: 2, title: 'one' }]
+  assert.deepEqual(diffList(before, next, 'id', 'b0', true), [
+    { path: ['b0'], splice: { index: 0, del: 1, inserts: next } },
+  ])
+  assert.equal(diffList(before, next, 'id', 'b0', false), null)
 })
 
 test('primitive list items replace the whole array', async () => {

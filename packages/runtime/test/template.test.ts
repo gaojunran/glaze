@@ -149,3 +149,33 @@ test('updates a template after detach and reattach', async () => {
   await tick()
   assert.equal(textContentOf(comp.getShadowRoot().querySelector('#value')), 'after')
 })
+
+test('keeps hidden list data current when a conditional branch appears', async () => {
+  const root = space()
+  const def = register(root, {
+    wxml: `<view wx:if="{{show}}">
+      <view wx:for="{{b0}}" wx:key="id" class="row">{{item.title}}</view>
+    </view>`,
+    config: { data: { show: false, b0: [{ id: 1, title: 'one' }] } },
+  })
+  const comp = mount(root, def)
+  await tick()
+  const shadow = comp.getShadowRoot()
+  assert.equal(shadow.querySelectorAll('.row').length, 0)
+
+  // The branch is not mounted while these updates arrive; the data object is
+  // still the source of truth when it later appears.
+  comp.setData({ 'b0[0].title': 'two' })
+  await tick()
+  assert.equal(shadow.querySelectorAll('.row').length, 0)
+
+  comp.setData({
+    b0: [{ id: 1, title: 'two' }, { id: 2, title: 'new' }],
+    show: true,
+  })
+  await tick()
+  const rows = shadow.querySelectorAll('.row')
+  assert.equal(rows.length, 2)
+  assert.equal(rows[0]?.childNodes[0]?.textContent, 'two')
+  assert.equal(rows[1]?.childNodes[0]?.textContent, 'new')
+})

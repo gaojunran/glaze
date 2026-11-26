@@ -40,17 +40,33 @@ const backendOf = (host: RenderHost | null | undefined): RenderBackend | null =>
  * glass-easel's `triggerRender`, which calls the backend's `render` (the
  * view-side animation frame); an empty `setData` is therefore a frame token.
  */
-const setDataFrameScheduler = (component: unknown): FrameScheduler | null => {
+const setDataFrameScheduler = (
+  component: unknown,
+  tokenTimeout: number,
+): FrameScheduler | null => {
   const host = component as SetDataHost | null
   if (typeof host?.setData !== 'function') return null
   if (!(globalThis as { wx?: unknown }).wx) return null
   return (flush) => {
     const run = once(flush)
+    let finished = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const done = () => {
+      if (finished) return
+      finished = true
+      if (timer !== undefined) clearTimeout(timer)
+      run()
+    }
     try {
-      host.setData!({}, run)
+      host.setData!({}, done)
     } catch {
       microtask(run)
+      return
     }
+    // A host that accepts the call but never invokes its callback would
+    // otherwise leave `pending` unflushed forever. Fall back to a microtask;
+    // the token is a latency hint, not a data dependency.
+    if (!finished) timer = setTimeout(done, tokenTimeout)
   }
 }
 
@@ -62,12 +78,15 @@ const setDataFrameScheduler = (component: unknown): FrameScheduler | null => {
  */
 export function createFrameScheduler(
   component: unknown,
-  { allowSetData = true }: { allowSetData?: boolean } = {},
+  {
+    allowSetData = true,
+    tokenTimeout = 100,
+  }: { allowSetData?: boolean; tokenTimeout?: number } = {},
 ): FrameScheduler {
   const backend = backendOf(component as RenderHost)
   const render = backend?.render
   if (typeof render !== 'function') {
-    return (allowSetData ? setDataFrameScheduler(component) : null) ?? microtask
+    return (allowSetData ? setDataFrameScheduler(component, tokenTimeout) : null) ?? microtask
   }
   return (flush) => {
     const run = once(flush)

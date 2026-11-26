@@ -676,3 +676,61 @@ test('page path transport batches a large fan-out through setData', () => {
   assert.equal(calls[0]['b0[64].title'], 'row-64')
   assert.equal(applied, 0)
 })
+
+test('a path failure invalidates the baseline and the next update sends the whole list', async () => {
+  let setRows
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    setup(ctx) {
+      const [rows, set] = createSignal([
+        { id: 1, title: 'a' },
+        { id: 2, title: 'b' },
+      ])
+      setRows = set
+      ctx.bind(0, () => rows())
+    },
+  })
+
+  const instance = createInstance(def, {}, { replace: true, splice: false })
+  let throwOnce = true
+  instance.replaceDataOnPath = (path, value) => {
+    instance.pathCalls.push([path, value])
+    if (throwOnce && path.length > 1) {
+      throwOnce = false
+      throw new Error('partial path failure')
+    }
+  }
+
+  const log = captureConsoleError()
+  try {
+    def.lifetimes.attached.call(instance)
+    setRows([
+      { id: 1, title: 'a2' },
+      { id: 2, title: 'b2' },
+    ])
+    await tick()
+    assert.ok(instance.__glaze.error)
+    assert.ok(instance.pathCalls.length >= 1)
+
+    // The failed first path is not replayed. The invalidated baseline forces
+    // the next update to carry the complete list, so the view cannot be left
+    // with a mix of old and new rows.
+    setRows([
+      { id: 1, title: 'a3' },
+      { id: 2, title: 'b3' },
+      { id: 3, title: 'c' },
+    ])
+    await tick()
+    assert.deepEqual(instance.pathCalls.at(-1), [
+      ['b0'],
+      [
+        { id: 1, title: 'a3' },
+        { id: 2, title: 'b3' },
+        { id: 3, title: 'c' },
+      ],
+    ])
+  } finally {
+    log.restore()
+  }
+})

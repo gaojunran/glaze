@@ -111,6 +111,18 @@ dominated by WXML node creation, so this does not produce a large wall-clock
 change in the simulator; the payload reduction is measured directly on the
 generated data object.
 
+### Props-only projection parity
+
+Props-only expressions are compiled directly into WXML, while local-state
+expressions stay on the `bN` binding path. To keep the two evaluation paths
+from drifting, `packages/runtime/test/projection-parity.test.ts` compiles the
+expression, mounts the generated WXML in glass-easel, and compares the rendered
+text with the equivalent JavaScript value for `undefined`, `null`, `false`, `0`,
+`NaN`, number/string concatenation and structured-prop fallback. The test also
+asserts `bindingCount === 0`, so a case cannot pass by silently taking the
+binding path. This is a semantic spot-check, not a proof for arbitrary WXML
+expressions; unsupported syntax falls back to a binding rather than projecting.
+
 ### Initial list data must not alias app state
 
 The platform applies `replaceDataOnPath` by mutating the component data object
@@ -267,6 +279,15 @@ whole-array replacement, which is the only unambiguous result when rows have no
 key to align on. `key === '*this'` continues to return `null` from both helpers.
 The tests cover `[1, 2] -> [1, 3]` and `[1, 2] -> [2, 1]` at the helper and
 runtime levels.
+
+### Duplicate and missing list keys
+
+`listOps` and `listPatch` now reject a keyed list when any key repeats or is
+missing. A duplicate key makes both node identity and a field path ambiguous;
+a missing key is the same case with every row at `undefined`. The caller then
+sends the whole `bN` array instead of a patch or splice. A key field that
+changes in place is already handled as a remove plus insert by `listOps`, not
+as a field patch, because the old and new rows no longer align on that key.
 
 ### Runtime state models
 
@@ -505,9 +526,11 @@ intermediate-state risk it removes when there is no fallback/content pair to
 protect.
 
 The scheduler falls back to a microtask when the host is an exparser component
-or exposes neither a backend nor a `setData` callback. The fallback is
-deliberate: the callback is an adapter-internal hook, not a public
-mini-program API.
+or exposes neither a backend nor a `setData` callback. The callback is an
+adapter-internal hook, not a public mini-program API. The `setData` token also
+has a 100 ms timeout: a host that accepts the call but never invokes the
+callback would otherwise leave `pending` unflushed forever. A late callback is
+ignored after the timeout flush.
 
 This is frame-aligned data commit, not a render-effect or paint-complete hook.
 It cannot keep WXML branch nodes alive, make several component roots commit
@@ -598,7 +621,7 @@ not promised.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 231, pass 231, fail 0 (includes frame scheduler and boundary tests)
+# tests 248, pass 248, fail 0 (includes frame scheduler and boundary tests)
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json (no output)
 pnpm --filter @glaze/build test

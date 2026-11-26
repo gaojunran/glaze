@@ -76,3 +76,33 @@ test('falls back to a microtask when the backend render throws', async () => {
   await tick()
   assert.equal(calls, 1)
 })
+
+test('falls back to a microtask when the frame token never calls back', async () => {
+  const holder = globalThis as unknown as { wx?: unknown }
+  const original = holder.wx
+  holder.wx = {}
+  try {
+    let calls = 0
+    const callbacks: Array<() => void> = []
+    const schedule = createFrameScheduler(
+      {
+        setData: (_data: Record<string, never>, callback?: () => void) => {
+          callbacks.push(callback!)
+        },
+      },
+      { tokenTimeout: 10 },
+    )
+    schedule(() => {
+      calls += 1
+    })
+    assert.equal(calls, 0)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    assert.equal(calls, 1)
+    // A late callback must not flush the batch a second time.
+    callbacks[0]()
+    assert.equal(calls, 1)
+  } finally {
+    if (original === undefined) delete holder.wx
+    else holder.wx = original
+  }
+})
