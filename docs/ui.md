@@ -151,10 +151,10 @@ cd examples/solid-todo && pnpm build
 # glaze build: 24 pages, 51 components
 
 mise exec -- pnpm -r test
-# shared 2, store 8, runtime 248, compiler 324, build 126 = 708, 0 failed
+# shared 2, store 8, runtime 257, compiler 324, build 126 = 717, 0 failed
 
 mise exec -- pnpm -r --if-present typecheck
-# 8 packages Done (adds @glaze/ui)
+# 7 packages Done (shared, store, ui, runtime, compiler, build, vite-plugin)
 
 cd ~/Playground/minibuild
 target/debug/minidev test \

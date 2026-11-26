@@ -9,6 +9,7 @@ import {
   createStore,
   flush,
   NotReadyError,
+  onCleanup,
 } from 'solid-js'
 import {
   defineGlazeComponent,
@@ -1768,6 +1769,146 @@ test('clears pending when a boundary binding fails instead of resolving', async 
   await tick()
   assert.equal(merged().b2, true)
   assert.equal(merged().b1, false)
+})
+
+test('shares a memo between bindings and ignores unrelated signals', async () => {
+  let setA
+  let setB
+  let memoRuns = 0
+  const effectValues = []
+  const def = defineGlazeComponent({
+    data: { b0: null, b1: null, b2: null },
+    setup(ctx) {
+      const [a, set] = createSignal(0)
+      const [b, setOther] = createSignal(0)
+      setA = set
+      setB = setOther
+      const doubled = createMemo(() => {
+        memoRuns += 1
+        return a() * 2
+      })
+      ctx.bind(0, () => doubled())
+      ctx.bind(1, () => doubled())
+      ctx.bind(2, () => b())
+      createEffect(
+        () => doubled(),
+        {
+          effect(value) {
+            effectValues.push(value)
+          },
+        },
+      )
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  assert.equal(memoRuns, 1)
+  assert.deepEqual(effectValues, [0])
+
+  const calls = instance.calls.length
+  setA(1)
+  await tick()
+  assert.equal(memoRuns, 2)
+  assert.deepEqual(effectValues, [0, 2])
+  assert.equal(instance.calls.length, calls + 1)
+  assert.equal(instance.calls.at(-1).b0, 2)
+  assert.equal(instance.calls.at(-1).b1, 2)
+  // The unchanged b2 is not part of this batch; its previous value stays in
+  // the platform data.
+  assert.equal(Object.assign({}, ...instance.calls).b2, 0)
+
+  setB(1)
+  await tick()
+  // The memo depends only on `a`, so a write to `b` must not recompute it.
+  assert.equal(memoRuns, 2)
+  assert.deepEqual(effectValues, [0, 2])
+  assert.equal(instance.calls.at(-1).b2, 1)
+})
+
+test('disposes user effects on detach and skips them while detached', async () => {
+  let setA
+  let runs = 0
+  let cleanups = 0
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    setup(ctx) {
+      const [a, set] = createSignal(0)
+      setA = set
+      ctx.bind(0, () => a())
+      createEffect(
+        () => {
+          runs += 1
+          a()
+          onCleanup(() => {
+            cleanups += 1
+          })
+        },
+        { effect() {} },
+      )
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  assert.equal(runs, 1)
+
+  def.lifetimes.detached.call(instance)
+  await tick()
+  assert.equal(cleanups, 1)
+
+  setA(1)
+  await tick()
+  assert.equal(runs, 1, 'a detached effect must not run')
+
+  def.lifetimes.attached.call(instance)
+  await tick()
+  assert.equal(runs, 2, 'a re-attached root installs the effect again')
+})
+
+test('multiple writes in one tick produce one transport batch with final values', async () => {
+  let setA
+  let setB
+  const seen = []
+  const def = defineGlazeComponent({
+    data: { b0: null, b1: null },
+    setup(ctx) {
+      const [a, set] = createSignal(0)
+      const [b, setOther] = createSignal(0)
+      setA = set
+      setB = setOther
+      ctx.bind(0, () => a())
+      ctx.bind(1, () => b())
+      createEffect(
+        () => {
+          seen.push(a())
+        },
+        { effect() {} },
+      )
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  const calls = instance.calls.length
+
+  setA(1)
+  setA(2)
+  setB(3)
+  await tick()
+
+  assert.equal(instance.calls.length, calls + 1)
+  assert.equal(instance.calls.at(-1).b0, 2)
+  assert.equal(instance.calls.at(-1).b1, 3)
+  // The effect sees the final value once, not every intermediate write.
+  assert.deepEqual(seen, [0, 2])
+
+  // Writing the same values again is a no-op at the binding layer.
+  const settledCalls = instance.calls.length
+  setA(2)
+  setB(3)
+  await tick()
+  assert.equal(instance.calls.length, settledCalls)
 })
 
 test('a context-consuming component rebuilds its root when re-attached', async () => {

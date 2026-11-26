@@ -123,6 +123,31 @@ asserts `bindingCount === 0`, so a case cannot pass by silently taking the
 binding path. This is a semantic spot-check, not a proof for arbitrary WXML
 expressions; unsupported syntax falls back to a binding rather than projecting.
 
+### Effect, memo and glass-easel parity tests
+
+`packages/runtime/test/glass-easel-parity.test.ts` mounts the same WXML twice
+for each case: once with a Glaze component and once with a direct glass-easel
+component driven by `setData`. It compares data and rendered rows after scalar
+updates, keyed list patches/splices, a keyed reorder, nested object updates,
+conditional branches and a child-property update. The keyed reorder case also
+asserts that the row node for a retained key is the same element in both
+implementations. This exercises the actual transport and glass-easel template
+engine rather than a fake instance.
+
+The two implementations intentionally differ in timing: direct `setData` is
+synchronous, while Glaze commits through its scheduler (and, in the test
+harness, glass-easel's 16 ms backend render callback). The test asserts that
+the Glaze view still holds the old value immediately after a signal write and
+matches direct `setData` after settling. A 100 ms settle window is used for the
+two-stage test harness, not as a production timing claim.
+
+`packages/runtime/test/mini.test.ts` adds effect/memo contracts: two bindings
+sharing one memo compute it once; an unrelated signal does not recompute it;
+multiple signal writes in one tick produce one transport batch with final
+values; and a user effect's cleanup runs on detach while the effect does not
+run during the detached period. These are runtime-level tests with the
+lightweight instance, separate from the glass-easel rendering parity above.
+
 ### Initial list data must not alias app state
 
 The platform applies `replaceDataOnPath` by mutating the component data object
@@ -621,7 +646,7 @@ not promised.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 248, pass 248, fail 0 (includes frame scheduler and boundary tests)
+# tests 257, pass 257, fail 0 (includes frame scheduler and boundary tests)
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json (no output)
 pnpm --filter @glaze/build test

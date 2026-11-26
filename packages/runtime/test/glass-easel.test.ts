@@ -16,7 +16,10 @@ after(() => {
   else globalThis.Component = originalComponent
 })
 
-const tick = () => new Promise((resolve) => setTimeout(resolve, 40))
+// EmptyBackendContext schedules render callbacks after 16 ms. A Glaze update
+// can need the Solid flush and that render callback, so 40 ms is too close to
+// the frame boundary when the suite is under load.
+const tick = () => new Promise((resolve) => setTimeout(resolve, 100))
 
 function captureConsoleError() {
   const errors = []

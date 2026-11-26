@@ -72,7 +72,7 @@ glass-easel 组件，不替换平台渲染器。也可以通过可选的兼容�
 - UI：`@glaze/ui` 把 UI SDK 组件（button、toggle、switch、field、input、
   dialog、checkbox、radio、tabs、collapsible）移植为原生 WXML 组件，
   包含非受控变体与仅触屏的 dialog；
-- 验证：708 个单元测试（shared 2、store 8、runtime 248、compiler 324、
+- 验证：717 个单元测试（shared 2、store 8、runtime 257、compiler 324、
   build 126）、glass-easel 渲染测试和 13 个 minidev e2e 用例。
 
 已知限制记录在 [编译器](docs/compiler.md)、[Store](docs/store.md)、
