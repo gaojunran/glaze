@@ -693,7 +693,7 @@ not promised.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 266, pass 266, fail 0 (includes frame scheduler and boundary tests)
+# tests 268, pass 268, fail 0 (includes frame scheduler and boundary tests)
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json (no output)
 pnpm --filter @glaze/build test

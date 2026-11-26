@@ -20,10 +20,14 @@ import {
   onAppError,
   onAppHide,
   onAppShow,
+  onBeforeDetach,
   onComponentError,
+  onComponentMoved,
+  onPageEvent,
   onUnhandledRejection,
   projectList,
   useCommit,
+  useAppVisible,
   useLaunchOptions,
   usePageSize,
   usePageVisible,
@@ -124,6 +128,87 @@ test('page events store payloads and return handler results', async () => {
     def.methods.__glazePageEvent.call(instance, 'shareAppMessage', { from: 'menu' }),
     { title: 'shared' },
   )
+})
+
+test('public page and lifecycle hooks register and clean up', async () => {
+  let page
+  let removePage
+  let removeMove
+  let removeDetach
+  let moves = 0
+  let detaches = 0
+  const seen = []
+  const def = defineGlazeComponent({
+    data: {},
+    setup(ctx) {
+      page = ctx
+      removePage = onPageEvent('scroll', (payload) => {
+        seen.push(payload)
+        return 'handled'
+      })
+      removeMove = onComponentMoved(() => {
+        moves += 1
+      })
+      removeDetach = onBeforeDetach(() => {
+        detaches += 1
+      })
+    },
+  })
+  const instance = createInstance(def)
+
+  assert.equal(def.methods.__glazePageEvent.call(instance, 'scroll', { scrollTop: 7 }), 'handled')
+  def.lifetimes.moved.call(instance)
+  def.lifetimes.beforeDetach.call(instance)
+  await tick()
+  assert.deepEqual(seen, [{ scrollTop: 7 }])
+  assert.equal(moves, 1)
+  assert.equal(detaches, 1)
+
+  removePage()
+  removeMove()
+  removeDetach()
+  def.methods.__glazePageEvent.call(instance, 'scroll', { scrollTop: 8 })
+  def.lifetimes.moved.call(instance)
+  def.lifetimes.beforeDetach.call(instance)
+  await tick()
+  assert.deepEqual(seen, [{ scrollTop: 7 }])
+  assert.equal(moves, 1)
+  assert.equal(detaches, 1)
+
+  assert.deepEqual(page.pageEvent('scroll'), { scrollTop: 8 })
+})
+
+test('useAppVisible tracks app hide and show', async () => {
+  const original = (globalThis as { wx?: unknown }).wx
+  const listeners = {}
+  ;(globalThis as { wx?: unknown }).wx = {
+    onAppShow: (listener) => {
+      listeners.show = listener
+    },
+    onAppHide: (listener) => {
+      listeners.hide = listener
+    },
+  }
+  try {
+    let visible
+    const def = defineGlazeComponent({
+      data: {},
+      setup() {
+        visible = useAppVisible()
+      },
+    })
+    createInstance(def)
+    assert.equal(visible(), true)
+
+    listeners.hide()
+    await tick()
+    assert.equal(visible(), false)
+    listeners.show({ scene: 1001 })
+    await tick()
+    assert.equal(visible(), true)
+  } finally {
+    ;(globalThis as { wx?: unknown }).wx = original
+  }
 })
 
 test('routeDone and component move/detach hooks are exposed', async () => {
