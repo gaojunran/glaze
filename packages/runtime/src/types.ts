@@ -183,6 +183,7 @@ export type InstanceState = {
   statusVersion: [() => number, (value: number) => void]
   applyStatus: ((index: number, value: unknown) => void) | null
   flushScheduled: boolean
+  flushEpoch: number
   /** True once a root's binding effects are installed; reset on mount/detach. */
   effectsInstalled: boolean
   pageVisible: [() => boolean, (value: boolean) => void]

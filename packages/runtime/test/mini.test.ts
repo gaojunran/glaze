@@ -37,7 +37,7 @@ after(() => {
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-function createInstance(def, properties = {}, { paths = false } = {}) {
+function createInstance(def, properties = {}, { paths = false, backend = null } = {}) {
   const calls = []
   const ops = []
   const events = []
@@ -49,6 +49,7 @@ function createInstance(def, properties = {}, { paths = false } = {}) {
     ops,
     events,
     pathCalls,
+    getBackendContext: backend ? () => backend : undefined,
     setData(data) {
       calls.push(data)
     },
@@ -889,6 +890,35 @@ test('groups scalar bindings across more than one batch without losing updates',
   )
 })
 
+test('coalesces updates into one view-frame commit when the host exposes a backend', async () => {
+  let setCount
+  const frames = []
+  const def = defineGlazeComponent({
+    data: { b0: null, b1: null },
+    setup(ctx) {
+      const [count, set] = createSignal(0)
+      setCount = set
+      ctx.bind(0, () => count())
+      ctx.bind(1, () => count() + 1)
+    },
+  })
+
+  const instance = createInstance(def, {}, { backend: { render: (callback) => frames.push(callback) } })
+  def.lifetimes.attached.call(instance)
+  const before = instance.calls.length
+
+  setCount(1)
+  setCount(2)
+  await tick()
+  assert.equal(frames.length, 1)
+  assert.equal(instance.calls.length, before)
+
+  frames[0]()
+  await tick()
+  assert.equal(instance.calls.length, before + 1)
+  assert.deepEqual(instance.calls.at(-1), { b0: 2, b1: 3 })
+})
+
 test('a flush queued before detach does not call setData', async () => {
   let setCount
   const def = defineGlazeComponent({
@@ -908,6 +938,40 @@ test('a flush queued before detach does not call setData', async () => {
   await tick()
 
   assert.deepEqual(instance.calls, [{ b0: 0 }])
+})
+
+test('a stale frame callback does not flush a later attach', async () => {
+  let setCount
+  const frames = []
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    setup(ctx) {
+      const [count, set] = createSignal(0)
+      setCount = set
+      ctx.bind(0, () => count())
+    },
+  })
+
+  const instance = createInstance(def, {}, { backend: { render: (callback) => frames.push(callback) } })
+  def.lifetimes.attached.call(instance)
+  setCount(1)
+  await tick()
+  assert.equal(frames.length, 1)
+
+  def.lifetimes.detached.call(instance)
+  def.lifetimes.attached.call(instance)
+  const before = instance.calls.length
+  setCount(2)
+  await tick()
+  assert.equal(frames.length, 2)
+
+  frames[0]()
+  await tick()
+  assert.equal(instance.calls.length, before)
+
+  frames[1]()
+  await tick()
+  assert.deepEqual(instance.calls.at(-1), { b0: 2 })
 })
 
 test('stops setData after detach and rebuilds effects on re-attach', async () => {

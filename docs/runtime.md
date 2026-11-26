@@ -475,6 +475,36 @@ flag resets in `mount` and on `detached`, so a rebuilt root installs a fresh set
 once. The regression test updates one signal after `ready` + `attached` and
 asserts the binding read ran once.
 
+### Frame-aligned commit scheduling
+
+`packages/runtime/src/frame.ts` resolves one commit scheduler per attached
+instance. In a mini-program lifetime `this` is the platform's
+`ComponentCaller`, so the glass-easel backend is not directly reachable; its
+`setData` callback is routed through glass-easel's `triggerRender`
+(`glass-easel-adapter/src/subcontext/component.ts`) and finally through the
+backend's `render` (the view-side `requestAnimationFrame`, see
+`glass-easel/src/render.ts` and `current_window_backend_context.ts`). The
+runtime therefore uses an empty `setData({}, callback)` as a frame token. When
+a host exposes the backend directly (real glass-easel components in tests), that
+path is used instead.
+
+The runtime waits for that callback before flushing `state.pending`, so every
+binding change collected in the same frame reaches `applyBinding`/the transport
+as one batch. Status and data therefore land in the same commit window, and the
+old view values stay visible until the frame callback instead of being replaced
+in an earlier microtask.
+
+The scheduler falls back to a microtask when the host is an exparser component
+or exposes neither a backend nor a `setData` callback. The fallback is
+deliberate: the callback is an adapter-internal hook, not a public
+mini-program API.
+
+This is frame-aligned data commit, not a render-effect or paint-complete hook.
+It cannot keep WXML branch nodes alive, make several component roots commit
+atomically, or give `startTransition`/`latest` their timing. It only removes
+multiple `setData` commits from one frame and gives `keepPrevious` a cleaner
+`old view -> next frame` boundary.
+
 ### Config validation
 
 `defineGlazeComponent` validates the generated config before it builds any
@@ -508,7 +538,8 @@ graduates slots as their content is shown. Glaze has no boundary output object;
 it projects the same order through data bindings and therefore inherits the
 mini-program transport's commit timing. The user-visible semantics are the
 same for `sequential` / `together` / `natural`, frontier fallback, and
-collapsed tails; frame-level hold is not promised.
+collapsed tails; a frame-level content hold beyond the aligned data commit is
+not promised.
 
 ## Trade-offs
 
@@ -523,6 +554,14 @@ collapsed tails; frame-level hold is not promised.
 - The generated page wrapper defines only the methods whose event names appear
   in compiled sources; a dynamic or aliased hook enables the full set. Share
   methods therefore enable the share menu only on pages that register them.
+- The frame scheduler depends on glass-easel's adapter-internal `setData`
+  callback (or a directly exposed backend); it is feature-detected every attach
+  and falls back to a microtask. It is not a public mini-program contract.
+- The frame token is an empty `setData`, which costs one render request per
+  batch but no data change; it is not a second data commit.
+- Frame-aligned commit adds one view-frame of latency to non-initial updates.
+  That is the trade for removing multiple commits inside one frame; mount data
+  still goes through the initial `setData` immediately.
 - App visibility uses one module-level signal per runtime copy and `wx.onAppShow`
   / `wx.onAppHide`; there is no per-page app listener.
 
@@ -530,7 +569,7 @@ collapsed tails; frame-level hold is not promised.
 
 ```
 pnpm --filter @glaze/runtime test
-# tests 218, pass 218, fail 0
+# tests 228, pass 228, fail 0 (includes frame scheduler and boundary tests)
 pnpm --filter @glaze/runtime typecheck
 # tsc --noEmit -p tsconfig.json (no output)
 pnpm --filter @glaze/build test

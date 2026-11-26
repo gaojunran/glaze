@@ -8,7 +8,8 @@ The async-boundary and lifetime code is out of scope and was not changed.
 
 Three problems sat on the path from a binding to component data:
 
-1. `applyPending` re-probed the component's capability on every microtask, and
+1. `applyPending` re-probed the component's capability on every scheduled
+   commit, and
    the list decision used `typeof component.spliceArrayDataOnPath`. A component
    with that method but no `groupUpdates`/data proxy emitted a splice that the
    final `setData` filter silently removed.
@@ -71,6 +72,14 @@ The data-group path keeps another writer's queued changes and appends the
 runtime's entries in glass-easel's own tuple format
 (`[path, value, undefined, undefined]`, `[path, inserts, index, del]`). All
 methods are called on their original receiver (`group`, or `component`).
+
+### Commit scheduling
+
+`mini.ts` collects changes in `state.pending` and asks `createFrameScheduler`
+to flush them. The scheduler reaches the view-side `requestAnimationFrame`
+through glass-easel's `setData` callback (or directly exposed backend);
+otherwise it uses a microtask. This is upstream of the transport: the transport
+still sees one batch per frame and keeps its own capability order.
 
 ## Materialization
 

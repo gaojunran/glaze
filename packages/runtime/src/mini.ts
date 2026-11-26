@@ -55,6 +55,7 @@ import {
 import { validateConfig } from './config.ts'
 import { createBindingState, resetBindingStates } from './state.ts'
 import { createDataTransport } from './transport.ts'
+import { createFrameScheduler } from './frame.ts'
 import {
   attach as attachLifecycle,
   attachWhileWaiting,
@@ -1088,13 +1089,22 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
     // splice with a replacement queued after the group; list changes then take
     // the whole-value path instead of being dropped or lost.
     const transport = createDataTransport(component, state.pageRoot)
+    // Glass-easel can report the view-side animation frame; coalescing there
+    // keeps fallback/content and status/data in the same commit window. Hosts
+    // without that backend (exparser, a page object, tests) stay on a
+    // microtask and keep the old immediate behavior.
+    const scheduleFrame = createFrameScheduler(component, { allowSetData: !legacyFramework })
 
     const schedule = (changes: DataChange[]) => {
       if (changes.length === 0) return
       for (const change of changes) state.pending.push(change)
       if (state.flushScheduled) return
       state.flushScheduled = true
+      const epoch = state.flushEpoch
       const flush = () => {
+        // A callback queued before `detached` must not flush changes from a
+        // later attach; the new attach owns its own scheduled frame.
+        if (epoch !== state.flushEpoch) return
         state.flushScheduled = false
         const pending = state.pending
         state.pending = []
@@ -1116,8 +1126,7 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
           reportTransportError(error)
         }
       }
-      if (typeof queueMicrotask === 'function') queueMicrotask(flush)
-      else Promise.resolve().then(flush)
+      scheduleFrame(flush)
     }
 
     const applyBinding = (index: number, value: unknown) => {
@@ -1402,6 +1411,7 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
           asyncStatus: config.asyncStatus,
           applyStatus: null,
           flushScheduled: false,
+          flushEpoch: 0,
           effectsInstalled: false,
           pageVisible: createSignal(true),
           pageSize: createSignal(initialPageSize()),
@@ -1590,6 +1600,7 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
         state.lifecycle = detachLifecycle(state.lifecycle)
         state.pending = []
         state.flushScheduled = false
+        state.flushEpoch += 1
         // Match the old detached behavior: event and ref callbacks stop until
         // the root is rebuilt on re-attach.
         state.events.length = 0

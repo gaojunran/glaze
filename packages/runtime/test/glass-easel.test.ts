@@ -16,7 +16,7 @@ after(() => {
   else globalThis.Component = originalComponent
 })
 
-const tick = () => new Promise((resolve) => setTimeout(resolve, 5))
+const tick = () => new Promise((resolve) => setTimeout(resolve, 40))
 
 function captureConsoleError() {
   const errors = []
