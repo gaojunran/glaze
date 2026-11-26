@@ -241,9 +241,22 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
 
   const outerLoading = ctx.currentLoadingBoundary
   const outerError = ctx.currentErrorBoundary
+  const parentBoundary = ctx.currentBoundary
+  const parentRegion = ctx.currentBoundaryRegion
   const revealGroup = ctx.currentRevealGroup
   const boundary = ctx.nextAsyncBoundary
   ctx.nextAsyncBoundary += 1
+  const descriptor = {
+    id: boundary,
+    kind: kind === 'Loading' ? ('loading' as const) : ('error' as const),
+    parent: parentBoundary,
+    region: parentRegion,
+    content: [] as number[],
+    children: [] as number[],
+    ...(kind === 'Loading' ? { keepPrevious } : {}),
+  }
+  ctx.boundaries.push(descriptor)
+  if (parentBoundary != null) ctx.boundaries[parentBoundary]?.children.push(boundary)
   if (kind === 'Loading' && revealGroup) revealGroup.slots.push(boundary)
   if (on) {
     ctx.addEffectCode(`ctx.loadingOn(${boundary}, () => (${codeOf(on)}))`, on)
@@ -267,10 +280,14 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
   }
 
   let fallbackContent = ''
-  // A fallback is not a slot of the enclosing Reveal: its Loading boundaries
-  // belong to the fallback's own subtree.
+  // A fallback is not a slot of the enclosing Reveal, and it is not part of
+  // this boundary's content: its bindings belong to the enclosing boundary.
   const fallbackReveal = ctx.currentRevealGroup
+  const fallbackBoundary = ctx.currentBoundary
+  const fallbackRegion = ctx.currentBoundaryRegion
   ctx.currentRevealGroup = null
+  ctx.currentBoundary = parentBoundary
+  ctx.currentBoundaryRegion = 'fallback'
   try {
     if (fallback && isFunctionFallback) {
       const param = fallback.params[0]
@@ -333,20 +350,31 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
     }
   } finally {
     ctx.currentRevealGroup = fallbackReveal
+    ctx.currentBoundary = fallbackBoundary
+    ctx.currentBoundaryRegion = fallbackRegion
   }
-  const index = ctx.addBindingCode(
-    kind === 'Loading' ? `ctx.loading(${boundary})` : `ctx.errored(${boundary})`,
-  )
+  // Status conditions are projections, not content: leave the boundary tree
+  // out of their association so the boundary never reads its own status.
+  const statusBoundary = ctx.currentBoundary
+  ctx.currentBoundary = null
+  let index: number
   let loadedIndex: number | null = null
-  if (kind === 'Loading' && keepPrevious) {
-    loadedIndex = ctx.addBindingCode(`ctx.hasValue(${boundary})`)
-    ctx.asyncStatus.push({ index: loadedIndex, kind: 'settled', boundary })
+  try {
+    index = ctx.addBindingCode(
+      kind === 'Loading' ? `ctx.loading(${boundary})` : `ctx.errored(${boundary})`,
+    )
+    if (kind === 'Loading' && keepPrevious) {
+      loadedIndex = ctx.addBindingCode(`ctx.hasValue(${boundary})`)
+      ctx.asyncStatus.push({ index: loadedIndex, kind: 'settled', boundary })
+    }
+    ctx.asyncStatus.push({
+      index,
+      kind: kind === 'Loading' ? 'loading' : 'error',
+      boundary,
+    })
+  } finally {
+    ctx.currentBoundary = statusBoundary
   }
-  ctx.asyncStatus.push({
-    index,
-    kind: kind === 'Loading' ? 'loading' : 'error',
-    boundary,
-  })
   // A binding can sit under an inner Loading and an outer Errored, or the
   // reverse. Track the nearest boundary per kind so an outer boundary still
   // receives the state its inner counterpart does not handle.
@@ -356,14 +384,24 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
   // boundaries created directly under <Reveal> are slots, not ones nested in
   // another boundary or in an error fallback.
   const savedReveal = ctx.currentRevealGroup
-  ctx.currentRevealGroup = null
+  const savedBoundary = ctx.currentBoundary
+  const savedRegion = ctx.currentBoundaryRegion
   let children: string
   let pendingContent: string
   try {
+    ctx.currentRevealGroup = null
+    ctx.currentBoundary = boundary
+    ctx.currentBoundaryRegion = 'content'
     children = compileChildren(node.children, ctx, scope)
+    // `pending` is a second fallback, not content: it belongs to the
+    // enclosing boundary and must not teach this boundary to wait on itself.
+    ctx.currentBoundary = parentBoundary
+    ctx.currentBoundaryRegion = 'fallback'
     pendingContent = pending ? compileNode(pending, ctx, scope) : ''
   } finally {
     ctx.currentRevealGroup = savedReveal
+    ctx.currentBoundary = savedBoundary
+    ctx.currentBoundaryRegion = savedRegion
     ctx.currentLoadingBoundary = outerLoading
     ctx.currentErrorBoundary = outerError
   }
@@ -375,10 +413,13 @@ export function compileAsyncBoundary(node, ctx, scope, kind) {
     // owns the Loading: the group decides them.
     ctx.currentLoadingBoundary = null
     ctx.currentErrorBoundary = null
+    const revealBoundary = ctx.currentBoundary
+    ctx.currentBoundary = null
     try {
       gatedIndex = ctx.addBindingCode(`ctx.revealGated(${boundary})`)
       hiddenIndex = ctx.addBindingCode(`ctx.revealHidden(${boundary})`)
     } finally {
+      ctx.currentBoundary = revealBoundary
       ctx.currentLoadingBoundary = outerLoading
       ctx.currentErrorBoundary = outerError
     }

@@ -39,6 +39,24 @@ export type AsyncStatusEntry = {
   kind: AsyncStatusKind
   boundary: number
 }
+export type AsyncBoundaryKind = 'loading' | 'error'
+export type AsyncBoundaryRegion = 'content' | 'fallback'
+/**
+ * One real async boundary in the component's tree. `content` lists the data
+ * bindings the boundary owns directly; the runtime wraps them in a real
+ * Solid `createLoadingBoundary`/`createErrorBoundary`, so nearest-catch and
+ * first-load pending come from Solid. Refetch pending still comes from the
+ * runtime's `isPending` projection.
+ */
+export type AsyncBoundaryDescriptor = {
+  id: number
+  kind: AsyncBoundaryKind
+  parent: number | null
+  region: AsyncBoundaryRegion
+  content: number[]
+  children: number[]
+  keepPrevious?: boolean
+}
 export type BoundaryContextEntry = { name: string; key: string }
 
 export type GeneratedConfigJson = {
@@ -53,6 +71,7 @@ export type GeneratedConfigJson = {
   componentFramework?: 'exparser'
   boundaryContexts?: BoundaryContextEntry[]
   asyncStatus?: AsyncStatusEntry[]
+  boundaries?: AsyncBoundaryDescriptor[]
   bindingGroupSize?: number
   listBindings?: Record<string, string | null>
   listFields?: Record<string, string[]>

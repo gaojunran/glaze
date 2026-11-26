@@ -179,6 +179,30 @@ Status and data share one `applyBinding`/transport queue. The old
 boolean explicitly, which is necessary because Solid stages signal writes until
 the current flush ends.
 
+### Real boundary tree
+
+The compiler now emits `boundaries` descriptors alongside `asyncStatus`.
+`mount` builds the tree after creating the per-binding memos, using Solid's
+`createLoadingBoundary` and `createErrorBoundary` from `solid-js/internal`.
+Each boundary's content function reads its direct `content` bindings and calls
+the output of each content-region child boundary; fallback-region boundaries
+are built but deliberately not called. This gives nearest-boundary pending,
+first-load fallback, and nearest error catching to the real Solid primitives
+instead of to a parallel map.
+
+`BoundaryState` is still present: it owns the refetch `isPending` probe, the
+`hasValue`/settled signal, the `loadingOn` dependency effect, the reset version,
+and the component error observer. `applyAsyncStatus` combines the real
+boundary's fallback with that state, so status and data still land in one
+transport batch. The WXML conditions are unchanged, and the tree adds no DOM or
+second render path.
+
+This is not a full boundary-output projection. The fallback and content are
+still WXML branches in the same data object; there is no held frame, no
+transition, and no per-boundary effect attach/detach. A boundary in another
+mini-program component has its own Solid root, and a boundary inside a loop has
+no per-row owner.
+
 For a list, each row needs its own instance-level boundary. Render a row
 component from `<For>` and put its async memo plus `Loading`/`Errored` inside
 that component; the component's root owns one binding set and status map, so

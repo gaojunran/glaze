@@ -11,6 +11,7 @@ import {
   runWithOwner,
   useContext,
 } from 'solid-js'
+import { createErrorBoundary, createLoadingBoundary } from 'solid-js/internal'
 import {
   CONTEXT_PROP,
   PAGE_PROP,
@@ -45,6 +46,7 @@ import {
   markSettledBoundary,
   markPending,
   markSettled,
+  normalizeErrorValue,
   resetBoundary as resetBoundaryState,
   resetVersionOf,
   setLoading,
@@ -67,6 +69,7 @@ declare const Component: (options: Record<string, unknown>) => unknown
 declare const Page: (options: Record<string, unknown>) => unknown
 
 import type { PageContextValue } from '@glaze/shared'
+import type { AsyncBoundaryDescriptor } from '@glaze/shared/protocol'
 import type {
   AppLaunchOptions,
   AppShowHandler,
@@ -78,6 +81,7 @@ import type {
   PageEventName,
   PageEventPayloads,
   PageSize,
+  RuntimeBoundary,
 } from './types.ts'
 
 export { className, styleName, textValue } from './styles.ts'
@@ -488,6 +492,8 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
     if (state.core.bindings[index]?.errorBoundary == null) logBindingError(index, error)
   }
   const BINDING_ERROR = Symbol('glaze.bindingError')
+  const BOUNDARY_CONTENT = Symbol('glaze.boundaryContent')
+  const BOUNDARY_FALLBACK = Symbol('glaze.boundaryFallback')
   type BindingResult = { value: unknown } | { [BINDING_ERROR]: unknown }
   const isBindingError = (result: BindingResult): result is { [BINDING_ERROR]: unknown } =>
     Object.hasOwn(result, BINDING_ERROR)
@@ -748,6 +754,7 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
     resetBindingStates(state.core.bindings)
     state.effectsInstalled = false
     state.revealByBoundary.clear()
+    state.boundaryTree.clear()
     clearBoundaryContent(state.boundaries)
     state.events.length = 0
     state.refs.length = 0
@@ -790,9 +797,12 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
           state.boundaries.loadingOn.set(boundary, fn)
         },
         reset(boundary: number) {
+          state.boundaryTree.get(boundary)?.reset()
           resetBoundary(state, boundary)
         },
-        loading: (boundary) => loadingOf(state.boundaries, boundary),
+        loading: (boundary) =>
+          (state.boundaryTree.get(boundary)?.fallback() ?? false) ||
+          loadingOf(state.boundaries, boundary),
         hasValue: (boundary) => settledOf(state.boundaries, boundary),
         revealGroup(order, collapsed, slots) {
           const group = createRevealGroup(state.boundaries, slots, order, collapsed)
@@ -800,9 +810,16 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
         },
         revealGated: (boundary) => state.revealByBoundary.get(boundary)?.gated(boundary) ?? false,
         revealHidden: (boundary) => state.revealByBoundary.get(boundary)?.hidden(boundary) ?? false,
-        errored: (boundary) => erroredOf(state.boundaries, boundary),
-        error: (boundary) => errorValueOf(state.boundaries, boundary),
-        errorArray: (boundary) => errorArrayOf(state.boundaries, boundary),
+        errored: (boundary) =>
+          (state.boundaryTree.get(boundary)?.fallback() ?? false) ||
+          erroredOf(state.boundaries, boundary),
+        error: (boundary) =>
+          state.boundaryTree.get(boundary)?.error() ?? errorValueOf(state.boundaries, boundary),
+        errorArray: (boundary) => {
+          const value = state.boundaryTree.get(boundary)?.error()
+          if (value != null) return [value]
+          return errorArrayOf(state.boundaries, boundary)
+        },
         pageVisible: () => state.pageVisible[0](),
         pageSize: () => state.pageSize[0](),
         appVisible: () => {
@@ -992,6 +1009,67 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
           }
         }
       }
+      // Build the real Solid boundary tree. The compiler emitted each
+      // boundary's direct content bindings; reading them here gives the
+      // boundary its own nearest-catch and refetch behavior. Data effects
+      // still project through the transport; this tree owns the status.
+      if (config.boundaries?.length) {
+        const descriptors = new Map(config.boundaries.map((item) => [item.id, item]))
+        const build = (descriptor: AsyncBoundaryDescriptor) => {
+          const contentChildren: RuntimeBoundary[] = []
+          for (const childId of descriptor.children ?? []) {
+            const child = descriptors.get(childId)
+            if (!child) continue
+            build(child)
+            if (child.region === 'content') contentChildren.push(state.boundaryTree.get(childId)!)
+          }
+          const [errorValue, setErrorValue] = createSignal<unknown>(null)
+          const content = () => {
+            for (const child of contentChildren) child.output()
+            for (const index of descriptor.content ?? []) {
+              state.core.bindings[index]?.read?.()
+            }
+            // Showing content again means the error has recovered.
+            if (descriptor.kind === 'error' && errorValue() !== null) {
+              setErrorValue(null)
+            }
+            return BOUNDARY_CONTENT
+          }
+          if (descriptor.kind === 'loading') {
+            const on = state.boundaries.loadingOn.get(descriptor.id)
+            const output = createLoadingBoundary(
+              content,
+              () => BOUNDARY_FALLBACK,
+              on ? { on: () => on() } : undefined,
+            )
+            state.boundaryTree.set(descriptor.id, {
+              kind: 'loading',
+              output,
+              fallback: () => output() === BOUNDARY_FALLBACK,
+              error: () => null,
+              reset: () => {},
+            })
+            return
+          }
+          let resetFn = () => {}
+          const output = createErrorBoundary(content, (error: () => unknown, reset: () => void) => {
+            resetFn = reset
+            const value = error()
+            setErrorValue(value == null ? null : normalizeErrorValue(value))
+            return BOUNDARY_FALLBACK
+          })
+          state.boundaryTree.set(descriptor.id, {
+            kind: 'error',
+            output,
+            fallback: () => output() === BOUNDARY_FALLBACK,
+            error: () => errorValue(),
+            reset: () => resetFn(),
+          })
+        }
+        for (const descriptor of config.boundaries) {
+          if (descriptor.parent === null) build(descriptor)
+        }
+      }
       // Pending/error signals remain runtime-owned; the memos above keep each
       // binding a single cached Solid graph node.
       component.setData(initial)
@@ -1087,19 +1165,46 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
         createEffect(
           () => {
             state.statusVersion[0]()
-            // Initial pending is captured by `markAsync`; `isPending` has no
-            // value to report until the first content has landed.
-            if (hasBoundaryPending(state.boundaries, boundary)) return
-            const pending = indexes.some((index) => {
-              const binding = state.core.bindings[index]
-              return (
-                binding?.settled === true &&
-                binding.memo != null &&
-                isPending(binding.memo)
-              )
-            })
+            // The real boundary reports its first-load fallback. Custom
+            // pending still covers refetch, which `isPending` reports without
+            // a fallback when `keepPrevious` keeps content on screen.
+            const fallback = state.boundaryTree.get(boundary)?.fallback() ?? false
+            const pending =
+              fallback ||
+              hasBoundaryPending(state.boundaries, boundary) ||
+              indexes.some((index) => {
+                const binding = state.core.bindings[index]
+                return (
+                  binding?.settled === true &&
+                  binding.memo != null &&
+                  isPending(binding.memo)
+                )
+              })
             setLoading(state.boundaries, boundary, pending)
             applyAsyncStatus(state, boundary, 'loading', pending)
+          },
+          {
+            effect() {},
+            error(error) {
+              if (!isNotReady(error)) state.error = error
+            },
+          },
+        )
+      }
+      // Error boundaries have no memo-based status effect; the real boundary's
+      // fallback is the authoritative error flag. The custom consumer map
+      // stays as the fallback for hand-written configs without a tree.
+      for (const descriptor of config.boundaries ?? []) {
+        if (descriptor.kind !== 'error') continue
+        createEffect(
+          () => {
+            const fallback = state.boundaryTree.get(descriptor.id)?.fallback() ?? false
+            applyAsyncStatus(
+              state,
+              descriptor.id,
+              'error',
+              fallback || state.boundaries.consumers.has(descriptor.id),
+            )
           },
           {
             effect() {},
@@ -1287,6 +1392,7 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
         const state: InstanceState = {
           core: { bindings: [] },
           boundaries: createBoundaryState(),
+          boundaryTree: new Map(),
           lifecycle: initialLifecycle(deferredContext),
           events: [],
           refs: [],

@@ -1,5 +1,6 @@
 import type { getOwner } from 'solid-js'
 import type { PageContextValue } from '@glaze/shared'
+import type { AsyncBoundaryDescriptor } from '@glaze/shared/protocol'
 import type { BoundaryState } from './boundary.ts'
 import type { LifecycleState } from './lifecycle.ts'
 import type { RuntimeStateCore } from './state.ts'
@@ -142,6 +143,7 @@ export type GlazeComponentConfig = {
   bindingGroupSize?: number
   boundaryContexts?: { name: string; key: string }[]
   asyncStatus?: { index: number; kind: 'loading' | 'error' | 'settled'; boundary: number }[]
+  boundaries?: AsyncBoundaryDescriptor[]
   properties?: string[]
   propMap?: Record<string, string>
   propSignals?: string[]
@@ -156,9 +158,18 @@ export type GlazeComponentConfig = {
   setup(ctx: GlazeContext, props: GlazeProps): void
 }
 
+export type RuntimeBoundary = {
+  kind: 'loading' | 'error'
+  output: () => unknown
+  fallback: () => boolean
+  error: () => unknown
+  reset: () => void
+}
+
 export type InstanceState = {
   core: RuntimeStateCore
   boundaries: BoundaryState
+  boundaryTree: Map<number, RuntimeBoundary>
   events: GlazeEventHandler[]
   refs: {
     id: string

@@ -2,6 +2,36 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { compileComponent } from '../src/index.ts'
 
+test('records real boundary descriptors and their direct content bindings', () => {
+  const result = compileComponent(`
+    import { createMemo, Errored, Loading } from 'solid-js'
+    export default function Page() {
+      const a = createMemo(async () => 'a')
+      const b = createMemo(() => 'b')
+      return (
+        <Loading fallback={<text>wait</text>}>
+          <Errored fallback={<text>bad</text>}>
+            <text>{a()}</text>
+          </Errored>
+          <text>{b()}</text>
+        </Loading>
+      )
+    }
+  `)
+  assert.deepEqual(result.boundaries, [
+    {
+      id: 0,
+      kind: 'loading',
+      parent: null,
+      region: 'content',
+      content: [4],
+      children: [1],
+      keepPrevious: true,
+    },
+    { id: 1, kind: 'error', parent: 0, region: 'content', content: [3], children: [] },
+  ])
+})
+
 test('compiles Loading on into a runtime dependency trigger', () => {
   const result = compileComponent(`
     import { Loading } from 'solid-js'

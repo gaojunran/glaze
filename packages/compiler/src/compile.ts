@@ -276,8 +276,11 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     nextAsyncBoundary: 0,
     currentLoadingBoundary: null,
     currentErrorBoundary: null,
+    currentBoundary: null,
+    currentBoundaryRegion: 'content',
     currentRevealGroup: null,
     asyncStatus: [],
+    boundaries: [],
     listProjectionBlocked: new Set<number>(),
     namedSlots: new Set<string>(),
     usesWxs: false,
@@ -354,6 +357,10 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
         errorBoundary: this.currentErrorBoundary,
         listFields: null,
       })
+      const boundary = this.currentBoundary
+      if (boundary != null && this.currentBoundaryRegion === 'content') {
+        this.boundaries[boundary]?.content.push(index)
+      }
       return index
     },
     addEvent(expression, scope = null, custom = false) {
@@ -380,6 +387,10 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
         errorBoundary: this.currentErrorBoundary,
         listFields: null,
       })
+      const boundary = this.currentBoundary
+      if (boundary != null && this.currentBoundaryRegion === 'content') {
+        this.boundaries[boundary]?.content.push(index)
+      }
       return index
     },
     guardCode(code) {
@@ -534,6 +545,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     namedSlots: [...ctx.namedSlots],
     boundaryContexts: ctx.boundaryContexts,
     asyncStatus: ctx.asyncStatus,
+    boundaries: ctx.boundaries,
     propSignals,
     listFields,
     structuredProps: ctx.structuredProps,
@@ -553,6 +565,7 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     namedSlots: [...ctx.namedSlots],
     boundaryContexts: ctx.boundaryContexts,
     asyncStatus: ctx.asyncStatus,
+    boundaries: ctx.boundaries,
     propSignals,
     listFields,
     components: ctx.components,

@@ -190,6 +190,9 @@ ${indent(rawSetup, 4)}
   if (options.asyncStatus && options.asyncStatus.length > 0) {
     metadata.asyncStatus = options.asyncStatus
   }
+  if (options.boundaries && options.boundaries.length > 0) {
+    metadata.boundaries = options.boundaries
+  }
   if (Object.keys(options.eventProps ?? {}).length > 0) metadata.eventProps = options.eventProps
   if (Object.keys(options.listFields ?? {}).length > 0) metadata.listFields = options.listFields
   if (options.structuredProps) metadata.structuredProps = true
@@ -212,6 +215,7 @@ ${indent(rawSetup, 4)}
       config.eventProps && line('eventProps', config.eventProps),
       config.propSignals && line('propSignals', config.propSignals),
       config.asyncStatus && line('asyncStatus', config.asyncStatus),
+      config.boundaries && line('boundaries', config.boundaries),
       config.structuredProps && line('structuredProps', config.structuredProps),
       config.pageContext && line('pageContext', config.pageContext),
       config.pageRoot && line('pageRoot', config.pageRoot),

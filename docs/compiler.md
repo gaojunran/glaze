@@ -612,6 +612,24 @@ without hiding the outer content. A failed binding is skipped instead of
 writing `undefined`, so it cannot clear another binding's error. The fallback
 and the boundary's own condition belong to the outer boundary.
 
+Each boundary also emits a descriptor in `boundaries`:
+
+```json
+{ "id": 0, "kind": "loading", "parent": null, "region": "content",
+  "content": [4], "children": [1], "keepPrevious": true }
+```
+
+`content` lists the data bindings owned directly by that boundary; the
+fallback, `pending` block, and the boundary's status bindings are excluded, so
+the boundary never reads its own status. `parent`/`children` describe the
+boundary tree. The runtime builds real Solid
+`createLoadingBoundary`/`createErrorBoundary` nodes from this tree after the
+binding memos exist: a boundary's content reads its `content` bindings and the
+outputs of content-region child boundaries. The nearest-catch behavior, first
+pending, and `Errored` fallback therefore come from Solid rather than from a
+parallel map; `BoundaryState` remains as the refetch/status projection and
+`hasValue` source. WXML still uses the ordinary `wx:if` conditions.
+
 Bindings in a component with async boundaries are wrapped in one Solid memo
 each. The memo is the single evaluation node the data effect reads; a
 `NotReadyError` propagates as pending, while a real error is stored as a value
@@ -681,9 +699,12 @@ Async behavior that is implemented:
 
 Remaining async work, deliberately left for a later pass:
 
-- No Solid boundary tree and no boundary-output projection. First pending and
-  real errors are captured by the runtime; only refetch pending uses Solid
-  `isPending`.
+- The real boundary tree owns first-load pending and error status, but it is
+  not a boundary-output clone. There is no held frame, no transition, and no
+  fallback/content effect attach-detach: data effects stay in one set and the
+  WXML data still carries both branches. Cross-component boundaries and
+  boundaries inside loops are not part of the tree; a row component remains the
+  way to get per-row identity.
 - Same-kind boundary nesting reports only bindings whose nearest boundary is
   that boundary, matching Solid's nearest-boundary behavior. Cross-kind
   aggregation (inner Loading with outer Errored, and the reverse) is
@@ -972,8 +993,8 @@ values still go through one synchronous `setData` before the first paint.
 
 ### Generated runtime
 
-Generated config keys (`data`, `listBindings`, `asyncStatus`, `handlerCount`, ...)
-are defined once in `@glaze/shared` protocol (`packages/shared/src/protocol.ts`);
+Generated config keys (`data`, `listBindings`, `asyncStatus`, `boundaries`,
+`handlerCount`, ...) are defined once in `@glaze/shared` protocol (`packages/shared/src/protocol.ts`);
 the compiler and runtime both import that module instead of repeating string
 literals. The JSON half of the config is typed as `GeneratedConfigJson`; the
 emitter builds that object and serializes it, while `setup` stays generated code
@@ -1148,8 +1169,10 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
 10. **Build integration** has `glaze build`, `glaze watch`, and a Vite build
     bridge. Watch is compile-incremental; there is no mini-program HMR.
 11. **Async boundaries** (`Loading` / `Errored`) support nesting, `Loading on`
-    and an `Errored` reset function, but not inside a loop; boundary parent/child
-    aggregation is not implemented.
+    and an `Errored` reset function, but not inside a loop. The compiler emits
+    a boundary tree and the runtime builds real Solid loading/error boundaries;
+    it is not a boundary-output projection (no held frame, and fallback/content
+    effects are not attach-detached).
 12. **`Reveal`** coordinates `Loading` boundaries created directly under it.
     `order` and `collapsed` may be static or reactive expressions; an invalid
     string falls back to `sequential`. Nested `Reveal` groups, `Reveal` inside a

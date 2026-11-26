@@ -31,9 +31,11 @@ generic template.
   values as `DataChange[]` through `Component.getDataProxy` +
   `DataGroup.setChanges`/`applyDataUpdates` (falling back to `groupUpdates` +
   `replaceDataOnPath`/`spliceArrayDataOnPath`, then `setData`);
-- components with async boundaries additionally memoize each binding and use
-  `isPending` for refetch; `asyncStatus` condition bindings are written directly
-  so a pending read elsewhere in the component cannot hold the fallback state;
+- components with async boundaries additionally memoize each binding, build a
+  real Solid loading/error boundary tree from the compiler's `boundaries`
+  descriptors, and use `isPending` for refetch; `asyncStatus` condition
+  bindings are written directly so a pending read elsewhere in the component
+  cannot hold the fallback state;
 - `detached` disposes the root.
 
 No virtual DOM, Taro DOM, or generic renderer exists at runtime. The only data

@@ -77,6 +77,7 @@ test('generated config matches the shared runtime protocol', async () => {
           'structuredProps',
           'boundaryContexts',
           'asyncStatus',
+          'boundaries',
           'bindingGroupSize',
           'listBindings',
           'listFields',

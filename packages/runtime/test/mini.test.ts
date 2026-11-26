@@ -1414,6 +1414,116 @@ test('tracks nested async boundaries separately', async () => {
   assert.equal(instance.calls.at(-1).b3, true)
 })
 
+test('builds a real loading boundary from the descriptor tree', async () => {
+  let setReady
+  const def = defineGlazeComponent({
+    asyncStatus: [
+      { index: 1, kind: 'loading', boundary: 0 },
+      { index: 2, kind: 'settled', boundary: 0 },
+    ],
+    boundaries: [
+      { id: 0, kind: 'loading', parent: null, region: 'content', content: [0], children: [], keepPrevious: true },
+    ],
+    data: { b0: null, b1: null, b2: null },
+    setup(ctx) {
+      const [ready, set] = createSignal(false)
+      setReady = set
+      ctx.bind(0, () => {
+        if (!ready()) throw new NotReadyError()
+        return 'real-value'
+      }, 0)
+      ctx.bind(1, () => ctx.loading(0))
+      ctx.bind(2, () => ctx.hasValue(0))
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  assert.equal(instance.calls.at(-1).b1, true)
+  assert.equal(instance.calls.at(-1).b2, false)
+
+  setReady(true)
+  await tick()
+  assert.equal(instance.calls.at(-1).b0, 'real-value')
+  assert.equal(instance.calls.at(-1).b1, false)
+  assert.equal(instance.calls.at(-1).b2, true)
+})
+
+test('a nested real loading boundary does not show the outer fallback', async () => {
+  let setReady
+  const def = defineGlazeComponent({
+    asyncStatus: [
+      { index: 1, kind: 'loading', boundary: 0 },
+      { index: 2, kind: 'loading', boundary: 1 },
+    ],
+    boundaries: [
+      { id: 0, kind: 'loading', parent: null, region: 'content', content: [], children: [1], keepPrevious: true },
+      { id: 1, kind: 'loading', parent: 0, region: 'content', content: [0], children: [], keepPrevious: true },
+    ],
+    data: { b0: null, b1: null, b2: null },
+    setup(ctx) {
+      const [ready, set] = createSignal(false)
+      setReady = set
+      ctx.bind(0, () => {
+        if (!ready()) throw new NotReadyError()
+        return 'nested-value'
+      }, 1)
+      ctx.bind(1, () => ctx.loading(0))
+      ctx.bind(2, () => ctx.loading(1))
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  assert.equal(instance.calls.at(-1).b1, false)
+  assert.equal(instance.calls.at(-1).b2, true)
+
+  setReady(true)
+  await tick()
+  assert.equal(instance.calls.at(-1).b2, false)
+  assert.equal(instance.calls.at(-1).b0, 'nested-value')
+})
+
+test('a real error boundary catches content errors and resets', async () => {
+  let setFail
+  let page
+  const def = defineGlazeComponent({
+    asyncStatus: [{ index: 1, kind: 'error', boundary: 0 }],
+    boundaries: [
+      { id: 0, kind: 'error', parent: null, region: 'content', content: [0], children: [] },
+    ],
+    data: { b0: null, b1: null, b2: null },
+    setup(ctx) {
+      page = ctx
+      const [fail, set] = createSignal(true)
+      setFail = set
+      ctx.bind(0, () => {
+        if (fail()) throw new Error('real-boom')
+        return 'recovered'
+      }, null, 0)
+      ctx.bind(1, () => ctx.errored(0))
+      ctx.bind(2, () => (ctx.error(0) as Error | undefined)?.message)
+    },
+  })
+  const instance = createInstance(def)
+  def.lifetimes.attached.call(instance)
+  await tick()
+  const last = (key) =>
+    [...instance.calls].reverse().find((call) => Object.hasOwn(call, key))?.[key]
+  assert.equal(instance.calls.some((call) => call.b1 === true), true)
+  assert.equal(last('b2'), 'real-boom')
+
+  setFail(false)
+  await tick()
+  assert.equal(instance.calls.some((call) => call.b1 === true), true)
+
+  page.reset(0)
+  await tick()
+  await tick()
+  assert.equal(last('b0'), 'recovered')
+  assert.equal(last('b1'), false)
+})
+
 test('derives Loading from Solid pending state across commit and refetch', async () => {
   let resolveFirst
   let resolveSecond

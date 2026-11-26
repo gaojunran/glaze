@@ -69,4 +69,28 @@ export function validateConfig(config: GlazeComponentConfig): void {
       invalid('asyncStatus.kind must be "loading", "error" or "settled"')
     }
   }
+  for (const boundary of config.boundaries ?? []) {
+    if (!Number.isInteger(boundary.id) || boundary.id < 0) {
+      invalid('boundaries.id must be a non-negative integer')
+    }
+    if (boundary.kind !== 'loading' && boundary.kind !== 'error') {
+      invalid('boundaries.kind must be "loading" or "error"')
+    }
+    if (boundary.parent !== null && (!Number.isInteger(boundary.parent) || boundary.parent < 0)) {
+      invalid('boundaries.parent must be null or a non-negative integer')
+    }
+    if (boundary.region !== 'content' && boundary.region !== 'fallback') {
+      invalid('boundaries.region must be "content" or "fallback"')
+    }
+    for (const index of boundary.content ?? []) {
+      if (!Number.isInteger(index) || index < 0) {
+        invalid('boundaries.content must contain non-negative binding indexes')
+      }
+    }
+    for (const id of boundary.children ?? []) {
+      if (!Number.isInteger(id) || id < 0) {
+        invalid('boundaries.children must contain non-negative boundary ids')
+      }
+    }
+  }
 }

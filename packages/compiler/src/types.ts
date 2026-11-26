@@ -1,6 +1,7 @@
 
 import type { CompileWarning } from './diagnostics.ts'
 import type {
+  AsyncBoundaryDescriptor,
   AsyncStatusEntry,
   BoundaryContextEntry,
   GeneratedConfigJson,
@@ -82,6 +83,7 @@ export type CompileResult = {
   namedSlots: string[]
   boundaryContexts: BoundaryContext[]
   asyncStatus: AsyncStatusEntry[]
+  boundaries: AsyncBoundaryDescriptor[]
   propSignals: string[]
   listFields: Record<string, string[]>
   components: ComponentRef[]
@@ -112,6 +114,7 @@ export type GeneratedConfigMetadata = Pick<
   | 'componentFramework'
   | 'boundaryContexts'
   | 'asyncStatus'
+  | 'boundaries'
   | 'bindingGroupSize'
   | 'listBindings'
   | 'listFields'
@@ -128,6 +131,7 @@ export type EmitOptions = {
   namedSlots: string[]
   boundaryContexts: BoundaryContext[]
   asyncStatus: AsyncStatusEntry[]
+  boundaries: AsyncBoundaryDescriptor[]
   propSignals: string[]
   listFields: Record<string, string[]>
   structuredProps?: boolean
@@ -171,8 +175,11 @@ export type CompilerContext = {
   nextAsyncBoundary: number
   currentLoadingBoundary: number | null
   currentErrorBoundary: number | null
+  currentBoundary: number | null
+  currentBoundaryRegion: 'content' | 'fallback'
   currentRevealGroup: RevealGroupEntry | null
   asyncStatus: AsyncStatusEntry[]
+  boundaries: AsyncBoundaryDescriptor[]
   listProjectionBlocked: Set<number>
   namedSlots: Set<string>
   usesWxs: boolean

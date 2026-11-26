@@ -89,3 +89,26 @@ test('rejects an invalid async status entry', () => {
     /asyncStatus\.kind must be "loading", "error" or "settled"/,
   )
 })
+
+test('rejects an invalid async boundary descriptor', () => {
+  assert.throws(
+    () =>
+      defineGlazeComponent({
+        boundaries: [
+          { id: 0, kind: 'other', parent: null, region: 'content', content: [], children: [] },
+        ] as never,
+        setup,
+      }),
+    /boundaries\.kind must be "loading" or "error"/,
+  )
+  assert.throws(
+    () =>
+      defineGlazeComponent({
+        boundaries: [
+          { id: 0, kind: 'loading', parent: null, region: 'side', content: [], children: [] },
+        ] as never,
+        setup,
+      }),
+    /boundaries\.region must be "content" or "fallback"/,
+  )
+})
