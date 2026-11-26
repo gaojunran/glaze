@@ -34,9 +34,11 @@ test('counter renders and updates through the compiled bindings', async (miniPro
   const buttons = await app.$$('.btn')
   await buttons[1].tap()
   await expect(app).toMatchText('.count', '1')
+  await expect(app).toMatchText('.local-badge', '1')
 
   for (let i = 0; i < 3; i += 1) await buttons[1].tap()
   await expect(app).toMatchText('.count', '4')
+  await expect(app).toMatchText('.local-badge', '4')
   await expect(app).toMatchText('.hint', 'count is greater than 3')
   await expect(app).toMatchText('.card-title', 'Todos')
   await expect(app).toMatchText('.slot-header', 'Slot header')

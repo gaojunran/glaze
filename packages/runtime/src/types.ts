@@ -88,7 +88,12 @@ export type GlazeContext = {
     errorBoundary?: number | null,
   ): void
   event(index: number, fn: GlazeEventHandler): void
-  ref(index: number, fn: (node: unknown) => void): void
+  ref(
+    index: number,
+    fn:
+      | ((node: unknown) => void)
+      | Array<(node: unknown) => void>,
+  ): void
   context(context: GlazeContextProvider): () => unknown
   loadingOn(boundary: number, fn: () => unknown): void
   reset(boundary: number): void
@@ -148,7 +153,10 @@ export type InstanceState = {
   core: RuntimeStateCore
   boundaries: BoundaryState
   events: GlazeEventHandler[]
-  refs: { id: string; fn: (node: unknown) => void }[]
+  refs: {
+    id: string
+    fn: ((node: unknown) => void) | Array<(node: unknown) => void>
+  }[]
   pending: DataChange[]
   statusVersion: [() => number, (value: number) => void]
   applyStatus: ((index: number, value: unknown) => void) | null

@@ -1,6 +1,6 @@
 # Compiler architecture
 
-Status: working spike, 2026-11-21.
+Status: working spike, 2026-11-26.
 
 ## Direction
 
@@ -340,7 +340,10 @@ inlined are not emitted.
 
 ### Static component inlining
 
-A component imported from a relative file is inlined when all of these hold:
+A component imported from a relative file is inlined when all of these hold
+(the same rules apply to a component declared in the current file; the
+compiler rebuilds that declaration and the imports it references as a small
+module before inlining it):
 
 - outside a loop it only needs the conditions below; inside a `For`/`Show`/
   `Match` it must also be a **pure projection of its props** (no setup
@@ -710,7 +713,14 @@ Remaining async work, deliberately left for a later pass:
 
 After `attached`, the runtime measures `#glaze-r0` and calls the callback with a
 node handle that also carries the initial rect fields (`width`, `height`,
-`top`, ...) or `null`. The handle exposes:
+`top`, ...) or `null`. A ref may also be an array of callbacks; each receives
+the same node handle:
+
+```tsx
+<view ref={[measure, log]} />
+```
+
+The handle exposes:
 
 - `getBoundingClientRect()` — re-measure the element;
 - `querySelector(selector)` / `querySelectorAll(selector)` — query descendants
@@ -1061,6 +1071,8 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
    `focus`, `blur`, attribute access and `scrollIntoView`, not a DOM node. The
    node methods use `NodesRef.node()` when the base library provides it and
    return `false` otherwise; nested `scroll-view` scrolling is not guaranteed.
+   A ref can be a callback or an array of callbacks; refs on component tags are
+   not supported.
 5. **List structure** is a `DataChange` splice for insert, delete, and middle
    replacement (`spliceArrayDataOnPath` in the fallback path). A pure move is
    expressed as delete+insert over the changed middle; there is no LIS move
@@ -1071,11 +1083,28 @@ native `wx:for` in both cases; Solid does not build a virtual tree.
    itself is sent whole.
 6. **Component event payloads** pass `event.detail` as one argument; multiple
    arguments arrive as an array.
-7. **Unsupported JSX** (`.map`, dynamic components, render props, `Portal`,
-   `Transition`) is a compile error. JSX spread only accepts an object literal;
-   spreading `props` is rejected because attributes must be known at compile
-   time. Destructuring supports objects, arrays, nested patterns and aliases;
-   rest elements and defaults are rejected.
+7. **Unsupported JSX is a compile error instead of silently emitting an
+   attribute or child the WXML view ignores.** The main categories:
+   - `.map`, dynamic components (`Dynamic`), render props and function
+     children, `Portal`, `Transition`, `Reveal`, and the removed Solid 1 tags
+     (`Index`, `Suspense`, `ErrorBoundary`);
+   - local component declarations are inlined only when they do not close over
+     module-level state and can be rebuilt as a tiny module; otherwise move the
+     component to its own module so it can be imported (local `lazy()`
+     components and a stateful local component inside a loop still need a file
+     boundary, like an imported stateful component);
+   - the `children()` helper; use `<slot />` in a component boundary or
+     `props.children` in an inlined component;
+   - Solid 1 spellings `classList` and namespaced attributes (`on:`, `attr:`,
+     `bool:`, `use:`, `oncapture:`);
+   - style arrays (use a style object or string), refs on components, and
+     computed prop access (`props[key]`).
+   JSX spread only accepts an object literal; spreading `props` is rejected
+   because attributes must be known at compile time. Destructuring supports
+   objects, arrays, nested patterns and aliases; rest elements and defaults are
+   rejected. `<Reveal>` is rejected because WXML cannot order independently
+   rendered `<Loading>` siblings; nest the boundaries or render separate
+   sections instead.
 8. **`For` keyed functions** must return a single field (`(item) => item.id`);
    nested keys are rejected. `keyed={false}` intentionally omits `wx:key`, so
    the simulator prints a performance warning.

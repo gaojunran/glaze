@@ -150,10 +150,18 @@ const createNode = (
 export const createNodeRef = (
   component: unknown,
   id: string,
-  callback: (node: GlazeNode | null) => void,
+  callback: ((node: GlazeNode | null) => void) | Array<(node: GlazeNode | null) => void>,
 ): void => {
   const selector = `#${id}`
+  const callbacks = Array.isArray(callback) ? callback : [callback]
   measure(component, selector).then((rect) => {
-    callback(rect ? createNode(component, selector, rect) : null)
+    const node = rect ? createNode(component, selector, rect) : null
+    for (const item of callbacks) {
+      if (typeof item !== 'function') {
+        console.error('[glaze] ref array entries must be functions')
+        continue
+      }
+      item(node)
+    }
   })
 }

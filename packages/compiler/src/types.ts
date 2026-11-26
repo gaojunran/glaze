@@ -176,6 +176,8 @@ export type CompilerContext = {
   blocks: Block[]
   currentBlock: number
   currentFile: string | null
+  sourceText: string
+  program: AnyNode
   inlineStack: string[]
   guards: string[]
   refForbidden: number

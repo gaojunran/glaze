@@ -693,7 +693,7 @@ test('treats a locally declared Show as a component reference', () => {
           return <Show />
         }
       `),
-    /Component <Show> must be imported/,
+    /Local component <Show> is not supported/,
   )
 })
 

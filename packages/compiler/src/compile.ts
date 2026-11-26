@@ -59,6 +59,29 @@ export function hasMultipleProps(source: string): boolean {
   }
 }
 
+function rejectUnsupportedSolidHelpers(ast: AnyNode, fn: AnyNode): void {
+  for (const node of ast.program.body) {
+    if (!t.isImportDeclaration(node) || node.source.value !== 'solid-js') continue
+    for (const specifier of node.specifiers) {
+      if (!t.isImportSpecifier(specifier)) continue
+      const imported = t.isIdentifier(specifier.imported)
+        ? specifier.imported.name
+        : specifier.imported.value
+      if (imported !== 'children') continue
+      const local = specifier.local.name
+      let used = false
+      walkAst(fn, (item) => {
+        if (t.isIdentifier(item, { name: local })) used = true
+      })
+      if (used) {
+        throw new Error(
+          'The children() helper is not supported; use <slot /> in a component boundary or props.children in an inlined component',
+        )
+      }
+    }
+  }
+}
+
 /**
  * Read the declarations that shape the generated module: local names that
  * shadow the Solid control-flow names, and context identity. Pure over the
@@ -213,6 +236,7 @@ function finalizeProps(
 
 export function compileComponent(source: string, options: CompileOptions = {}): CompileResult {
   const parsed = parseComponent(source)
+  rejectUnsupportedSolidHelpers(parsed.ast, parsed.fn)
   const { ast, statements, returnIndex, jsx, propsParam, props } = parsed
   const { localNames, contextNames, importedContexts, contextKeys } = analyzeComponent(parsed, options)
 
@@ -269,6 +293,8 @@ export function compileComponent(source: string, options: CompileOptions = {}): 
     ],
     currentBlock: 0,
     currentFile: options.sourceFile ?? null,
+    sourceText: source,
+    program: ast.program,
     inlineStack: options.sourceFile ? [options.sourceFile] : [],
     guards: [],
     refForbidden: 0,

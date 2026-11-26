@@ -39,7 +39,7 @@ import {
   eventNameFor,
   splitEventBinding,
 } from './events.ts'
-import { inlineComponent } from './inline.ts'
+import { inlineComponent, localInlineTarget } from './inline.ts'
 import { projectExpression } from './projection.ts'
 import { isGroupableProp } from './props.ts'
 import { inlineExpression } from './scope.ts'
@@ -83,6 +83,26 @@ export function compileNode(node, ctx, scope, extraAttrs = []) {
 }
 
 const RESOURCE_ATTRIBUTES = new Set(['src', 'poster'])
+
+// Solid 2 replaced these Solid 1 / DOM-only spellings with plain attributes,
+// class arrays/objects and refs. Mini-program WXML has no equivalent, so
+// accepting them would emit an attribute the view layer silently ignores.
+function assertSupportedAttribute(attrName: string): void {
+  if (attrName.includes(':')) {
+    throw new Error(
+      `JSX namespaced attribute "${attrName}" is not supported; use a plain attribute, class={{...}} or ref={...}`,
+    )
+  }
+  if (attrName.toLowerCase() === 'classlist') {
+    throw new Error('classList is not supported; use class={[...]} or class={{ ... }} instead')
+  }
+}
+
+function assertSupportedStyle(attrName: string, expression): void {
+  if (attrName === 'style' && t.isArrayExpression(expression)) {
+    throw new Error('style arrays are not supported; use a style object or string')
+  }
+}
 
 /**
  * A relative literal in a resource attribute is resolved against the source
@@ -145,6 +165,25 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
   if ((name === 'Loading' || name === 'Errored') && ctx.imports.get(name) === 'solid-js') {
     return wrapDirectives(compileAsyncBoundary(node, ctx, scope, name), extraAttrs)
   }
+  const importedFrom = ctx.imports.get(name)
+  if (name === 'Reveal' && importedFrom === 'solid-js') {
+    throw new Error(
+      '<Reveal> is not supported: mini-program WXML cannot order independently rendered <Loading> siblings; nest them or use separate sections',
+    )
+  }
+  if ((name === 'Dynamic' || name === 'Portal') && (importedFrom === '@solidjs/web' || importedFrom === 'solid-js/web')) {
+    throw new Error(
+      `<${name}> is not supported: WXML has no dynamic component tag or portal; use conditional JSX or a fixed overlay`,
+    )
+  }
+  if (
+    (name === 'Index' || name === 'Suspense' || name === 'ErrorBoundary') &&
+    importedFrom === 'solid-js'
+  ) {
+    throw new Error(
+      `<${name}> was removed in Solid 2; use <For keyed={false}>, <Loading> or <Errored> instead`,
+    )
+  }
   const controlSource = ctx.imports.get(name)
   const isControl =
     controlSource === 'solid-js' ||
@@ -187,6 +226,7 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
         ? `${attr.name.namespace.name}:${attr.name.name.name}`
         : null
     if (!attrName) throw new Error('Unsupported JSX attribute name')
+    assertSupportedAttribute(attrName)
     if (attrName === 'key') continue
     if (attrName === 'ref') {
       if (scope || ctx.refForbidden > 0) {
@@ -202,6 +242,14 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
       const expression = getExpression(attr)
       if (!expression) throw new Error('ref requires a callback')
       if (containsJsx(expression)) throw new Error('ref cannot be JSX')
+      if (t.isArrayExpression(expression)) {
+        if (
+          expression.elements.length === 0 ||
+          expression.elements.some((item) => !item || t.isSpreadElement(item))
+        ) {
+          throw new Error('ref arrays must contain callbacks without spreads')
+        }
+      }
       const index = ctx.addRef(expression)
       attrs.push(`id="${refId(index)}"`)
       continue
@@ -238,6 +286,7 @@ export function compileElement(node, ctx, scope, extraAttrs = []) {
       attrs.push(classAttr(expression, ctx, scope))
       continue
     }
+    assertSupportedStyle(propName, expression)
     if (propName === 'style' && t.isObjectExpression(expression)) {
       attrs.push(styleAttr(expression, ctx, scope))
       continue
@@ -259,6 +308,16 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
   }
   const source = ctx.imports.get(name)
   if (!source) {
+    const local = localInlineTarget(ctx, name)
+    if (local) {
+      const inlined = inlineComponent(node, ctx, scope, name, local.childFile ?? name, local)
+      if (inlined != null) return wrapDirectives(inlined, extraAttrs)
+    }
+    if (ctx.localNames.has(name)) {
+      throw new Error(
+        `Local component <${name}> is not supported in this form; move it to its own module (it may close over module state, use a slot/ref/async boundary, or be stateful inside a loop)`,
+      )
+    }
     throw new Error(`Component <${name}> must be imported from a module`)
   }
   const relative = source.startsWith('.')
@@ -292,8 +351,13 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
     if (!t.isJSXAttribute(attr)) {
       throw new Error('JSX spread attributes are not supported')
     }
-    const attrName = t.isJSXIdentifier(attr.name) ? attr.name.name : null
+    const attrName = t.isJSXIdentifier(attr.name)
+      ? attr.name.name
+      : t.isJSXNamespacedName(attr.name)
+        ? `${attr.name.namespace.name}:${attr.name.name.name}`
+        : null
     if (!attrName) throw new Error('Unsupported JSX attribute name')
+    assertSupportedAttribute(attrName)
     if (attrName === 'key') continue
     if (attrName === 'ref') {
       throw new Error('ref on a component is not supported yet')
@@ -351,6 +415,7 @@ export function compileComponentElement(node, ctx, scope, extraAttrs = []) {
       attrs.push(classAttr(expression, ctx, scope))
       continue
     }
+    assertSupportedStyle(propName, expression)
     if (propName === 'style' && t.isObjectExpression(expression)) {
       attrs.push(styleAttr(expression, ctx, scope))
       continue
@@ -522,6 +587,11 @@ export function compileExpressionChild(expression, ctx, scope) {
   }
   if (t.isJSXElement(expression) || t.isJSXFragment(expression)) {
     return compileNode(expression, ctx, scope)
+  }
+  if (t.isArrowFunctionExpression(expression) || t.isFunctionExpression(expression)) {
+    throw new Error(
+      'Function children are not supported; use a <Show>/<For> callback or a component slot',
+    )
   }
   if (t.isStringLiteral(expression) || t.isNumericLiteral(expression)) {
     return escapeText(String(expression.value))

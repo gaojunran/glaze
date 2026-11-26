@@ -19,6 +19,12 @@ type Todo = {
   done: boolean
 }
 
+// A local component: the compiler inlines it, so it does not add a
+// mini-program component boundary or a generated component directory.
+function LocalBadge(props: { count: number }) {
+  return <text class="local-badge">{props.count}</text>
+}
+
 export default function Counter() {
   const [count, setCount] = createSignal(0)
   const [todos, setTodos] = createSignal<Todo[]>([
@@ -70,6 +76,7 @@ export default function Counter() {
         <text class="count">{count()}</text>
         <button class="btn" onClick={() => setCount((value) => value + 1)}>+</button>
       </view>
+      <LocalBadge count={count()} />
 
       <Show when={count() > 3}>
         <text class="hint">count is greater than 3</text>

@@ -154,7 +154,7 @@ export function substituteInlineProps(node, propsParam, propMap, name) {
   return visit(node)
 }
 
-function resolveInlineTarget(ctx, name, source) {
+function resolveInlineTarget(ctx, name, source): InlineTarget | null {
   const resolved = ctx.resolveComponent(name, source, ctx.currentFile)
   const childSource = typeof resolved === 'string' ? resolved : resolved?.source
   if (!childSource) return null
@@ -192,6 +192,110 @@ function parseInlineChild(childSource) {
     return parseComponent(childSource)
   } catch {
     return null
+  }
+}
+
+/**
+ * A local component has no module of its own. Rebuild the smallest module
+ * that can be parsed and inlined: the imports it actually references, plus
+ * the declaration itself as the default export. Module-level constants and
+ * other local components are intentionally not copied; those cases keep the
+ * explicit "move it to its own module" error instead of guessing.
+ */
+export type InlineTarget = {
+  childSource: string
+  childFile: string | null
+  identity: string
+  register?: boolean
+}
+
+export function localInlineTarget(ctx, name: string): InlineTarget | null {
+  let target = null
+  const visitDeclaration = (node) => {
+    if (t.isFunctionDeclaration(node) && node.id?.name === name) target = node
+    if (!t.isVariableDeclaration(node)) return
+    for (const item of node.declarations) {
+      if (
+        t.isIdentifier(item.id, { name }) &&
+        item.init &&
+        (t.isArrowFunctionExpression(item.init) || t.isFunctionExpression(item.init))
+      ) {
+        target = item.init
+      }
+    }
+  }
+  for (const node of ctx.program.body) {
+    visitDeclaration(node)
+    if (t.isExportNamedDeclaration(node) && node.declaration) {
+      visitDeclaration(node.declaration)
+    }
+  }
+  if (!target) return null
+
+  const moduleNames = new Set<string>()
+  const noteDeclaration = (node) => {
+    if ((t.isFunctionDeclaration(node) || t.isClassDeclaration(node) || t.isTSEnumDeclaration(node)) && node.id) {
+      moduleNames.add(node.id.name)
+    }
+    if (!t.isVariableDeclaration(node)) return
+    for (const item of node.declarations) {
+      if (t.isIdentifier(item.id)) moduleNames.add(item.id.name)
+    }
+  }
+  for (const node of ctx.program.body) {
+    noteDeclaration(node)
+    if (t.isExportNamedDeclaration(node) && node.declaration) noteDeclaration(node.declaration)
+  }
+  const componentName = name
+  let closesOverModuleScope = false
+  walkAst(target, (node) => {
+    if (!t.isIdentifier(node)) return
+    if (node.name === componentName) return
+    if (moduleNames.has(node.name) && !ctx.imports.has(node.name)) {
+      closesOverModuleScope = true
+    }
+  })
+  if (closesOverModuleScope) return null
+
+  const used = new Set()
+  walkAst(target, (node) => {
+    if (t.isIdentifier(node)) used.add(node.name)
+  })
+  const imports = []
+  for (const node of ctx.program.body) {
+    if (!t.isImportDeclaration(node) || node.importKind === 'type') continue
+    const kept = node.specifiers.filter(
+      (specifier) =>
+        !(t.isImportSpecifier(specifier) && specifier.importKind === 'type') &&
+        used.has(specifier.local.name),
+    )
+    if (kept.length === 0) continue
+    const namespace = kept.find((specifier) => t.isImportNamespaceSpecifier(specifier))
+    const defaultSpecifier = kept.find((specifier) => t.isImportDefaultSpecifier(specifier))
+    const named = kept.filter((specifier) => t.isImportSpecifier(specifier))
+    let clause
+    if (namespace) {
+      clause = `* as ${namespace.local.name}`
+    } else {
+      const parts = []
+      if (defaultSpecifier) parts.push(defaultSpecifier.local.name)
+      if (named.length > 0) {
+        parts.push(
+          `{ ${named.map((specifier) => ctx.sourceText.slice(specifier.start, specifier.end)).join(', ')} }`,
+        )
+      }
+      clause = parts.join(', ')
+    }
+    if (!clause) continue
+    imports.push(`import ${clause} from ${JSON.stringify(node.source.value)}`)
+  }
+
+  const exported = ctx.sourceText.slice(target.start, target.end)
+  return {
+    childSource: `${imports.join('\n')}\nexport default ${exported}\n`,
+    childFile: ctx.currentFile,
+    identity: `${ctx.currentFile ?? ''}#local:${name}`,
+    register: false,
   }
 }
 
@@ -364,6 +468,7 @@ export function inlineComponentInLoop(
   propGetters,
   childrenWxml,
   hasChildren,
+  register = true,
 ) {
   const propMap = new Map(propGetters.map((getter) => [getter.name, getter.expression]))
   const jsx = substituteInlineProps(
@@ -384,15 +489,16 @@ export function inlineComponentInLoop(
   )
 
   assertInlineChildren(name, hasChildren, used, count)
-  registerInlineComponent(ctx, name, source, childFile)
+  if (register) registerInlineComponent(ctx, name, source, childFile)
   return wxml
 }
 
-export function inlineComponent(node, ctx, scope, name, source) {
-  if (!ctx.inline || !ctx.resolveComponent) return null
+export function inlineComponent(node, ctx, scope, name, source, override: InlineTarget | null = null) {
+  if (!ctx.inline || (!ctx.resolveComponent && !override)) return null
 
-  const target = resolveInlineTarget(ctx, name, source)
+  const target = override ?? resolveInlineTarget(ctx, name, source)
   if (!target) return null
+  if (ctx.inlineStack.includes(target.identity)) return null
   const { childSource, childFile, identity } = target
 
   // An inline attempt mutates module-level compiler state before it can fail
@@ -436,6 +542,7 @@ export function inlineComponent(node, ctx, scope, name, source) {
         propGetters,
         childrenWxml,
         hasChildren,
+        target.register !== false,
       )
       committed = true
       return wxml
@@ -465,7 +572,7 @@ export function inlineComponent(node, ctx, scope, name, source) {
     )
 
     assertInlineChildren(name, hasChildren, used, count)
-    registerInlineComponent(ctx, name, source, childFile)
+    if (target.register !== false) registerInlineComponent(ctx, name, source, childFile)
     committed = true
     return wxml
   } finally {

@@ -1857,7 +1857,7 @@ test('does not treat a local Show declaration as a Solid control-flow tag', () =
           return <Show><text>x</text></Show>
         }
       `),
-    /Component <Show> must be imported from a module/,
+    /Local component <Show> is not supported/,
   )
 })
 
