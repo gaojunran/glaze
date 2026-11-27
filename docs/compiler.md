@@ -828,8 +828,7 @@ large field that the template never reads no longer crosses the data boundary.
 
 Projection is fail-closed. It is disabled for an unkeyed loop, `wx:key="*this"`,
 a whole-row value (`title={row()}`, `data-x={row}`), a dynamic field
-(`row()[key]`), a literal field name containing a dot (`row['a.b']`), or
-destructured array positions. A nested field access
+(`row()[key]`), or destructured array positions. A nested field access
 (`row.user.name`) records the dotted path `user.name`, so the runtime sends only
 that leaf instead of the whole `user` object; a whole-field read of `user`
 still keeps the object whole. Event

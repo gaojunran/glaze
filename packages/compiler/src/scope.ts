@@ -254,9 +254,6 @@ function memberPath(node): { root: string; segments: string[] } | null {
     if (cursor.computed) {
       const property = unwrapTs(cursor.property)
       if (!t.isStringLiteral(property)) return null
-      // A dotted literal key (`row['a.b']`) cannot be represented by the same
-      // dotted metadata format as a nested read. Fall back to the full row.
-      if (property.value.includes('.')) return null
       segments.unshift(property.value)
     } else if (t.isIdentifier(cursor.property)) {
       segments.unshift(cursor.property.name)
