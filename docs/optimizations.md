@@ -188,8 +188,8 @@ Isolated Node timings for 5000 flat rows with one changed row:
 | Baseline snapshot | 0.54 ms | 0.06 ms (shallow) |
 | `listPatch` | 0.78 ms | 0.55 ms (known fields) |
 
-That is about 0.7 ms less synchronous work per full-list update. The same-server
-real-tap A/B (7 runs, minidev, `--precise`) moved `fine.toggle` median from
+That is about 0.7 ms less synchronous work per full-list update. A sequential real-tap A/B on the same machine (two sim builds, 7 runs each,
+`--precise`) moved `fine.toggle` median from
 23.5 ms to 22.1 ms and `fine.u100` from 17.1 ms to 16.9 ms; the run ranges
 overlap, so treat the CPU reduction rather than the wall-clock delta as the
 evidence. Nested rows and the `projectList` fallback keep the deep snapshot and
