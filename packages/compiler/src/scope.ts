@@ -247,6 +247,26 @@ function addListField(ctx, binding, field) {
  * Anything the compiler cannot prove is a static field access disables
  * projection for that loop; falling back to the full row is always correct.
  */
+function memberPath(node): { root: string; segments: string[] } | null {
+  const segments: string[] = []
+  let cursor = node
+  while (t.isMemberExpression(cursor) || t.isOptionalMemberExpression(cursor)) {
+    if (cursor.computed) {
+      const property = unwrapTs(cursor.property)
+      if (!t.isStringLiteral(property)) return null
+      segments.unshift(property.value)
+    } else if (t.isIdentifier(cursor.property)) {
+      segments.unshift(cursor.property.name)
+    } else {
+      return null
+    }
+    const object = unwrapTs(cursor.object)
+    if (t.isIdentifier(object)) return { root: object.name, segments }
+    cursor = object
+  }
+  return null
+}
+
 function noteListFields(expression, scope: Scope | null, ctx) {
   if (!scope) return
   const visit = (node, parent) => {
@@ -265,20 +285,23 @@ function noteListFields(expression, scope: Scope | null, ctx) {
     }
 
     if (t.isMemberExpression(node) || t.isOptionalMemberExpression(node)) {
+      const path = memberPath(node)
+      if (path) {
+        const owner = itemScope(scope, path.root)
+        if (owner && owner.listBinding != null) {
+          if (path.segments.some((segment) => segment === '__proto__')) {
+            ctx.listProjectionBlocked.add(owner.listBinding)
+          } else {
+            addListField(ctx, owner.listBinding, path.segments.join('.'))
+          }
+          return
+        }
+      }
       const object = unwrapTs(node.object)
       if (t.isIdentifier(object)) {
         const owner = itemScope(scope, object.name)
-        if (owner && owner.listBinding != null) {
-          const binding = owner.listBinding
-          if (node.computed) {
-            const property = unwrapTs(node.property)
-            if (t.isStringLiteral(property)) addListField(ctx, binding, property.value)
-            else ctx.listProjectionBlocked.add(binding)
-          } else if (t.isIdentifier(node.property)) {
-            addListField(ctx, binding, node.property.name)
-          } else {
-            ctx.listProjectionBlocked.add(binding)
-          }
+        if (owner && owner.listBinding != null && node.computed) {
+          ctx.listProjectionBlocked.add(owner.listBinding)
           return
         }
       }

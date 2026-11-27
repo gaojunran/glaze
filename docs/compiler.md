@@ -813,11 +813,11 @@ A `For` binding is recorded with its key:
 listBindings: { 2: "id" }
 ```
 
-When every row access in the generated WXML is a static top-level field, the
+When every row access in the generated WXML is a static field path, the
 compiler also emits the view-model fields:
 
 ```js
-listFields: { 2: ["id", "title", "done"] }
+listFields: { 2: ["id", "title", "done", "meta.tag"] }
 ```
 
 `noteListFields` runs from `inlineExpression`, so interpolation, attributes,
@@ -828,8 +828,10 @@ large field that the template never reads no longer crosses the data boundary.
 
 Projection is fail-closed. It is disabled for an unkeyed loop, `wx:key="*this"`,
 a whole-row value (`title={row()}`, `data-x={row}`), a dynamic field
-(`row()[key]`), or destructured array positions. Nested field access
-(`row.user.name`) records only `user`; the nested object is sent whole. Event
+(`row()[key]`), or destructured array positions. A nested field access
+(`row.user.name`) records the dotted path `user.name`, so the runtime sends only
+that leaf instead of the whole `user` object; a whole-field read of `user`
+still keeps the object whole. Event
 handlers continue to read the original row from the source array, not the
 projected data object.
 

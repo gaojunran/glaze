@@ -95,8 +95,9 @@ numbers from the 50ms polling harness are not used as CPU evidence; use
 `listFields` metadata from the compiler is applied by `projectList` in
 `list.ts`. `applyBinding` projects before `listPatch` / `listOps`, and `mount`
 projects before the initial `setData`; `state.previous` and the data copy both
-hold a detached projection. The projection only copies the recorded top-level
-fields and always keeps the key.
+hold a detached projection. The projection copies the recorded fields and
+always keeps the key; a dotted path such as `meta.tag` descends into plain
+objects and copies only that leaf.
 
 The event path is unchanged: `scope.jsSource` still indexes the original
 application array, so a row handler sees fields that are not rendered. If any
@@ -106,10 +107,13 @@ the optimization from changing list semantics.
 
 The fine benchmark's initial list payload drops from 10,270,281 bytes to
 215,281 bytes; the 5000 rows keep `id`, `title` and `done`, and the unused 2 KB
-`extra` field is absent from component data. Minidev's first-render timer is
-dominated by WXML node creation, so this does not produce a large wall-clock
-change in the simulator; the payload reduction is measured directly on the
-generated data object.
+`extra` field is absent from component data. With a nested 2 KB `meta.extra`
+field, projecting `meta.tag` instead of the whole `meta` object takes the same
+5000-row payload from 10,336,671 bytes to 281,671 bytes
+(`node --experimental-strip-types bench/frameworks/nested-projection.mjs`).
+Minidev's first-render timer is dominated by WXML node creation, so this does
+not produce a large wall-clock change in the simulator; the payload reduction
+is measured directly on the generated data object.
 
 ### Props-only projection parity
 

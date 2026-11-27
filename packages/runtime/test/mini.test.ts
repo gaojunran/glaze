@@ -853,6 +853,42 @@ test('keeps the key in the projection even when the template does not read it', 
   assert.deepEqual(instance.calls[0].b0, [{ id: 7, title: 'one' }])
 })
 
+test('projects nested fields and preserves a missing intermediate', () => {
+  assert.deepEqual(
+    projectList([{ id: 1, user: { name: 'a', extra: 'x' } }], ['id', 'user.name']),
+    [{ id: 1, user: { name: 'a' } }],
+  )
+  assert.deepEqual(projectList([{ id: 1, user: null }], ['id', 'user.name']), [
+    { id: 1, user: null },
+  ])
+  assert.deepEqual(
+    projectList([{ id: 1, user: { name: 'a', extra: 'x' } }], ['user', 'user.name']),
+    [{ user: { name: 'a', extra: 'x' } }],
+  )
+})
+
+test('projects nested list fields and emits a leaf path', async () => {
+  let setRows
+  const rows = [{ id: 1, meta: { tag: 'one', extra: 'x' } }]
+  const def = defineGlazeComponent({
+    data: { b0: null },
+    listBindings: { 0: 'id' },
+    listFields: { 0: ['id', 'meta.tag'] },
+    setup(ctx) {
+      const [items, set] = createSignal(rows)
+      setRows = set
+      ctx.bind(0, () => items())
+    },
+  })
+  const instance = createInstance(def, {}, { paths: true })
+  def.lifetimes.attached.call(instance)
+  assert.deepEqual(instance.calls[0].b0, [{ id: 1, meta: { tag: 'one' } }])
+
+  setRows([{ id: 1, meta: { tag: 'two', extra: 'changed' } }])
+  await tick()
+  assert.deepEqual(instance.pathCalls, [[['b0', 0, 'meta', 'tag'], 'two']])
+})
+
 test('falls back to the original list when rows are not plain objects', () => {
   const primitives = [1, 2]
   assert.equal(projectList(primitives, ['id']), primitives)

@@ -25,7 +25,7 @@ test('records the top-level fields WXML reads from a keyed row', () => {
   assert.ok(result.js.includes('listFields:'))
 })
 
-test('records only the first segment of a nested field access', () => {
+test('records a nested field path instead of its first segment', () => {
   const result = compileComponent(`
     export default function Page() {
       const rows = [{ id: 1, user: { name: 'a', extra: 'x' } }]
@@ -36,7 +36,26 @@ test('records only the first segment of a nested field access', () => {
       )
     }
   `)
-  assert.deepEqual(fieldsOf(result), ['id', 'user'])
+  assert.deepEqual(fieldsOf(result), ['id', 'user.name'])
+})
+
+test('records several nested paths and keeps a whole-field read', () => {
+  const result = compileComponent(`
+    export default function Page() {
+      const rows = [{ id: 1, user: { name: 'a', age: 1, extra: 'x' } }]
+      return (
+        <For each={rows} keyed={(row) => row.id}>
+          {(row) => (
+            <view title={row().user}>
+              <text>{row().user.name}</text>
+              <text>{row().user.age}</text>
+            </view>
+          )}
+        </For>
+      )
+    }
+  `)
+  assert.deepEqual(fieldsOf(result), ['id', 'user', 'user.name', 'user.age'])
 })
 
 test('records a field read by a Show condition inside the loop', () => {
