@@ -318,17 +318,27 @@ const diffValue = (
   }
 }
 
-/** Internal helper, exported for unit tests. */
+/**
+ * `fields` is the projected row shape, including the key. When it is supplied
+ * the rows are known to come from `projectList`, so the per-row shape checks
+ * are skipped; callers without it keep the shape-checking path.
+ */
 export function listPatch(
   previous: unknown,
   next: unknown,
   key: string,
   binding: string,
+  fields?: readonly string[] | null,
 ): DataChange[] | null {
   if (!Array.isArray(previous) || !Array.isArray(next)) return null
   if (key === LIST_KEY_WHOLE) return null
   if (previous.length !== next.length) return null
   if (hasAmbiguousKeys(previous, key) || hasAmbiguousKeys(next, key)) return null
+  // A projected list has a known row shape. Iterating it avoids two
+  // `Object.keys` arrays per row; callers without recorded fields keep the
+  // shape-checking path. The key must be present or the shape is not the one
+  // the compiler recorded.
+  const exact = fields && fields.length > 0 && fields.includes(key) ? fields : null
 
   const patch: DataChange[] = []
   // One comparison cache for the whole call: a pair compared once yields the
@@ -342,25 +352,32 @@ export function listPatch(
     if (!before || !item || typeof before !== 'object' || typeof item !== 'object') return null
     if (!Object.is(keyOf(before, key), keyOf(item, key))) return null
 
-    const changed: DataChange[] = []
-    for (const field of Object.keys(item)) {
+    let changed: DataChange[] | null = null
+    for (const field of exact ?? Object.keys(item)) {
+      if (field === key) continue
+      if (!(field in item)) return null
       if (equalValue(before[field], item[field], seen)) continue
       if (!(field in before)) return null
       const fieldChanges: DataChange[] = []
       if (diffValue(before[field], item[field], [binding, index, field], fieldChanges, diffSeen)) {
-        changed.push(...fieldChanges)
+        const target = (changed ??= [])
+        target.push(...fieldChanges)
       } else {
-        changed.push({ path: [binding, index, field], value: item[field] })
+        const target = (changed ??= [])
+        target.push({ path: [binding, index, field], value: item[field] })
       }
     }
-    for (const field of Object.keys(before)) {
-      if (!(field in item)) return null
+    if (!exact) {
+      for (const field of Object.keys(before)) {
+        if (!(field in item)) return null
+      }
     }
+    if (!changed) continue
     // A row with several changed fields is cheaper to replace as one data
     // path than as one path per field; the child property receives the same
     // projected row either way. Keep field paths for small or sparse edits so
     // replacing a row does not fan out unchanged fields to the child.
-    const total = Object.keys(item).length
+    const total = exact ? exact.length : Object.keys(item).length
     if (changed.length > 2 && changed.length * 2 > total) {
       patch.push({ path: [binding, index], value: item })
     } else {
@@ -387,8 +404,9 @@ export function diffList(
   key: string,
   binding: string,
   canSplice = true,
+  fields?: readonly string[] | null,
 ): DataChange[] | null {
-  const patch = listPatch(previous, next, key, binding)
+  const patch = listPatch(previous, next, key, binding, fields)
   if (patch) return patch
   if (!canSplice) return null
   const op = listOps(previous, next, key)

@@ -96,7 +96,14 @@ numbers from the 50ms polling harness are not used as CPU evidence; use
 `list.ts`. `applyBinding` projects before `listPatch` / `listOps`, and `mount`
 projects before the initial `setData`; `state.previous` and the data copy both
 hold a detached projection. The projection only copies the recorded top-level
-fields and always keeps the key.
+fields and always keeps the key. `applyBinding` also passes the recorded fields
+to `listPatch`, which iterates that known row shape instead of allocating two
+`Object.keys` arrays per row.
+
+For a flat projection (every field is a primitive) the baseline is a shallow
+row copy, not a deep `snapshotList`: the rows are fresh objects with no nested
+reference, so a platform mutation of the payload cannot reach the baseline or
+the source. Nested values and the `projectList` fallback keep the deep copy.
 
 The event path is unchanged: `scope.jsSource` still indexes the original
 application array, so a row handler sees fields that are not rendered. If any

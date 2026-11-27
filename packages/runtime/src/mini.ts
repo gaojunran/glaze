@@ -728,24 +728,35 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
    * separate snapshots so a platform mutation of one cannot reach the other or
    * the application row.
    */
-  const materialize = (index: number, value: unknown): { payload: unknown; baseline: unknown } => {
-    if (!isListBinding(index)) return { payload: normalizeDataValue(value), baseline: value }
+  const materialize = (
+    index: number,
+    value: unknown,
+  ): { payload: unknown; baseline: unknown; fields: readonly string[] | null } => {
+    if (!isListBinding(index)) {
+      return { payload: normalizeDataValue(value), baseline: value, fields: null }
+    }
     const key = listBindings[index]
     const fields = listFields[index]
-    const projected =
-      !fields || !key || key === '*this'
-        ? value
-        : projectList(value, fields.includes(key) ? fields : [...fields, key])
-    const baseline = snapshotList(projected)
+    const effectiveFields =
+      fields && key && key !== '*this'
+        ? fields.includes(key)
+          ? fields
+          : [...fields, key]
+        : null
+    const projected = effectiveFields ? projectList(value, effectiveFields) : value
     // `projectList` already creates fresh plain rows. When every projected
-    // field is a primitive, the payload cannot reach the source rows or the
-    // baseline through a nested reference, so one snapshot for the baseline is
-    // enough. Nested values and the projectList fallback keep the two-copy
-    // path because the payload would otherwise share the source graph.
+    // field is a primitive, a shallow row copy is a complete baseline: there
+    // is no nested reference that a platform mutation could reach. Nested
+    // values and the projectList fallback keep the deep-copy path because the
+    // payload would otherwise share the source graph.
     const flat = projected !== value && isFlatList(projected)
+    const baseline = flat
+      ? (projected as Record<string, unknown>[]).map((row) => ({ ...row }))
+      : snapshotList(projected)
     return {
       payload: flat ? normalizeDataValue(projected) : normalizeDataValue(snapshotList(projected)),
       baseline,
+      fields: projected !== value ? effectiveFields : null,
     }
   }
 
@@ -1223,9 +1234,9 @@ function createGlazeDefinition(config: GlazeComponentConfig, pageMode: boolean):
       // which also keeps the template engine on its binding-map path longer.
       if (!key && Object.is(value, binding.previous)) return
       const name = `b${index}`
-      const { payload, baseline } = materialize(index, value)
+      const { payload, baseline, fields } = materialize(index, value)
       const changes = key
-        ? diffList(binding.previous, payload, key, name, transport.canSplice)
+        ? diffList(binding.previous, payload, key, name, transport.canSplice, fields)
         : null
       schedule(changes ?? [{ path: [name], value: payload }])
       binding.previous = baseline

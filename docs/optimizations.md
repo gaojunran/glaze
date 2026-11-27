@@ -170,6 +170,31 @@ the data-size effect visible: native full rows 4436–4466 ms, native projected
 rows 4250–4326 ms. Treat the byte count, not the simulator delta, as the
 primary evidence for this optimization until it is measured on a phone.
 
+### P1b.1 — Flat list diff fast path
+
+Status: implemented.
+
+A projected flat list already has fresh rows with primitive fields, but every
+update still deep-snapshotted the baseline and `listPatch` re-derived row shape
+with two `Object.keys` calls per row. The runtime now shallow-copies the
+baseline for a flat projection and passes the compiler's `listFields` into
+`listPatch`, which walks the known shape and allocates the changed-field array
+only when a row actually changed.
+
+Isolated Node timings for 5000 flat rows with one changed row:
+
+| Step | Before | After |
+| --- | ---: | ---: |
+| Baseline snapshot | 0.54 ms | 0.06 ms (shallow) |
+| `listPatch` | 0.78 ms | 0.55 ms (known fields) |
+
+That is about 0.7 ms less synchronous work per full-list update. The same-server
+real-tap A/B (7 runs, minidev, `--precise`) moved `fine.toggle` median from
+23.5 ms to 22.1 ms and `fine.u100` from 17.1 ms to 16.9 ms; the run ranges
+overlap, so treat the CPU reduction rather than the wall-clock delta as the
+evidence. Nested rows and the `projectList` fallback keep the deep snapshot and
+the shape-checking patch path.
+
 ## P1c — Component-boundary profile
 
 Status: measured; no code change in this wave.

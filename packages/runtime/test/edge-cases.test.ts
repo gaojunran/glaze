@@ -657,6 +657,36 @@ test('listPatch returns an empty patch for identical item references', () => {
   assert.deepEqual(listPatch([first, second], [first, second], 'id', 'b0'), [])
 })
 
+test('listPatch uses the projected field list', () => {
+  assert.deepEqual(
+    listPatch(
+      [{ id: 1, title: 'one', done: false }],
+      [{ id: 1, title: 'two', done: false }],
+      'id',
+      'b0',
+      ['id', 'title', 'done'],
+    ),
+    [{ path: ['b0', 0, 'title'], value: 'two' }],
+  )
+  assert.deepEqual(
+    listPatch(
+      [{ id: 1, meta: { value: 1 }, title: 'one' }],
+      [{ id: 1, meta: { value: 2 }, title: 'one' }],
+      'id',
+      'b0',
+      ['id', 'title', 'meta'],
+    ),
+    [{ path: ['b0', 0, 'meta', 'value'], value: 2 }],
+  )
+})
+
+test('listPatch falls back to the row shape when the field list lacks the key', () => {
+  assert.deepEqual(
+    listPatch([{ id: 1, title: 'one' }], [{ id: 1, title: 'two' }], 'id', 'b0', ['title']),
+    [{ path: ['b0', 0, 'title'], value: 'two' }],
+  )
+})
+
 test('listPatch rejects added and removed fields', () => {
   assert.equal(listPatch([{ id: 1 }], [{ id: 1, extra: 2 }], 'id', 'b0'), null)
   assert.equal(listPatch([{ id: 1, extra: 2 }], [{ id: 1 }], 'id', 'b0'), null)
