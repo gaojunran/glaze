@@ -181,6 +181,14 @@ with:
 node --experimental-strip-types bench/frameworks/nested-projection.mjs
 ```
 
+The main trade-off is CPU and allocation. `projectList` creates a partial
+nested object per row; on 5000 rows with a small nested object it took
+0.59–0.80 ms versus 0.23–0.39 ms for copying the whole first-level object, while
+still producing a smaller payload. When many rows share one nested object, the
+projection also creates one partial object per row instead of reusing the
+shared reference. The win is therefore clear when the nested object carries
+large unrendered data; for tiny nested objects it is only a payload trade-off.
+
 ## P1c — Component-boundary profile
 
 Status: measured; no code change in this wave.

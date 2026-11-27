@@ -88,6 +88,20 @@ test('falls back when the whole row is passed to an expression', () => {
   assert.doesNotMatch(result.js, /listFields:/)
 })
 
+test('falls back for a literal field name containing a dot', () => {
+  const result = compileComponent(`
+    export default function Page() {
+      const rows = [{ id: 1, 'a.b': 'x' }]
+      return (
+        <For each={rows} keyed={(row) => row.id}>
+          {(row) => <text>{row()['a.b']}</text>}
+        </For>
+      )
+    }
+  `)
+  assert.deepEqual(result.listFields, {})
+})
+
 test('falls back when a row field is accessed dynamically', () => {
   const result = compileComponent(`
     export default function Page(props) {
