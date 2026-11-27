@@ -146,9 +146,9 @@ Status: implemented.
 
 A keyed list binding used to send the complete row array. Templates that read
 only `row.title` and `row.done` therefore also sent every other field in the row
-through `setData`. The compiler now records the fields and nested paths read by
-WXML and emits `listFields`; the runtime projects rows before the initial write
-and before every list diff.
+through `setData`. The compiler now records the top-level fields read by WXML
+and emits `listFields`; the runtime projects rows before the initial write and
+before every list diff.
 
 The fine page has 5000 rows, each with an unused 2 KB `extra` field that the
 template never renders:
@@ -169,17 +169,6 @@ real-device cross-thread copy of the same magnitude. The native control makes
 the data-size effect visible: native full rows 4436–4466 ms, native projected
 rows 4250–4326 ms. Treat the byte count, not the simulator delta, as the
 primary evidence for this optimization until it is measured on a phone.
-
-Nested reads use dotted paths rather than their first segment. For a row shaped
-as `{ id, title, meta: { tag, extra } }`, a template reading `row.meta.tag`
-records `meta.tag`; the runtime projects `{ meta: { tag } }` and leaves `extra`
-out. On the same 5000 rows with a 2 KB `meta.extra`, the data object drops from
-**10,336,671 bytes** to **281,671 bytes**; the measurement is reproducible
-with:
-
-```bash
-node --experimental-strip-types bench/frameworks/nested-projection.mjs
-```
 
 ## P1c — Component-boundary profile
 

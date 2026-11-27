@@ -88,22 +88,10 @@ const trackValue = (
   if (!isPlainObject(object)) return
   // A projected keyed list only needs the fields WXML reads. Reading other
   // store fields would wake the binding for data the view never shows and
-  // force a full-list fallback. Dotted paths read their intermediate objects;
-  // nested objects are then tracked in full.
-  if (depth === 1 && fields) {
-    for (const field of fields) {
-      let current: unknown = value
-      for (const segment of field.split('.')) {
-        if (current === null || typeof current !== 'object') break
-        const next = (current as Record<string, unknown>)[segment]
-        trackValue(next, seen, depth + 1, undefined)
-        current = next
-      }
-    }
-    return
-  }
-  for (const key of Object.keys(object)) {
-    trackValue((value as Record<string, unknown>)[key], seen, depth + 1, undefined)
+  // force a full-list fallback. Nested objects are tracked in full.
+  const keys = depth === 1 && fields ? fields : Object.keys(object)
+  for (const key of keys) {
+    trackValue((value as Record<string, unknown>)[key], seen, depth + 1)
   }
 }
 
@@ -200,8 +188,8 @@ export function snapshotList(value: unknown): unknown {
 
 /**
  * Build the view-model rows for a list binding. The compiler records the
- * fields WXML reads (including dotted nested paths); sending only those fields
- * keeps large payloads that the template never uses out of `setData`.
+ * top-level fields WXML reads; sending only those fields keeps large payloads
+ * that the template never uses out of `setData`.
  *
  * Every row must be a plain object. If any row is a primitive, array, class
  * instance, Date, etc., return the original value: the projection is an
@@ -209,54 +197,17 @@ export function snapshotList(value: unknown): unknown {
  */
 export function projectList(value: unknown, fields: readonly string[] | null | undefined): unknown {
   if (!Array.isArray(value) || !fields || fields.length === 0) return value
-  const paths = fields.map((field) => field.split('.'))
-  if (paths.some((segments) => segments.some((segment) => segment.length === 0))) return value
-  // A whole-field read already keeps the full value; drop nested paths under it.
-  const normalized = paths.filter((segments) =>
-    !paths.some(
-      (other) =>
-        other.length < segments.length && other.every((segment, index) => segment === segments[index]),
-    ),
-  )
-  if (normalized.some((segments) => segments.includes('__proto__'))) return value
-  const flat = normalized.every((segments) => segments.length === 1)
   const projected: Record<string, unknown>[] = []
   for (const item of value) {
     if (item === null || typeof item !== 'object' || Array.isArray(item)) return value
     const prototype = Object.getPrototypeOf(item)
     if (prototype !== Object.prototype && prototype !== null) return value
-    if (flat) {
-      const row: Record<string, unknown> = {}
-      for (const [segment] of normalized) {
-        row[segment] = (item as Record<string, unknown>)[segment]
-      }
-      projected.push(row)
-      continue
-    }
     const row: Record<string, unknown> = {}
-    for (const segments of normalized) {
-      let target: Record<string, unknown> = row
-      let source: Record<string, unknown> = item
-      for (let index = 0; index < segments.length; index += 1) {
-        const segment = segments[index]
-        const next = source[segment]
-        if (index === segments.length - 1) {
-          target[segment] = next
-          break
-        }
-        if (next === null || typeof next !== 'object' || Array.isArray(next)) {
-          target[segment] = next
-          break
-        }
-        const nextPrototype = Object.getPrototypeOf(next)
-        if (nextPrototype !== Object.prototype && nextPrototype !== null) {
-          target[segment] = next
-          break
-        }
-        if (!Object.hasOwn(target, segment)) target[segment] = {}
-        target = target[segment] as Record<string, unknown>
-        source = next as Record<string, unknown>
-      }
+    for (const field of fields) {
+      // Assigning `__proto__` would change the prototype instead of creating a
+      // data field; fall back rather than silently dropping it.
+      if (field === '__proto__') return value
+      row[field] = (item as Record<string, unknown>)[field]
     }
     projected.push(row)
   }
